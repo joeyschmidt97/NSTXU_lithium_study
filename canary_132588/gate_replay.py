@@ -48,8 +48,12 @@ def main():
                     help="directory whose immediate subdirs are runs; defaults to newest canary run")
     ap.add_argument("--source", default=None,
                     help="source EFIT g-file; defaults to the one named in canary_summary.json")
+    ap.add_argument("--mode", choices=("production", "identity"), default="production",
+                    help="production: per-point survey gate, q is allowed to move. "
+                         "identity: regression check, q must match the source.")
     ap.add_argument("--max-ip-error", type=float, default=0.03)
-    ap.add_argument("--max-q-error", type=float, default=0.02)
+    ap.add_argument("--max-q-error", type=float, default=0.02,
+                    help="identity mode only")
     args = ap.parse_args()
 
     tree = args.tree
@@ -72,17 +76,26 @@ def main():
     cheasebs_script = os.path.join(Config().get_path("CHEASEBS_PATH"),
                                    "run_chease_iterative_profiles.py")
 
-    policy = CheasebsAcceptance(
-        max_ip_error_rel=args.max_ip_error,
-        max_q_error_rel=args.max_q_error,
-        analysis_radii=GENE_RADII,
-    )
+    if args.mode == "identity":
+        policy = CheasebsAcceptance.identity(
+            analysis_radii=GENE_RADII,
+            max_ip_error_rel=args.max_ip_error,
+            max_q_error_rel=args.max_q_error,
+        )
+        q_rule = f"q <= {policy.max_q_error_rel:.1%} vs source"
+    else:
+        policy = CheasebsAcceptance.production(
+            analysis_radii=GENE_RADII,
+            max_ip_error_rel=args.max_ip_error,
+        )
+        q_rule = f"q blowup bound {policy.max_q_change_rel:.0%} (q is allowed to move)"
 
     eqdsks = find_runs(tree)
     if not eqdsks:
         raise SystemExit(f"no {EQDSK_NAME} under {tree}/*/")
-    print(f"tree:   {tree}\nsource: {source}\npolicy: Ip <= {policy.max_ip_error_rel:.1%}, "
-          f"q <= {policy.max_q_error_rel:.1%} at rho_tor {GENE_RADII}\n")
+    print(f"tree:   {tree}\nsource: {source}\n"
+          f"policy: [{args.mode}] Ip <= {policy.max_ip_error_rel:.1%}, {q_rule}, "
+          f"at rho_tor {GENE_RADII}\n")
 
     rows = []
     for eqdsk in eqdsks:
@@ -92,10 +105,12 @@ def main():
         # A run that aimed at a different Ip must be scored against the Ip it
         # aimed at, not the source's — that target lives in the merged config the
         # run wrote next to itself.
-        target_ip = None
+        target_ip = target_bt = None
         cfg_path = os.path.join(run_dir, "cheasebs_run_config.json")
         if os.path.isfile(cfg_path):
-            target_ip = json.load(open(cfg_path)).get("target_ip_a")
+            cfg = json.load(open(cfg_path))
+            target_ip = cfg.get("target_ip_a")
+            target_bt = cfg.get("target_bt_t")
 
         result = evaluate_acceptance(
             eqdsk_path=eqdsk,
@@ -104,6 +119,7 @@ def main():
             cheasebs_script=cheasebs_script,
             policy=policy,
             target_ip_a=target_ip,
+            target_bt_t=target_bt,
         )
         rows.append((name, result))
 
