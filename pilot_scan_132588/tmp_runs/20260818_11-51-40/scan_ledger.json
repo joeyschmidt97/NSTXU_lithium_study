@@ -1,0 +1,24 @@
+{
+ "saved": "2026-08-18T11:51:41",
+ "entries": {
+  "b0000p0000": {
+   "point_id": "b0000p0000",
+   "batch": 0,
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 1.0,
+    "Te_width_scale": 1.0
+   },
+   "status": "pending",
+   "eqdsk": null,
+   "iterdb": null,
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_11-51-40/b0000p0000",
+   "rundir": null,
+   "job_id": null,
+   "qoi": null,
+   "acceptance": null,
+   "note": null,
+   "updated": "2026-08-18T11:51:41"
+  }
+ }
+}

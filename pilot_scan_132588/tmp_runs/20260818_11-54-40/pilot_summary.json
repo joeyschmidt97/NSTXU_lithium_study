@@ -1,0 +1,68 @@
+{
+ "workdir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_11-54-40",
+ "base_parameters": "/global/homes/j/joeschm/simulators/GENE3/NSTX_132543_omne0.8_omt0.8_KBM_r0.7/parameters",
+ "seed": {
+  "dirpath": "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/132543",
+  "iterdb": "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/132543/NSTX132543.iterdb",
+  "gfile": "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/132543/g132543.00700"
+ },
+ "axes": {
+  "Te_ped_scale": [
+   0.7,
+   1.3
+  ],
+  "ne_ped_scale": [
+   0.7,
+   1.3
+  ],
+  "Te_width_scale": [
+   0.6,
+   1.4
+  ]
+ },
+ "ky": 0.05,
+ "analysis_radii": [
+  0.736,
+  0.825
+ ],
+ "qoi_values_are_fabricated": true,
+ "profiles": [
+  {
+   "point_id": "b0000p0000",
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 1.0,
+    "Te_width_scale": 1.0
+   },
+   "tag": "Te1.000-wTe1.000-ne1.000",
+   "Te_ped_max": 0.16444183892003664,
+   "ne_ped_max": 5.331906180595861,
+   "Te_sep": 0.04794810567821731,
+   "ne_sep": 2.7728417542556922,
+   "gradTe_max": 2.119153791456215,
+   "dTe_vs_ref": 0.0
+  }
+ ],
+ "problems": [
+  [
+   "ALL",
+   "1 point(s) reconstructed but no parameters file was written for any of them"
+  ]
+ ],
+ "points": [
+  {
+   "point_id": "b0000p0000",
+   "batch": 0,
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 1.0,
+    "Te_width_scale": 1.0
+   },
+   "status": "pending",
+   "eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_11-54-40/b0000p0000/g132543_Te1.000-wTe1.000-ne1.000",
+   "iterdb": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_11-54-40/b0000p0000/profiles.iterdb",
+   "rundir": null,
+   "note": "submit failed: KeyError: \"Parameter 'kymin' not found. Add it first with set().\""
+  }
+ ]
+}
