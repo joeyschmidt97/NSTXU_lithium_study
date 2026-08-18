@@ -1,3 +1,0 @@
-session.json here was advanced with fabricated QoI values by the
-132543 parameter-generation notebook. The sampler state is
-meaningless. Do not resume a real campaign from this directory.
