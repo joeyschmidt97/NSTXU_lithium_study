@@ -425,8 +425,11 @@ def compare_gfiles(campaign, axis_short=None, ref_point_id=None):
     ref = _gfile_ds(ref_entry.eqdsk)
     print(f"reference: {ref_entry.point_id} "
           f"({tag_from_point(ref_entry.point, axis_short)})")
-    print(f"boundary points: {ref.sizes.get('boundary', 'n/a')}, "
-          f"psi grid: {ref.sizes['psi']}\n")
+    # After GFileData.add_flux_coordinates the flux dimension is rho_idx --
+    # psi, rho_pol and rho_tor are coordinates on it, not dimensions.
+    print(f"boundary points: {ref.sizes.get('bndry', 'n/a')}, "
+          f"flux grid: {ref.sizes.get('rho_idx', 'n/a')}")
+    print()
 
     rows = []
     for entry in entries:
@@ -445,9 +448,14 @@ def compare_gfiles(campaign, axis_short=None, ref_point_id=None):
             diff = np.abs(a - b)
             scale = max(float(np.max(np.abs(b))), 1e-300)
             i = int(np.argmax(diff))
+            # Locate the max in rho_tor, not as a grid fraction: "the max sits
+            # at rho_tor 0.96" is the statement that says the change stayed
+            # pedestal-local, which is what this table is checking.
+            at = (float(ds["rho_tor"].values[i]) if "rho_tor" in ds.coords
+                  else float(i / max(len(diff) - 1, 1)))
             row[var] = {"absmax": float(diff[i]),
                         "relmax": float(diff[i] / scale),
-                        "at": float(i / max(len(diff) - 1, 1))}
+                        "at": at}
         if "psi_RZ" in ds and "psi_RZ" in ref and ds["psi_RZ"].shape == ref["psi_RZ"].shape:
             d = np.abs(ds["psi_RZ"].values - ref["psi_RZ"].values)
             scale = max(float(np.max(np.abs(ref["psi_RZ"].values))), 1e-300)
@@ -456,7 +464,7 @@ def compare_gfiles(campaign, axis_short=None, ref_point_id=None):
                              "at": float("nan")}
         # The boundary is held fixed by the real-boundary reconstruction. If it
         # ever moves, that is a finding, so it is checked rather than assumed.
-        for coord in ("rbbbs", "zbbbs", "R_boundary", "Z_boundary"):
+        for coord in ("RBDRY", "ZBDRY", "RLIM", "ZLIM"):
             if coord in ds and coord in ref and ds[coord].shape == ref[coord].shape:
                 row.setdefault("boundary_max_move", 0.0)
                 row["boundary_max_move"] = max(
@@ -474,7 +482,7 @@ def compare_gfiles(campaign, axis_short=None, ref_point_id=None):
         cells = " ".join(f"{r[c]['relmax']:>11.3e}" for c in cols)
         print(f"{r['point_id']:<12} {r['tag']:<30} {cells}")
 
-    print("\nwhere the max occurs (normalized psi index, 0=axis 1=edge)")
+    print("\nwhere the max occurs (rho_tor, 0=axis 1=edge)")
     print(head)
     print("-" * len(head))
     for r in rows:
@@ -521,11 +529,12 @@ def plot_gfile_differences(rows, ref_idx=0):
             a, b = r["ds"][var].values, ref[var].values
             if a.shape != b.shape:
                 continue
-            x = np.linspace(0, 1, len(a))
+            x = (r["ds"]["rho_tor"].values if "rho_tor" in r["ds"].coords
+                 else np.linspace(0, 1, len(a)))
             ax.plot(x, a - b, lw=1.3, label=r["tag"])
     for ax, var in zip(axes, cols):
         ax.axhline(0, color="k", lw=0.6)
-        ax.set_xlabel("normalized psi")
+        ax.set_xlabel("rho_tor")
         ax.set_title(f"delta {var}")
     axes[0].legend(fontsize=6)
     fig.suptitle(f"EQDSK flux functions minus {rows[ref_idx]['tag']}")
