@@ -224,6 +224,51 @@ def dummy_qoi(point: dict) -> float:
 
 # -------------------------------------------------------- profile summary
 
+def convergence_report(campaign):
+    """How hard cheaseBS actually worked per point, and how well it landed.
+
+    An equilibrium that stopped at iteration 1 is not a converged equilibrium,
+    it is the baseline current profile with the input profiles swapped
+    underneath it -- cheaseBS under-relaxes (bootstrap_mix 0.1, istar_mix 0.05),
+    so one iteration applies a twentieth of the current update. This table is
+    how that gets noticed rather than inferred from a growth rate months later.
+
+    Read the iteration count first. If every point stops at the same number and
+    that number is max_iter, the tolerances were never met and the reported
+    error is what the solver achieved, not what it promised.
+    """
+    rows = []
+    for entry in sorted(campaign.ledger.entries.values(), key=lambda e: e.point_id):
+        a = entry.acceptance or {}
+        rows.append({
+            "point_id": entry.point_id,
+            "iterations": a.get("cheasebs_iterations"),
+            "converged": a.get("cheasebs_converged"),
+            "ip_error": a.get("ip_error_rel"),
+            "accepted": a.get("accepted"),
+        })
+    head = (f"{'point_id':<12} {'iters':>6} {'solver conv':>12} "
+            f"{'Ip err':>10} {'gate':>8}")
+    print(head)
+    print("-" * len(head))
+    for r in rows:
+        ip = f"{r['ip_error']:.3%}" if isinstance(r["ip_error"], (int, float)) else "n/a"
+        print(f"{r['point_id']:<12} {str(r['iterations']):>6} "
+              f"{str(r['converged']):>12} {ip:>10} "
+              f"{'accept' if r['accepted'] else 'REJECT':>8}")
+
+    iters = [r["iterations"] for r in rows if isinstance(r["iterations"], int)]
+    if iters and max(iters) <= 1:
+        print("\n!! every point stopped at one iteration. With bootstrap_mix 0.1 "
+              "and istar_mix 0.05 that leaves ~95% of the BASELINE current "
+              "profile in place, so the geometry never responded to the "
+              "perturbed profiles. Raise max_iter -- see cheasebs_runner's "
+              "module docstring.")
+    elif iters:
+        print(f"\niterations: min {min(iters)}, max {max(iters)}")
+    return rows
+
+
 def read_profiles(path):
     """Read a GENE profiles_X file written by discharge_tools. -> (rhot, T, n)."""
     import numpy as np
