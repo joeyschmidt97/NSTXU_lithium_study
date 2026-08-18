@@ -1,0 +1,195 @@
+{
+ "saved": "2026-08-17T22:33:46",
+ "entries": {
+  "b0000p0000": {
+   "point_id": "b0000p0000",
+   "batch": 0,
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 1.0,
+    "Te_width_scale": 1.0
+   },
+   "status": "told",
+   "eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0000p0000/g132543_Te1.000-wTe1.000-ne1.000",
+   "iterdb": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0000p0000/profiles.iterdb",
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0000p0000",
+   "rundir": null,
+   "job_id": null,
+   "qoi": 0.8467200483592032,
+   "acceptance": {
+    "accepted": true,
+    "cheasebs_converged": false,
+    "cheasebs_iterations": 1,
+    "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-27-41-b0000p0000/iteration_00/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+    "final_ip_a": 931688.0109,
+    "ip_error_rel": 0.016233131014855035,
+    "ip_reference_valid": true,
+    "q95_error_rel": 0.00842389919799175,
+    "q_edge_error_rel": 0.16919520743883953,
+    "q_errors_rel": {
+     "0.736": 0.0062718455306416485,
+     "0.825": 0.005282783759543187
+    },
+    "reasons": [],
+    "reload_ok": true,
+    "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-27-41-b0000p0000",
+    "source_eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0000p0000/g132543.00700",
+    "target_ip_a": 947061.789
+   },
+   "note": "DUMMY_QOI",
+   "updated": "2026-08-17T22:28:54"
+  },
+  "b0001p0000": {
+   "point_id": "b0001p0000",
+   "batch": 1,
+   "point": {
+    "Te_ped_scale": 1.3,
+    "ne_ped_scale": 1.0,
+    "Te_width_scale": 1.0
+   },
+   "status": "told",
+   "eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0000/g132543_Te1.300-wTe1.000-ne1.000",
+   "iterdb": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0000/profiles.iterdb",
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0000",
+   "rundir": null,
+   "job_id": null,
+   "qoi": 0.017833881115361938,
+   "acceptance": {
+    "accepted": true,
+    "cheasebs_converged": false,
+    "cheasebs_iterations": 1,
+    "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-28-54-b0001p0000/iteration_00/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+    "final_ip_a": 935218.8381,
+    "ip_error_rel": 0.0125049400551836,
+    "ip_reference_valid": true,
+    "q95_error_rel": 0.009399458341075398,
+    "q_edge_error_rel": 0.17016935283443227,
+    "q_errors_rel": {
+     "0.736": 0.006669967044321536,
+     "0.825": 0.0038666793643330733
+    },
+    "reasons": [],
+    "reload_ok": true,
+    "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-28-54-b0001p0000",
+    "source_eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0000/g132543.00700",
+    "target_ip_a": 947061.789
+   },
+   "note": "DUMMY_QOI",
+   "updated": "2026-08-17T22:32:32"
+  },
+  "b0001p0001": {
+   "point_id": "b0001p0001",
+   "batch": 1,
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 1.3,
+    "Te_width_scale": 1.0
+   },
+   "status": "told",
+   "eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0001/g132543_Te1.000-wTe1.000-ne1.300",
+   "iterdb": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0001/profiles.iterdb",
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0001",
+   "rundir": null,
+   "job_id": null,
+   "qoi": -1.6399384533723205,
+   "acceptance": {
+    "accepted": true,
+    "cheasebs_converged": false,
+    "cheasebs_iterations": 1,
+    "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-30-06-b0001p0001/iteration_00/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+    "final_ip_a": 939721.3301,
+    "ip_error_rel": 0.007750770842260187,
+    "ip_reference_valid": true,
+    "q95_error_rel": 0.008710621947903365,
+    "q_edge_error_rel": 0.1714503690697643,
+    "q_errors_rel": {
+     "0.736": 0.008802044977649812,
+     "0.825": 0.00418999974800538
+    },
+    "reasons": [],
+    "reload_ok": true,
+    "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-30-06-b0001p0001",
+    "source_eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0001/g132543.00700",
+    "target_ip_a": 947061.789
+   },
+   "note": "DUMMY_QOI",
+   "updated": "2026-08-17T22:32:32"
+  },
+  "b0001p0002": {
+   "point_id": "b0001p0002",
+   "batch": 1,
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 1.0,
+    "Te_width_scale": 1.4
+   },
+   "status": "told",
+   "eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0002/g132543_Te1.000-wTe1.400-ne1.000",
+   "iterdb": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0002/profiles.iterdb",
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0002",
+   "rundir": null,
+   "job_id": null,
+   "qoi": -1.1786715125877067,
+   "acceptance": {
+    "accepted": true,
+    "cheasebs_converged": false,
+    "cheasebs_iterations": 1,
+    "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-31-19-b0001p0002/iteration_00/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+    "final_ip_a": 931656.353,
+    "ip_error_rel": 0.016266558506458743,
+    "ip_reference_valid": true,
+    "q95_error_rel": 0.008401008553801517,
+    "q_edge_error_rel": 0.16919008293722096,
+    "q_errors_rel": {
+     "0.736": 0.006566471963068904,
+     "0.825": 0.005284772728087206
+    },
+    "reasons": [],
+    "reload_ok": true,
+    "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-31-19-b0001p0002",
+    "source_eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0001p0002/g132543.00700",
+    "target_ip_a": 947061.789
+   },
+   "note": "DUMMY_QOI",
+   "updated": "2026-08-17T22:32:32"
+  },
+  "b0002p0000": {
+   "point_id": "b0002p0000",
+   "batch": 2,
+   "point": {
+    "Te_ped_scale": 1.0,
+    "ne_ped_scale": 0.7000000000000001,
+    "Te_width_scale": 1.0
+   },
+   "status": "told",
+   "eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0002p0000/g132543_Te1.000-wTe1.000-ne0.700",
+   "iterdb": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0002p0000/profiles.iterdb",
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0002p0000",
+   "rundir": null,
+   "job_id": null,
+   "qoi": 3.0129881241262226,
+   "acceptance": {
+    "accepted": true,
+    "cheasebs_converged": false,
+    "cheasebs_iterations": 1,
+    "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-32-32-b0002p0000/iteration_00/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+    "final_ip_a": 931656.353,
+    "ip_error_rel": 0.016266558506458743,
+    "ip_reference_valid": true,
+    "q95_error_rel": 0.008401008553801517,
+    "q_edge_error_rel": 0.16919008293722096,
+    "q_errors_rel": {
+     "0.736": 0.006566471963068904,
+     "0.825": 0.005284772728087206
+    },
+    "reasons": [],
+    "reload_ok": true,
+    "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260817_22-32-32-b0002p0000",
+    "source_eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260817_22-27-39/b0002p0000/g132543.00700",
+    "target_ip_a": 947061.789
+   },
+   "note": "DUMMY_QOI",
+   "updated": "2026-08-17T22:33:46"
+  }
+ }
+}
