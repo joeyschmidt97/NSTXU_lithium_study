@@ -385,6 +385,154 @@ def plot_discharge_overlay(campaign, axis_short=None, full=False,
     return fig
 
 
+# --------------------------------------------------------- gfile comparison
+
+_GFILE_VARS = ("F", "p", "pprime", "ffprime", "q")
+
+
+def _gfile_ds(path):
+    from TPED.projects.discharge_tools.src.filetypes.gfile_data import GFileData
+
+    return GFileData(path).gfile_to_xarray()
+
+
+def compare_gfiles(campaign, axis_short=None, ref_point_id=None):
+    """Quantify how each point's EQDSK differs from the reference EQDSK.
+
+    Flux-surface plots are the wrong instrument here and will mislead. The
+    reconstruction preserves the source EFIT boundary by design, and a pedestal
+    perturbation is a small fraction of total stored energy, so the separatrix
+    cannot move and the interior surfaces move by far less than a contour plot
+    can resolve. Identical-looking flux surfaces are the expected result, not
+    evidence that nothing happened.
+
+    What must change is the flux functions -- F, p, p', FF', q -- and the 2-D
+    psi map by a small amount. This reports the max absolute and relative
+    difference of each against the reference, and the normalized flux coordinate
+    where that max occurs, which is the part a plot of overlapping curves cannot
+    tell you.
+    """
+    import numpy as np
+
+    entries = [e for e in sorted(campaign.ledger.entries.values(),
+                                 key=lambda e: e.point_id)
+               if e.eqdsk and os.path.exists(e.eqdsk)]
+    if len(entries) < 2:
+        print(f"need at least 2 reconstructed points, have {len(entries)}")
+        return []
+
+    ref_entry = next((e for e in entries if e.point_id == ref_point_id), entries[0])
+    ref = _gfile_ds(ref_entry.eqdsk)
+    print(f"reference: {ref_entry.point_id} "
+          f"({tag_from_point(ref_entry.point, axis_short)})")
+    print(f"boundary points: {ref.sizes.get('boundary', 'n/a')}, "
+          f"psi grid: {ref.sizes['psi']}\n")
+
+    rows = []
+    for entry in entries:
+        ds = _gfile_ds(entry.eqdsk)
+        row = {"point_id": entry.point_id,
+               "tag": tag_from_point(entry.point, axis_short),
+               "ds": ds}
+        for var in _GFILE_VARS:
+            if var not in ds or var not in ref:
+                continue
+            a, b = ds[var].values, ref[var].values
+            if a.shape != b.shape:
+                row[var] = {"absmax": float("nan"), "relmax": float("nan"),
+                            "at": float("nan")}
+                continue
+            diff = np.abs(a - b)
+            scale = max(float(np.max(np.abs(b))), 1e-300)
+            i = int(np.argmax(diff))
+            row[var] = {"absmax": float(diff[i]),
+                        "relmax": float(diff[i] / scale),
+                        "at": float(i / max(len(diff) - 1, 1))}
+        if "psi_RZ" in ds and "psi_RZ" in ref and ds["psi_RZ"].shape == ref["psi_RZ"].shape:
+            d = np.abs(ds["psi_RZ"].values - ref["psi_RZ"].values)
+            scale = max(float(np.max(np.abs(ref["psi_RZ"].values))), 1e-300)
+            row["psi_RZ"] = {"absmax": float(np.max(d)),
+                             "relmax": float(np.max(d) / scale),
+                             "at": float("nan")}
+        # The boundary is held fixed by the real-boundary reconstruction. If it
+        # ever moves, that is a finding, so it is checked rather than assumed.
+        for coord in ("rbbbs", "zbbbs", "R_boundary", "Z_boundary"):
+            if coord in ds and coord in ref and ds[coord].shape == ref[coord].shape:
+                row.setdefault("boundary_max_move", 0.0)
+                row["boundary_max_move"] = max(
+                    row["boundary_max_move"],
+                    float(np.max(np.abs(ds[coord].values - ref[coord].values))))
+        rows.append(row)
+
+    cols = [v for v in _GFILE_VARS if v in rows[0]] + (
+        ["psi_RZ"] if "psi_RZ" in rows[0] else [])
+    head = f"{'point_id':<12} {'tag':<30} " + " ".join(f"{c:>11}" for c in cols)
+    print("max relative difference vs reference")
+    print(head)
+    print("-" * len(head))
+    for r in rows:
+        cells = " ".join(f"{r[c]['relmax']:>11.3e}" for c in cols)
+        print(f"{r['point_id']:<12} {r['tag']:<30} {cells}")
+
+    print("\nwhere the max occurs (normalized psi index, 0=axis 1=edge)")
+    print(head)
+    print("-" * len(head))
+    for r in rows:
+        cells = " ".join(
+            f"{r[c]['at']:>11.3f}" if r[c]["at"] == r[c]["at"] else f"{'n/a':>11}"
+            for c in cols)
+        print(f"{r['point_id']:<12} {r['tag']:<30} {cells}")
+
+    moves = [r.get("boundary_max_move", 0.0) for r in rows]
+    if any(m > 1e-9 for m in moves):
+        print(f"\n!! the plasma boundary moved (max {max(moves):.3e} m). The "
+              f"real-boundary reconstruction is supposed to hold it fixed.")
+    else:
+        print("\nplasma boundary identical across all points, as the "
+              "real-boundary reconstruction intends")
+
+    identical = [r["point_id"] for r in rows[1:]
+                 if all(r[c]["relmax"] == 0.0 for c in cols)]
+    if identical:
+        print(f"!! EQDSK identical to the reference for: {', '.join(identical)}")
+    return rows
+
+
+def plot_gfile_differences(rows, ref_idx=0):
+    """Plot each flux function's DIFFERENCE from the reference, not the overlay.
+
+    Overlaid curves that differ by a fraction of a percent look like one curve.
+    The difference is the only view where a sub-percent change is legible.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    if len(rows) < 2:
+        print("need at least 2 points")
+        return
+    ref = rows[ref_idx]["ds"]
+    cols = [v for v in _GFILE_VARS if v in ref]
+    fig, axes = plt.subplots(1, len(cols), figsize=(3.6 * len(cols), 3.4))
+    axes = np.atleast_1d(axes)
+    for r in rows:
+        if r is rows[ref_idx]:
+            continue
+        for ax, var in zip(axes, cols):
+            a, b = r["ds"][var].values, ref[var].values
+            if a.shape != b.shape:
+                continue
+            x = np.linspace(0, 1, len(a))
+            ax.plot(x, a - b, lw=1.3, label=r["tag"])
+    for ax, var in zip(axes, cols):
+        ax.axhline(0, color="k", lw=0.6)
+        ax.set_xlabel("normalized psi")
+        ax.set_title(f"delta {var}")
+    axes[0].legend(fontsize=6)
+    fig.suptitle(f"EQDSK flux functions minus {rows[ref_idx]['tag']}")
+    plt.tight_layout()
+    plt.show()
+
+
 # ----------------------------------------------------------- verification
 
 def check_template(path: str) -> list:
