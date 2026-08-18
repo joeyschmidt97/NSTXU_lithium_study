@@ -283,6 +283,57 @@ def plot_profiles(rows, xlim=(0.85, 1.0)):
     plt.show()
 
 
+def point_discharges(campaign, axis_short=None):
+    """Rebuild a DischargeData per point from that point's own written outputs.
+
+    Reads the profiles_e/i/z and the retagged EQDSK out of each point's savedir,
+    so these objects describe what CHEASE-BS produced rather than replaying the
+    transform through the same code that produced it. Returns
+    [(label, DischargeData)] in point_id order.
+    """
+    from TPED.projects.discharge_tools.src.discharge_data import DischargeData
+
+    out = []
+    for entry in sorted(campaign.ledger.entries.values(), key=lambda e: e.point_id):
+        savedir = entry.savedir or ""
+        profiles = [os.path.join(savedir, f"profiles_{s}") for s in ("e", "i", "z")]
+        profiles = [p for p in profiles if os.path.exists(p)]
+        if not profiles or not entry.eqdsk or not os.path.exists(entry.eqdsk):
+            continue
+        label = f"{entry.point_id} {tag_from_point(entry.point, axis_short)}"
+        out.append((label, DischargeData(gfile=entry.eqdsk, profiles=profiles)))
+    return out
+
+
+def plot_discharge_overlay(campaign, axis_short=None, full=False,
+                           vars=("Te", "Ti", "ne", "ni"), **kwargs):
+    """Overlay every point using discharge_tools' own plotting.
+
+    full=False -> DischargePhysics.plot_profiles: the harmonized profiles only,
+                  one colour family per point.
+    full=True  -> DischargePhysics.plot: the report layout, flux-surface geometry
+                  from each point's OWN reconstructed EQDSK alongside the
+                  profiles. Slower, and the only view that shows whether the
+                  equilibria differ rather than just the profiles that made them.
+
+    Pass an axis range as a coordinate keyword, e.g. rhot=[0.85, 1.0].
+    """
+    from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
+
+    pairs = point_discharges(campaign, axis_short)
+    if not pairs:
+        print("no point has both an EQDSK and profiles on disk")
+        return None
+
+    fig = None
+    for i, (label, discharge) in enumerate(pairs):
+        phys = DischargePhysics(discharge)
+        plot = phys.plot if full else phys.plot_profiles
+        fig = plot(vars=vars, label=label, fig=fig, discharge_idx=i, **kwargs)
+    print(f"overlaid {len(pairs)} point(s)")
+    return fig
+
+
 # ----------------------------------------------------------- verification
 
 def check_template(path: str) -> list:
