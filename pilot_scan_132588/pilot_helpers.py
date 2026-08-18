@@ -258,6 +258,14 @@ def convergence_report(campaign):
               f"{'accept' if r['accepted'] else 'REJECT':>8}")
 
     iters = [r["iterations"] for r in rows if isinstance(r["iterations"], int)]
+    cap = (campaign.cheasebs_overrides or {}).get("max_iter")
+    if iters and cap and all(i >= cap for i in iters):
+        print(f"\n!! every point ran to the cap (max_iter={cap}) and none "
+              f"converged. The loop may still be moving, or tol_ip_rel may be "
+              f"unreachable -- it is 0.002 by default against a reconstruction "
+              f"that sits ~1.5% off target, which vetoes `converged` however "
+              f"still the bootstrap and q iterations have gone. Check tol_bs / "
+              f"tol_q / tol_a in the run config before raising max_iter.")
     if iters and max(iters) <= 1:
         print("\n!! every point stopped at one iteration. With bootstrap_mix 0.1 "
               "and istar_mix 0.05 that leaves ~95% of the BASELINE current "
