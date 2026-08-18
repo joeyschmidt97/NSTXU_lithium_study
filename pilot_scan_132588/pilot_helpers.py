@@ -44,6 +44,57 @@ def check_inputs(inputs: dict) -> list:
     return missing
 
 
+def check_tped():
+    """Report which TPED is actually imported, and whether it has the fixes.
+
+    A notebook imports whatever TPED resolves to on sys.path, which need not be
+    the clone you just pulled — and a live kernel keeps the module it imported
+    first regardless of what the file on disk now says. Both failures look
+    identical from the traceback: the bug you already fixed, again.
+
+    Each probe below is a specific source fragment from a specific fix, so a
+    missing one names the commit that has not arrived rather than just saying
+    "out of date".
+    """
+    import inspect
+
+    from TPED.projects.GENE_pipelines.src import scan_campaign
+    from TPED.projects.GENE_pipelines.src import point_reconstruction
+
+    print(f"scan_campaign      {scan_campaign.__file__}")
+    print(f"point_reconstruction {point_reconstruction.__file__}")
+
+    src = inspect.getsource(scan_campaign)
+    psrc = inspect.getsource(point_reconstruction)
+    probes = [
+        ("kymin seeded before add_scan (a9d09ea)",
+         'if "kymin" not in handler.to_dict()' in src),
+        ("namelists passed explicitly (b2e5190)",
+         'namelist="in_out"' in src),
+        ("no hand-added quotes on paths (b2e5190)",
+         "f\"'{os.path.basename(entry.eqdsk)}'\"" not in src),
+        ("parameters file read back after write (b2e5190)",
+         "does not carry" in src),
+        ("per-point iterdb (8cfdf49)", "iterdb" in src and "iterdb" in psrc),
+        ("scan axes kept out of the namelist (8cfdf49)",
+         "is_equilibrium_axis" in src),
+        ("pilot axes registered", bool(getattr(point_reconstruction,
+                                               "MTANH_AXES", None))),
+    ]
+    missing = [name for name, ok in probes if not ok]
+    print()
+    for name, ok in probes:
+        print(f"  [{'ok' if ok else 'MISSING'}] {name}")
+    if missing:
+        print(f"\n{len(missing)} fix(es) not present in the imported module.")
+        print("Either that clone has not been pulled, or this kernel is still "
+              "holding the module it imported first — restart the kernel before "
+              "assuming the pull failed.")
+    else:
+        print("\nimported TPED has every fix this notebook depends on")
+    return missing
+
+
 # ------------------------------------------------------------ seed input
 
 def seed_from_iterdb(iterdb_path: str, gfile_path: str, workdir: str):
