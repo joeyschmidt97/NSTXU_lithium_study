@@ -277,6 +277,117 @@ def convergence_report(campaign):
     return rows
 
 
+def read_iteration_log(savedir):
+    """Parse cheaseBS's iteration_log.csv into {column: [values]}.
+
+    Column names come from the external cheaseBS driver, not from TPED, so
+    nothing here assumes a schema: every column that parses as numeric is kept
+    and the plot picks by name match. A driver change renames a curve rather
+    than raising.
+    """
+    import csv
+
+    path = os.path.join(savedir or "", "iteration_log.csv")
+    if not os.path.exists(path):
+        return {}
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return {}
+    out = {}
+    for key in rows[0]:
+        vals = []
+        for r in rows:
+            raw = (r.get(key) or "").strip()
+            try:
+                vals.append(float(raw))
+            except ValueError:
+                vals.append(float("nan"))
+        if any(v == v for v in vals):
+            out[key] = vals
+    return out
+
+
+# Substrings identifying the per-iteration change metrics, in the order they
+# are plotted. Matched against lowercased column names.
+_CONV_METRICS = [
+    ("bootstrap change", ("bs_change", "bootstrap_change")),
+    ("q change", ("q_change",)),
+    ("amplitude", ("amplitude",)),
+    ("Ip error", ("ip_error_rel", "rel_error")),
+]
+
+
+def plot_convergence(campaign, tolerances=None, logy=True):
+    """Per-iteration convergence history for every point, one line per point.
+
+    This is the evidence max_iter and the tolerances should be set from. A curve
+    that flattens well before the cap means the cap can come down; a curve still
+    descending at the cap means it must go up; a curve that never moves means
+    the loop is not responding at all.
+
+    tolerances: optional {metric label: value} to draw as horizontal lines, e.g.
+    {"bootstrap change": 0.01, "q change": 0.01}. Pass the tol_bs / tol_q / tol_a
+    actually used so the plot shows the target the loop was being judged against.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    logs = []
+    for entry in sorted(campaign.ledger.entries.values(), key=lambda e: e.point_id):
+        log = read_iteration_log(entry.savedir)
+        if log:
+            logs.append((entry, log))
+    if not logs:
+        print("no iteration_log.csv found in any point's savedir.\n"
+              "It is written by cheaseBS into its scratch run directory; TPED "
+              "copies it back only as of the 2026-08-18 change to "
+              "discharge_io.output_gfile. Re-run to collect it.")
+        return []
+
+    present = []
+    for label, keys in _CONV_METRICS:
+        col = next((c for c in logs[0][1]
+                    if any(k in c.lower() for k in keys)), None)
+        if col:
+            present.append((label, col))
+    if not present:
+        print(f"iteration_log.csv has no recognized change columns. "
+              f"Columns present: {sorted(logs[0][1])}")
+        return logs
+
+    fig, axes = plt.subplots(1, len(present), figsize=(4.0 * len(present), 3.6))
+    axes = np.atleast_1d(axes)
+    for entry, log in logs:
+        for ax, (label, col) in zip(axes, present):
+            y = np.abs(np.asarray(log[col], dtype=float))
+            ax.plot(np.arange(len(y)), y, marker="o", ms=3, lw=1.2,
+                    label=entry.point_id)
+    for ax, (label, col) in zip(axes, present):
+        ax.set_xlabel("iteration")
+        ax.set_title(f"|{label}|")
+        if logy:
+            ax.set_yscale("log")
+        if tolerances and label in tolerances:
+            ax.axhline(tolerances[label], color="k", ls="--", lw=0.8)
+    axes[0].legend(fontsize=6)
+    fig.suptitle("cheaseBS convergence history — flat before the cap means the "
+                 "cap can come down")
+    plt.tight_layout()
+    plt.show()
+
+    print(f"{'point_id':<12} {'iters':>6} " +
+          " ".join(f"{lab:>18}" for lab, _ in present))
+    for entry, log in logs:
+        n = len(next(iter(log.values())))
+        cells = []
+        for label, col in present:
+            y = [v for v in log[col] if v == v]
+            cells.append(f"{y[-1]:>18.3e}" if y else f"{'n/a':>18}")
+        print(f"{entry.point_id:<12} {n:>6} " + " ".join(cells))
+    return logs
+
+
 def read_profiles(path):
     """Read a GENE profiles_X file written by discharge_tools. -> (rhot, T, n)."""
     import numpy as np
