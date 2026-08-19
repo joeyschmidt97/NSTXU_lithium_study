@@ -1,0 +1,111 @@
+&parallelization
+n_procs_s = 1
+n_procs_v = 1
+n_procs_w = 4
+n_procs_x = 1
+n_procs_y = 1
+n_procs_z = 1
+n_procs_sim = 4
+n_parallel_sims = 6
+/
+
+&box
+n_spec = 3
+nx0 = 3
+nky0 = 1
+nz0 = 64
+nv0 = 36
+nw0 = 32
+n0_global = 1 !scanlist: 10, 20, 30, 50, 70, 100
+lv = 3.0
+lw = 9
+lx = 129
+adapt_lx = T
+adapt_ly = T
+x0 = 0.7
+kymin = 0.05 !scanlist: 0.05
+/
+
+&in_out
+diagdir = '/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_21-47-22/b0001p0000'
+read_checkpoint = F
+write_checkpoint = T
+istep_field = 100
+istep_mom = 100
+istep_nrg = 100
+istep_vsp = 400
+istep_schpt = 5000
+iterdb_file = '/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_21-47-22/b0001p0000/profiles.iterdb'
+/
+
+&general
+nblocks = 1
+perf_vec = '1 1 1 1 1 1 1 1 2'
+calc_dt = T
+nonlinear = F
+comp_type = 'IV'
+arakawa_zv = F
+timescheme = 'RK4'
+timelim = 86000
+ntimesteps = 750000
+beta = -1
+debye2 = -1
+collision_op = 'landau'
+coll = -1
+coll_cons_model = 'xu_rosenbluth'
+init_cond = 'alm'
+bpar = T
+hyp_z = -8.0
+hyp_v = 0.2
+/
+
+&geometry
+magn_geometry = 'tracer_efit'
+geomdir = '/global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_21-47-22/b0001p0000'
+geomfile = 'g132543_Te1.300-wTe1.000-ne1.000'
+edge_opt = 12.0
+rhostar = -1
+dpdx_term = 'full_drift'
+dpdx_pm = -2
+mag_prof = T
+/
+
+&species
+name = 'i'
+mass = 1.0
+charge = 1
+prof_type = -2
+/
+
+&species
+name = 'C'
+mass = 6.0
+charge = 6
+prof_type = -2
+/
+
+&species
+name = 'e'
+mass = 0.0002724
+charge = -1
+prof_type = -2
+/
+
+&units
+Bref = -1
+Tref = -1
+nref = -1
+Lref = -1
+mref = 2.0
+/
+
+&scan
+scan_dims = 6
+par_in_dir = '/pscratch/sd/j/joeschm/NSXTU_discharges/132543/KBM_analysis/omt0.8_omne0.8/r_0.70_KBM_mode/n0global_scan/scanfiles0003/in_par'
+/
+
+
+! scan_point_id = b0001p0000
+! scan_batch    = 1
+! scan_axes     = {"Te_ped_scale": 1.3, "Te_width_scale": 1.0, "ne_ped_scale": 1.0}
+! scan_eqdsk    = /global/u1/j/joeschm/projects/NSTXU_lithium_study/pilot_scan_132588/tmp_runs/20260818_21-47-22/_reconstruction/b0001p0000/g132543_Te1.300-wTe1.000-ne1.000
