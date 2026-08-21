@@ -1,0 +1,1 @@
+session.json here was advanced with fabricated QoI values. Do not resume a real campaign from this directory.
