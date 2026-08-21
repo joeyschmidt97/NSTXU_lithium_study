@@ -1,0 +1,4 @@
+__pycache__/
+*.json
+_fig*.png
+_asscript.py
