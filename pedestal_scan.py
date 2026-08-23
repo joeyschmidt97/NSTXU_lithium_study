@@ -296,12 +296,17 @@ class Discharge:
             var, fit=self.fits[var], **{kwarg: s},
             enforce_quasineutrality=True, qz=6.0)
 
-    def width_psin(self, q, var):
+    def width_psin(self, q, var, with_flags=False):
         """Full pedestal width in % psi_N.
 
         Boyle quotes widths in poloidal flux, the fit works in rho_tor, and the
         conversion is not a constant -- it depends where the pedestal sits.
         Stefanikova's b_width is a QUARTER width (full = 4*b_width) about b_pos.
+
+        with_flags also returns (b_pos, pinned). The width is a REFIT quantity,
+        so a scaled profile whose refit lands on the b_pos bound reports a width
+        that is an artefact of the bound rather than a measurement -- worth
+        knowing before a pe-width number is read as physics.
         """
         ds = q.ds.copy()
         if var == "pe":
@@ -311,7 +316,10 @@ class Discharge:
         w = 4.0 * fp["b_width"]
         pl, ph = np.interp([fp["b_pos"] - w / 2, fp["b_pos"] + w / 2],
                            self.x, rhop)
-        return 100.0 * (ph ** 2 - pl ** 2)
+        width = 100.0 * (ph ** 2 - pl ** 2)
+        if with_flags:
+            return width, fp["b_pos"], abs(fp["b_pos"] - BPOS_BOUND) < 1e-6
+        return width
 
     def metric(self, axis, s=1.0, q=None):
         """The physical quantity this axis's bound is quoted in.
@@ -383,6 +391,51 @@ class Discharge:
                        for k, w in widths.items())
             scores[name] = (inside, -dist)
         return max(scores, key=scores.get), widths, scores
+
+    def physical(self, axis, s):
+        """Is the profile at this scale factor a plasma at all?
+
+        No literature constraint here on purpose. The sparse grid explores the
+        box itself, so the box's job is to exclude profiles that are not
+        physical or not fittable -- not to pre-select the ones Boyle happened to
+        observe. Three tests:
+          positive everywhere, monotonic outward through the pedestal (a core
+          Gaussian pushed out of proportion can raise a bump near rho~0.9), and
+          re-fittable, since CHEASE-BS and the writers refit downstream.
+        """
+        var = AXES[axis][0]
+        try:
+            q = self.scaled(axis, s)
+            y = _vals(q, var)
+            if float(np.min(y)) <= 0:
+                return False
+            m = (self.x >= 0.6) & (self.x <= 1.0)
+            if np.any(np.diff(y[m]) > 0.02 * float(np.max(y[m]))):
+                return False
+            self.width_psin(q, "pe")          # refit must converge
+        except Exception:
+            return False
+        return True
+
+    def physical_span(self, axis, span=SCALE_SANITY, tol=0.01):
+        """The sub-interval of span where this discharge stays physical.
+
+        Walks each edge back toward nominal by bisection, so the limit lands
+        where the physics stops rather than on a round number.
+        """
+        out = []
+        for edge in span:
+            if self.physical(axis, edge):
+                out.append(float(edge))
+                continue
+            lo, hi = 1.0, edge                 # nominal passes by construction
+            if not self.physical(axis, lo):
+                return None
+            while abs(hi - lo) > tol:
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if self.physical(axis, mid) else (lo, mid)
+            out.append(round(float(lo), 4))
+        return (min(out), max(out))
 
     def edge_ok(self, axis, s, regime=None, nominal_dpe=None):
         """Is this box edge a plasma worth submitting?
@@ -489,8 +542,52 @@ class Campaign:
                 })
         return rows
 
+    def shared_box(self, span=SCALE_SANITY):
+        """ONE box for all four discharges, which is what a shared sampler needs.
+
+        The sparse grid's axes are common to the campaign and it chooses its own
+        points, so per-discharge bounds cannot be handed to it. Start from the
+        +/-30% ceiling and shrink an axis only where some discharge stops being
+        physical there -- the intersection across discharges, not an
+        intersection with Boyle. Where the literature bands land is reported
+        separately (see Campaign.axis_table) rather than used to cut the box.
+
+        Returns (box, notes) with box = {axis: (lo, hi)}.
+        """
+        box, notes = {}, []
+        for axis in AXES:
+            spans = {}
+            for shot in self.shots:
+                sp = self.d[shot].physical_span(axis, span)
+                if sp is None:
+                    notes.append(f"{axis}: {shot} is not physical even at "
+                                 "nominal — axis dropped")
+                    spans = None
+                    break
+                spans[shot] = sp
+            if not spans:
+                continue
+            lo = max(v[0] for v in spans.values())
+            hi = min(v[1] for v in spans.values())
+            if hi <= lo:
+                notes.append(f"{axis}: no scale factor is physical for all "
+                             f"discharges — dropped ({spans})")
+                continue
+            box[axis] = (round(float(lo), 4), round(float(hi), 4))
+            for shot, sp in spans.items():
+                if sp != (span[0], span[1]):
+                    notes.append(f"{axis}: {shot} limits it to "
+                                 f"{sp[0]:.3f}-{sp[1]:.3f}")
+        return box, notes
+
     def emit_box(self):
-        """{shot: {axis: (lo, hi)}} plus per-shot notes.
+        """PER-DISCHARGE box targeted at the Boyle bands, plus per-shot notes.
+
+        Kept for the question "what would it take to put this discharge inside
+        Boyle's band"; it is NOT what the sparse grid is handed, since that
+        needs one box for the campaign (see shared_box).
+
+        {shot: {axis: (lo, hi)}} plus per-shot notes.
 
         Each edge is clipped to SCALE_SANITY first -- nothing outside it has
         been run against cheaseBS, so trimming from an untested edge would
