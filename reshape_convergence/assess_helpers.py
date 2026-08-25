@@ -9,6 +9,7 @@ anywhere; the DischargePhysics overlays need the machine that holds the EQDSKs.
 from __future__ import annotations
 
 import glob
+import re
 import json
 import os
 import pathlib
@@ -90,6 +91,8 @@ def frame(runs):
                            and x.get("iterations") == r["max_iter"]),
                 "converged": x.get("converged"), "accepted": x.get("accepted"),
                 "ip_err": x.get("ip_error_rel"),
+                "final_ip_a": x.get("final_ip_a"),
+                "target_ip_a": x.get("target_ip_a"),
                 "q_err_x0": max((abs(v) for v in q.values()), default=None),
                 "q_edge_err": x.get("q_edge_error_rel"),
                 "dq_max": x.get("dq_max"), "dq_at": x.get("dq_at_rho"),
@@ -200,3 +203,108 @@ def profile_only(camp, run, var, **kwargs):
             continue
         fig = p.plot_profiles(fig=fig, label=f"{var} {r['scale']:.2f}", **kwargs)
     return fig
+
+
+# ----------------------------------------------------------------------
+# Per-iteration trace
+# ----------------------------------------------------------------------
+
+_ITER_RE = re.compile(
+    r"Iteration (\d+) complete: Ip=([\d.]+) A, rel_error=([\deE.+-]+), "
+    r"bs_change=(n/a|[\deE.+-]+), q_change=(n/a|[\deE.+-]+)")
+_POINT_RE = re.compile(r"-((?:Te|ne)_ped_scale_[\d.]+)/cheasebs_run_config")
+_RUNDIR_RE = re.compile(r"runs/(\d{6}_[\d_-]+)/")
+
+
+def iteration_trace(nbpath):
+    """Per-iteration record, recovered from an executed run notebook.
+
+    cheaseBS prints Ip, rel_error, bs_change and q_change every iteration, but
+    the summary JSON keeps only the final scalars -- so the trace exists solely
+    in the notebook's stored cell output. It is the direct evidence for what
+    stops the loop, which no other artifact carries.
+    """
+    import pandas as pd
+
+    nb = json.load(open(nbpath))
+    txt = "".join(
+        "".join(o.get("text") or o.get("data", {}).get("text/plain") or "")
+        for c in nb["cells"] for o in c.get("outputs", []))
+
+    rows, point, rundir = [], None, None
+    for line in txt.splitlines():
+        m = _RUNDIR_RE.search(line)
+        if m:
+            rundir = m.group(1)
+        m = _POINT_RE.search(line)
+        if m:
+            point = m.group(1)
+        m = _ITER_RE.search(line)
+        if m and point:
+            it, ip, rel, bs, q = m.groups()
+            axis, scale = point.rsplit("_", 1)
+            rows.append({
+                "run": rundir, "axis": axis, "var": axis.split("_")[0],
+                "scale": float(scale), "iter": int(it), "ip_a": float(ip),
+                "rel_err": float(rel),
+                "bs_change": None if bs == "n/a" else float(bs),
+                "q_change": None if q == "n/a" else float(q),
+            })
+    return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------
+# Symmetry
+# ----------------------------------------------------------------------
+
+def symmetry(df):
+    """Up-vs-down response per axis, with NO baseline assumed.
+
+    Grad-Shafranov and the Sauter/Wesson bootstrap are linear operators, so to
+    first order dIp(+f) = -dIp(-f). Write the two box-edge points as an odd
+    (linear) part and an even (rectified) part about the unperturbed value:
+
+        odd  = [Ip(up) - Ip(down)] / 2          <- the physical response
+        mid  = [Ip(up) + Ip(down)] / 2 = Ip(0) + even
+
+    These runs carry no scale=1.0 control, so Ip(0) is unknown -- but it is the
+    SAME number for every axis of a discharge. So under a linear response every
+    axis must share one `mid`, and the spread in `mid` across axes measures the
+    rectification directly, with nothing assumed. That is the test.
+
+    `rect_A` is each axis's mid minus the smallest mid in the discharge, i.e.
+    how far that axis's response is from purely odd. Adding a nominal point per
+    discharge would pin Ip(0) and make the even part absolute rather than
+    relative.
+    """
+    import pandas as pd
+
+    out = []
+    for (shot, tol), g in df[df.final_ip_a.notna()].groupby(["shot", "tol_q"]):
+        per_axis = {}
+        for axis, ga in g.groupby("axis"):
+            up = ga[ga.scale > 1]["final_ip_a"]
+            dn = ga[ga.scale < 1]["final_ip_a"]
+            if up.empty or dn.empty:
+                continue
+            u, d = float(up.iloc[0]), float(dn.iloc[0])
+            # mean |pedestal-top change| the axis actually bought, so the odd
+            # response can be normalised: a small response to a small
+            # perturbation is not the same finding as a small response to a
+            # large one.
+            f = float(ga.d_ped_top.abs().mean())
+            per_axis[axis] = dict(up_A=u, down_A=d, f=f,
+                                  odd_A=(u - d) / 2.0, mid_A=(u + d) / 2.0)
+        if not per_axis:
+            continue
+        mid0 = min(v["mid_A"] for v in per_axis.values())
+        for axis, v in per_axis.items():
+            out.append({"shot": shot, "tol_q": tol, "axis": axis,
+                        "Ip_up_A": v["up_A"], "Ip_down_A": v["down_A"],
+                        "d_ped_top": v["f"], "odd_A": v["odd_A"],
+                        "sens_A_per_unit": (v["odd_A"] / v["f"]) if v["f"] else np.nan,
+                        "mid_A": v["mid_A"],
+                        "rect_A": v["mid_A"] - mid0,
+                        "rect_over_odd": (abs(v["mid_A"] - mid0) / abs(v["odd_A"])
+                                          if v["odd_A"] else np.nan)})
+    return pd.DataFrame(out)
