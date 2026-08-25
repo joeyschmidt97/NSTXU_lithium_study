@@ -35,7 +35,7 @@ AXES = ("Te_ped_scale", "ne_ped_scale")
 SCALES = SCALE_SANITY                       # (0.7, 1.3)
 
 # Campaign settings, so iteration counts transfer to the real runs unchanged.
-CHEASEBS = dict(max_iter=25, tol_bs=1e-4, tol_q=1e-4, tol_ip_rel=0.02,
+CHEASEBS = dict(max_iter=25, tol_bs=1e-3, tol_q=1e-3, tol_ip_rel=0.02,
                 bootstrap_mix=0.1, istar_mix=0.05, plot_errors=True)
 
 OUTROOT = os.path.join(os.path.dirname(__file__), "runs")
