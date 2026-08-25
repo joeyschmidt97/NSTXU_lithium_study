@@ -1,0 +1,4 @@
+__pycache__/
+# Per-point solve artifacts (EQDSKs, profiles, iteration_errors.png) are bulky
+# and reproducible; the summary JSON one level up is the result worth keeping.
+runs/*/*/
