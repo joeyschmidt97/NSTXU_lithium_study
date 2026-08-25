@@ -224,7 +224,9 @@ class Discharge:
         phys = DischargePhysics(DischargeData(**kw))
         ds = phys.ds.copy()
         ds["pe"] = phys.ds["ne"] * phys.ds["Te"]
-        return DischargePhysics(ds)
+        # Carry the raw tree: rebuilding from a bare Dataset drops it, and with
+        # it the gfile, so shear()/alpha() would have no equilibrium to read.
+        return DischargePhysics(ds, _tree=phys._tree)
 
     def _ped_region(self, var="pe"):
         """Quarter-maximum band of |grad var| -- the pedestal, from the data.
