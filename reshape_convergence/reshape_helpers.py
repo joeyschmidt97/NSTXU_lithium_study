@@ -52,6 +52,7 @@ def _solve(disc, axis, scale, savedir, radii, base_ds=None):
         row["metric_error"] = f"{type(exc).__name__}: {exc}"
 
     phys = disc.scaled(axis, scale)
+    row["phys_in"] = phys          # scaled profiles on the FROZEN source geometry
     t0 = time.time()
     try:
         phys.output_gfile(
@@ -75,6 +76,13 @@ def _solve(disc, axis, scale, savedir, radii, base_ds=None):
         final_ip_a=summ.get("final_ip_a"), target_ip_a=summ.get("target_ip_a"),
     )
     row["gfile"] = _find_gfile(savedir)
+    # The reconstruction, reloaded so the notebook can plot and inspect it the
+    # same way it does the input.
+    try:
+        row["phys_out"] = load_run(savedir, row["gfile"])
+    except Exception as exc:
+        row["phys_out"] = None
+        row["reload_error"] = f"{type(exc).__name__}: {exc}"
     if row["gfile"] and base_ds is not None:
         try:
             row.update(profile_deltas(base_ds, row["gfile"]))
@@ -97,6 +105,27 @@ def _find_gfile(savedir):
     if out:
         return out[0]
     return None
+
+
+def load_run(savedir, gfile=None):
+    """The reconstruction as a DischargePhysics, for direct inspection/plotting.
+
+    Reloads the run directory: the EQDSK cheaseBS wrote plus the profiles_e/i/z
+    it emitted alongside.  Returns the same object type as the input side, so
+    .plot_gfile(), .plot(), .plot_geometry(), .ds and the transform history are
+    all available on the reconstruction rather than only on the source.
+
+    gfile defaults to the EQDSK*.OUT in savedir -- passing the directory alone
+    to DischargeData would let auto-discovery pick the g<shot>.<time> copy of
+    the INPUT geometry that sits beside it.
+    """
+    from TPED.projects.discharge_tools.src.discharge_data import DischargeData
+    from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
+
+    gfile = gfile or _find_gfile(savedir)
+    if gfile is None:
+        return None
+    return DischargePhysics(DischargeData(input_dir=savedir, gfile=gfile))
 
 
 def profile_deltas(base_ds, recon_path, rho_max=0.995):
@@ -155,9 +184,13 @@ def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT):
             rows.append(r)
 
     os.makedirs(workdir, exist_ok=True)
+    # DischargePhysics objects live on the rows for the notebook; they are not
+    # serialisable and would bloat the record, so they are dropped on the way out.
+    slim = [{k: v for k, v in r.items() if not k.startswith("phys_")}
+            for r in rows]
     with open(os.path.join(workdir, "reshape_convergence.json"), "w") as f:
         json.dump({"shot": shot, "radii": list(radii), "cheasebs": CHEASEBS,
-                   "rows": rows}, f, indent=1, default=str)
+                   "rows": slim}, f, indent=1, default=str)
     return rows, workdir
 
 
@@ -196,39 +229,3 @@ def table(rows, shot=None):
            "dp_max": "{:.2%}", "q_err@x0": "{:.2%}", "q_edge_err": "{:.2%}",
            "wall_s": "{:.0f}"}
     return df.style.format(fmt, na_rep="--").hide(axis="index")
-
-
-def plot_gfiles(rows, camp, shot, xcoord="rho_tor", **xlim):
-    """Baseline gfile against every reconstruction, on the q/F/p/p'/FF' panels.
-
-    Black is the source EFIT.  A reconstruction sitting on top of it means the
-    reshape did not reach the equilibrium; a spread means it did.
-    """
-    import matplotlib.colors as mcolors
-    import matplotlib.pyplot as plt
-
-    base = camp[shot].phys._tree["raw/gfile"].dataset
-    fig = GFilePlotsMixin.plot_gfile_profiles(
-        base, xcoord=xcoord, label="source EFIT", color="k", **xlim)
-
-    # Hex, not RGBA: plot_gfile_profiles does `color or panel_color`, and an
-    # RGBA array raises on the truth test.
-    colors = [mcolors.to_hex(c)
-              for c in plt.cm.coolwarm(np.linspace(0, 1, max(len(rows), 2)))]
-    drawn = 0
-    for r, c in zip(rows, colors):
-        path = r.get("gfile")
-        if not path or not os.path.isfile(path):
-            continue
-        ds = GFileData(path).gfile_to_xarray()
-        fig = GFilePlotsMixin.plot_gfile_profiles(
-            ds, fig=fig, xcoord=xcoord, color=c,
-            label=f"{r['axis'].replace('_ped_scale','')} {r['scale']:.2f}",
-            **xlim)
-        drawn += 1
-
-    if drawn == 0:
-        print("no reconstructed gfiles found -- solves raised, nothing to plot")
-    fig.suptitle(f"{shot} -- source vs cheaseBS reconstructions", y=1.0)
-    fig.tight_layout()
-    return fig
