@@ -41,7 +41,7 @@ CHEASEBS = dict(max_iter=25, tol_bs=1e-4, tol_q=1e-4, tol_ip_rel=0.02,
 OUTROOT = os.path.join(os.path.dirname(__file__), "runs")
 
 
-def _solve(disc, axis, scale, savedir, radii):
+def _solve(disc, axis, scale, savedir, radii, base_ds=None):
     """One reshape, one cheaseBS solve.  A raise is recorded, not propagated."""
     os.makedirs(savedir, exist_ok=True)
     row = {"axis": axis, "scale": scale, "savedir": savedir}
@@ -75,19 +75,67 @@ def _solve(disc, axis, scale, savedir, radii):
         final_ip_a=summ.get("final_ip_a"), target_ip_a=summ.get("target_ip_a"),
     )
     row["gfile"] = _find_gfile(savedir)
+    if row["gfile"] and base_ds is not None:
+        try:
+            row.update(profile_deltas(base_ds, row["gfile"]))
+        except Exception as exc:
+            row["delta_error"] = f"{type(exc).__name__}: {exc}"
     return row
 
 
 def _find_gfile(savedir):
-    """The reconstructed EQDSK cheaseBS copied back, or None."""
-    hits = [p for p in glob.glob(os.path.join(savedir, "g*"))
-            if os.path.isfile(p)]
-    return hits[0] if hits else None
+    """The RECONSTRUCTED EQDSK, not the source copy sitting beside it.
+
+    output_gfile writes the frozen source geometry into the run directory under
+    its original g<shot>.<time> name -- byte-identical to the input EFIT -- and
+    cheaseBS writes its result as EQDSK*.OUT (513x513, header "FROM CHEASE").
+    Globbing g* therefore picks the input, every delta comes out zero, and the
+    plot reads as "the reshape never reached the equilibrium".  Prefer the OUT.
+    """
+    out = sorted(p for p in glob.glob(os.path.join(savedir, "EQDSK*.OUT"))
+                 if os.path.isfile(p))
+    if out:
+        return out[0]
+    return None
+
+
+def profile_deltas(base_ds, recon_path, rho_max=0.995):
+    """Whole-profile change from source EFIT to reconstruction.
+
+    cheaseBS reshapes the entire equilibrium, so a q error read at the two GENE
+    analysis radii describes the two points the acceptance gate cares about and
+    says nothing about the other 127.  These are the numbers that answer "did
+    the reshape move the equilibrium, and where".
+
+    Stops at rho_max: the last flux surface carries a standing ~20% q error
+    that is a known grid/X-point artifact, and it would dominate every maximum.
+    """
+    recon = GFileData(recon_path).gfile_to_xarray()
+    rho_b = np.asarray(base_ds.coords["rho_tor"].values, dtype=float)
+    rho_r = np.asarray(recon.coords["rho_tor"].values, dtype=float)
+
+    m = rho_b <= rho_max
+    rho = rho_b[m]
+    out = {}
+    for key, name in (("q", "q"), ("p", "p")):
+        b = np.asarray(base_ds[key].values, dtype=float)[m]
+        r_full = np.asarray(recon[key].values, dtype=float)
+        o = np.argsort(rho_r)
+        r = np.interp(rho, rho_r[o], r_full[o])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rel = np.abs(r - b) / np.maximum(np.abs(b), 1e-30)
+        rel = np.where(np.isfinite(rel), rel, np.nan)
+        i = int(np.nanargmax(rel))
+        out[f"d{name}_max"] = float(rel[i])
+        out[f"d{name}_at_rho"] = float(rho[i])
+        out[f"d{name}_rms"] = float(np.sqrt(np.nanmean(rel**2)))
+    return out
 
 
 def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT):
     """Four solves for one discharge.  Returns (rows, workdir)."""
     disc, radii = camp[shot], ANALYSIS_RADII[shot]
+    base_ds = disc.phys._tree["raw/gfile"].dataset
     stamp = datetime.now().strftime("%Y%m%d_%H-%M-%S")
     workdir = os.path.abspath(os.path.join(outroot, f"{shot}_{stamp}"))
     print(f"{shot}  radii {radii}  {len(axes)*len(scales)} solves -> {workdir}")
@@ -97,7 +145,8 @@ def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT):
         for s in scales:
             print(f"  {axis} {s:.2f} ...", end="", flush=True)
             r = _solve(disc, axis, s,
-                       os.path.join(workdir, f"{axis}_{s:.3f}"), radii)
+                       os.path.join(workdir, f"{axis}_{s:.3f}"), radii,
+                       base_ds=base_ds)
             if "error" in r:
                 print(f" RAISED {r['error'][:60]}")
             else:
@@ -128,7 +177,13 @@ def table(rows, shot=None):
             "converged": r.get("converged"),
             "accepted": r.get("accepted"),
             "Ip_err": r.get("ip_error_rel"),
-            "q_err_max": max((abs(v) for v in q.values()), default=None),
+            # Whole profile -- cheaseBS reshapes all of it.
+            "dq_max": r.get("dq_max"),
+            "dq_at": r.get("dq_at_rho"),
+            "dq_rms": r.get("dq_rms"),
+            "dp_max": r.get("dp_max"),
+            # The two GENE analysis radii only: what the acceptance gate scores.
+            "q_err@x0": max((abs(v) for v in q.values()), default=None),
             "q_edge_err": r.get("q_edge_error_rel"),
             "wall_s": r.get("wall_s"),
             "status": "RAISED" if "error" in r else "",
@@ -137,7 +192,9 @@ def table(rows, shot=None):
     if shot is not None:
         df.insert(0, "shot", shot)
     fmt = {"ped_top": "{:.3e}", "ped_top/nom": "{:.3f}", "Ip_err": "{:.2%}",
-           "q_err_max": "{:.2%}", "q_edge_err": "{:.2%}", "wall_s": "{:.0f}"}
+           "dq_max": "{:.2%}", "dq_at": "{:.3f}", "dq_rms": "{:.2%}",
+           "dp_max": "{:.2%}", "q_err@x0": "{:.2%}", "q_edge_err": "{:.2%}",
+           "wall_s": "{:.0f}"}
     return df.style.format(fmt, na_rep="--").hide(axis="index")
 
 
