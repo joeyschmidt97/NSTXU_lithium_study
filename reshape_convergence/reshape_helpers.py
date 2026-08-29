@@ -35,14 +35,29 @@ AXES = ("Te_ped_scale", "ne_ped_scale")
 SCALES = SCALE_SANITY                       # (0.7, 1.3)
 
 # Campaign settings, so iteration counts transfer to the real runs unchanged.
-CHEASEBS = dict(max_iter=25, tol_bs=1e-3, tol_q=1e-3, tol_ip_rel=0.02,
+#
+# max_iter 50 (was 25, raised 2026-08-28). Two reasons. 25 was already binding
+# before the reference-profile fix -- 129038 exhausted it at all four box edges
+# and 132588 ne 1.30 was accepted having hit the cap, so "diverging" and "slow"
+# could not be told apart. And with that fix in, the downward points perturb the
+# equilibrium for real instead of stopping at the 2-iteration floor, so the cheap
+# half of the box is expected to cost what the expensive half did. A cap that
+# truncates the hard point is the failure mode being avoided here; the cost of
+# an unnecessarily high cap is only wall time on points that converge early.
+CHEASEBS = dict(max_iter=50, tol_bs=1e-3, tol_q=1e-3, tol_ip_rel=0.02,
                 bootstrap_mix=0.1, istar_mix=0.05, plot_errors=True)
 
 OUTROOT = os.path.join(os.path.dirname(__file__), "runs")
 
 
-def _solve(disc, axis, scale, savedir, radii, base_ds=None):
-    """One reshape, one cheaseBS solve.  A raise is recorded, not propagated."""
+def _solve(disc, axis, scale, savedir, radii, base_ds=None, cheasebs=None):
+    """One reshape, one cheaseBS solve.  A raise is recorded, not propagated.
+
+    cheasebs overrides the CHEASEBS solver settings for this solve; the batch
+    script uses it to vary max_iter without mutating module state that the
+    notebook is also reading.
+    """
+    cheasebs = CHEASEBS if cheasebs is None else cheasebs
     os.makedirs(savedir, exist_ok=True)
     row = {"axis": axis, "scale": scale, "savedir": savedir}
     try:
@@ -58,7 +73,7 @@ def _solve(disc, axis, scale, savedir, radii, base_ds=None):
         phys.output_gfile(
             savedir=savedir, run_cheasebs=True,
             cheasebs_acceptance=CheasebsAcceptance.production(analysis_radii=radii),
-            cheasebs_strict=False, comment=f"{axis}_{scale:.3f}", **CHEASEBS)
+            cheasebs_strict=False, comment=f"{axis}_{scale:.3f}", **cheasebs)
     except Exception as exc:
         row["error"] = f"{type(exc).__name__}: {exc}"
         row["wall_s"] = time.time() - t0
@@ -161,8 +176,10 @@ def profile_deltas(base_ds, recon_path, rho_max=0.995):
     return out
 
 
-def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT):
+def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT,
+               cheasebs=None):
     """Four solves for one discharge.  Returns (rows, workdir)."""
+    cheasebs = CHEASEBS if cheasebs is None else cheasebs
     disc, radii = camp[shot], ANALYSIS_RADII[shot]
     base_ds = disc.phys._tree["raw/gfile"].dataset
     stamp = datetime.now().strftime("%Y%m%d_%H-%M-%S")
@@ -175,7 +192,7 @@ def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT):
             print(f"  {axis} {s:.2f} ...", end="", flush=True)
             r = _solve(disc, axis, s,
                        os.path.join(workdir, f"{axis}_{s:.3f}"), radii,
-                       base_ds=base_ds)
+                       base_ds=base_ds, cheasebs=cheasebs)
             if "error" in r:
                 print(f" RAISED {r['error'][:60]}")
             else:
@@ -189,7 +206,7 @@ def run_bounds(camp, shot, axes=AXES, scales=SCALES, outroot=OUTROOT):
     slim = [{k: v for k, v in r.items() if not k.startswith("phys_")}
             for r in rows]
     with open(os.path.join(workdir, "reshape_convergence.json"), "w") as f:
-        json.dump({"shot": shot, "radii": list(radii), "cheasebs": CHEASEBS,
+        json.dump({"shot": shot, "radii": list(radii), "cheasebs": cheasebs,
                    "rows": slim}, f, indent=1, default=str)
     return rows, workdir
 
