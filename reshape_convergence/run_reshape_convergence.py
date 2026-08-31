@@ -129,6 +129,15 @@ def main(argv=None):
                     help="scan axes")
     ap.add_argument("--scales", type=float, nargs="+", default=list(rh.SCALES),
                     help="scale factors (box edges)")
+    # The under-relaxation factors, exposed because they are the knob that
+    # decides whether the outer loop converges at all: the 2026-08-31 truth-table
+    # audit found 17 of 30 post-fix points with residuals GROWING from their
+    # first value, so a mixing sweep is now a normal experiment rather than an
+    # edit to module state the notebook also reads.
+    ap.add_argument("--bootstrap-mix", type=float, default=rh.CHEASEBS["bootstrap_mix"],
+                    help="damping on the lagged bootstrap update")
+    ap.add_argument("--istar-mix", type=float, default=rh.CHEASEBS["istar_mix"],
+                    help="damping on the replayed total I* update")
     ap.add_argument("--outroot", default=rh.OUTROOT,
                     help="where per-shot run directories are written")
     ap.add_argument("--log", default=None,
@@ -143,7 +152,8 @@ def main(argv=None):
     sys.stdout = tee
     sys.stderr = tee
 
-    cheasebs = dict(rh.CHEASEBS, max_iter=args.max_iter)
+    cheasebs = dict(rh.CHEASEBS, max_iter=args.max_iter,
+                    bootstrap_mix=args.bootstrap_mix, istar_mix=args.istar_mix)
 
     print(f"=== reshape convergence campaign {stamp} ===")
     print(f"log       : {log_path}")
