@@ -1,9 +1,9 @@
 {
  "scored_iteration": "final",
  "totals": {
-  "PASS": 749,
+  "PASS": 755,
   "FLAG": 158,
-  "FAIL": 95,
+  "FAIL": 89,
   "SKIP": 93
  },
  "cases": [
@@ -148,15 +148,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9616289873456478,
-     "delta": -0.038371012654352166,
+     "value": 0.8075281905992946,
+     "delta": -0.1924718094007054,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.820. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.962, peak 0.806 at rho_tor 0.860 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -554,15 +554,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.0423675259561382,
-     "delta": 0.04236752595613824,
+     "value": 1.1971445715745908,
+     "delta": 0.19714457157459075,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.180. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.042, peak 1.202 at rho_tor 0.818 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -960,15 +960,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8239699448485245,
-     "delta": -0.17603005515147552,
+     "value": 0.7095115990156008,
+     "delta": -0.2904884009843992,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.711. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.824, peak 0.709 at rho_tor 0.884 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -1366,15 +1366,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.1768575993596957,
-     "delta": 0.1768575993596957,
+     "value": 1.2879304899815314,
+     "delta": 0.28793048998153137,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.289. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.177, peak 1.292 at rho_tor 0.872 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -1772,15 +1772,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9616289873456478,
-     "delta": -0.038371012654352166,
+     "value": 0.8075281905992946,
+     "delta": -0.1924718094007054,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.820. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.962, peak 0.806 at rho_tor 0.860 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -2178,15 +2178,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.0423675259561382,
-     "delta": 0.04236752595613824,
+     "value": 1.1971445715745908,
+     "delta": 0.19714457157459075,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.180. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.042, peak 1.202 at rho_tor 0.818 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -2584,15 +2584,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8239699448485245,
-     "delta": -0.17603005515147552,
+     "value": 0.7095115990156008,
+     "delta": -0.2904884009843992,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.711. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.824, peak 0.709 at rho_tor 0.884 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -2990,15 +2990,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.1768575993596957,
-     "delta": 0.1768575993596957,
+     "value": 1.2879304899815314,
+     "delta": 0.28793048998153137,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.289. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.177, peak 1.292 at rho_tor 0.872 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -3396,15 +3396,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8634791276450469,
-     "delta": -0.13652087235495314,
+     "value": 0.802087922050268,
+     "delta": -0.19791207794973198,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.818. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.863, peak 0.769 at rho_tor 0.698 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -3802,15 +3802,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.137073419402262,
-     "delta": 0.13707341940226203,
+     "value": 1.2012275716976286,
+     "delta": 0.20122757169762862,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.180. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.137, peak 1.230 at rho_tor 0.714 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -4208,15 +4208,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8051456767158294,
-     "delta": -0.19485432328417063,
+     "value": 0.7322029198861332,
+     "delta": -0.2677970801138668,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.758. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.805, peak 0.701 at rho_tor 0.706 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -4614,15 +4614,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.18485725766135,
-     "delta": 0.18485725766135008,
+     "value": 1.2710573196357542,
+     "delta": 0.2710573196357542,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.241. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.185, peak 1.294 at rho_tor 0.614 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -5020,15 +5020,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8634791276450469,
-     "delta": -0.13652087235495314,
+     "value": 0.802087922050268,
+     "delta": -0.19791207794973198,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.818. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.863, peak 0.769 at rho_tor 0.698 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -5426,15 +5426,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.137073419402262,
-     "delta": 0.13707341940226203,
+     "value": 1.2012275716976286,
+     "delta": 0.20122757169762862,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.180. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.137, peak 1.230 at rho_tor 0.714 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -5832,15 +5832,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8051456767158294,
-     "delta": -0.19485432328417063,
+     "value": 0.7322029198861332,
+     "delta": -0.2677970801138668,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.758. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 0.805, peak 0.701 at rho_tor 0.706 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -6238,15 +6238,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.18485725766135,
-     "delta": 0.18485725766135008,
+     "value": 1.2710573196357542,
+     "delta": 0.2710573196357542,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.241. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.850 (campaign analysis radius). whole-profile median 1.185, peak 1.294 at rho_tor 0.614 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -6644,7 +6644,7 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
@@ -6652,7 +6652,7 @@
      "delta": 0.0,
      "tol": null,
      "verdict": "FAIL",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.000. reference = REF_profiles (eiz); active species eiz. unchanged (|d| < 0.001) -- the scaled profiles may never have reached CHEASE",
+     "note": "p_th ratio at rho_tor 0.900 (default 0.9). whole-profile median 1.000, peak 1.000 at rho_tor 0.000 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz. unchanged (|d| < 0.001) -- the scaled profiles may never have reached CHEASE",
      "fmt": "{:.4g}"
     },
     {
@@ -7050,15 +7050,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.0132327791118683,
-     "delta": 0.013232779111868265,
+     "value": 0.9176156031321776,
+     "delta": -0.0823843968678224,
      "tol": null,
-     "verdict": "FAIL",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.927. reference = REF_profiles (eiz); active species eiz. moved the wrong way for scale 0.7",
+     "verdict": "PASS",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 1.013, peak 0.910 at rho_tor 0.843 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -7456,15 +7456,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9931420993630267,
-     "delta": -0.006857900636973335,
+     "value": 1.054308808767579,
+     "delta": 0.05430880876757893,
      "tol": null,
-     "verdict": "FAIL",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.076. reference = REF_profiles (eiz); active species eiz. moved the wrong way for scale 1.3",
+     "verdict": "PASS",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.993, peak 1.089 at rho_tor 0.875 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -7862,15 +7862,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8200849474140698,
-     "delta": -0.1799150525859302,
+     "value": 0.7282308199046907,
+     "delta": -0.27176918009530926,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.733. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.820, peak 0.724 at rho_tor 0.864 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -8268,15 +8268,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.0132327791118683,
-     "delta": 0.013232779111868265,
+     "value": 0.9176156031321776,
+     "delta": -0.0823843968678224,
      "tol": null,
-     "verdict": "FAIL",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.927. reference = REF_profiles (eiz); active species eiz. moved the wrong way for scale 0.7",
+     "verdict": "PASS",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 1.013, peak 0.910 at rho_tor 0.843 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -8674,15 +8674,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9931420993630267,
-     "delta": -0.006857900636973335,
+     "value": 1.054308808767579,
+     "delta": 0.05430880876757893,
      "tol": null,
-     "verdict": "FAIL",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.076. reference = REF_profiles (eiz); active species eiz. moved the wrong way for scale 1.3",
+     "verdict": "PASS",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.993, peak 1.089 at rho_tor 0.875 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -9080,15 +9080,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.8200849474140698,
-     "delta": -0.1799150525859302,
+     "value": 0.7282308199046907,
+     "delta": -0.27176918009530926,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.733. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.820, peak 0.724 at rho_tor 0.864 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -9486,15 +9486,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9966012306608226,
-     "delta": -0.0033987693391773766,
+     "value": 0.9792862329287135,
+     "delta": -0.02071376707128647,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.943. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.997, peak 0.908 at rho_tor 0.000 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -9892,15 +9892,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.0152549019869994,
-     "delta": 0.015254901986999414,
+     "value": 1.030057868193594,
+     "delta": 0.030057868193593906,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.060. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 1.015, peak 0.908 at rho_tor 0.000 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -10298,15 +10298,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9930096156663974,
-     "delta": -0.006990384333602551,
+     "value": 0.7803430892287646,
+     "delta": -0.2196569107712354,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.791. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.993, peak 0.779 at rho_tor 0.839 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -10704,15 +10704,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.1114837910836934,
-     "delta": 0.11148379108369344,
+     "value": 1.3520249515109792,
+     "delta": 0.35202495151097923,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.354. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 1.111, peak 1.398 at rho_tor 0.986 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -11110,15 +11110,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9966012306608226,
-     "delta": -0.0033987693391773766,
+     "value": 0.9792862329287135,
+     "delta": -0.02071376707128647,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.943. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.997, peak 0.908 at rho_tor 0.000 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -11516,15 +11516,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.0152549019869994,
-     "delta": 0.015254901986999414,
+     "value": 1.030057868193594,
+     "delta": 0.030057868193593906,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.060. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 1.015, peak 0.908 at rho_tor 0.000 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -11922,15 +11922,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 0.9930096156663974,
-     "delta": -0.006990384333602551,
+     "value": 0.7803430892287646,
+     "delta": -0.2196569107712354,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 0.791. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 0.993, peak 0.779 at rho_tor 0.839 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -12328,15 +12328,15 @@
      "fmt": "{:.4g}"
     },
     {
-     "check": "p_th_profile_scale",
+     "check": "p_th_at_radius",
      "group": "response",
      "expect": "changes",
      "reference": 1.0,
-     "value": 1.1114837910836934,
-     "delta": 0.11148379108369344,
+     "value": 1.3520249515109792,
+     "delta": 0.35202495151097923,
      "tol": null,
      "verdict": "PASS",
-     "note": "median p_th ratio over rho_tor<=0.995; at 0.9: 1.354. reference = REF_profiles (eiz); active species eiz.",
+     "note": "p_th ratio at rho_tor 0.825 (campaign analysis radius). whole-profile median 1.111, peak 1.398 at rho_tor 0.986 -- the median understates a pedestal-only scale and can invert, so it is context only. reference = REF_profiles (eiz); active species eiz.",
      "fmt": "{:.4g}"
     },
     {
@@ -12621,11 +12621,11 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.9616 (x0.70)",
-    "value": "1.042 (x1.30)",
+    "reference": "0.8075 (x0.70)",
+    "value": "1.197 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -12669,11 +12669,11 @@
     "fmt": "{}"
    },
    {
-    "check": "ne/p_th_profile_scale",
+    "check": "ne/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.824 (x0.70)",
-    "value": "1.177 (x1.30)",
+    "reference": "0.7095 (x0.70)",
+    "value": "1.288 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -12743,11 +12743,11 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.9616 (x0.70)",
-    "value": "1.042 (x1.30)",
+    "reference": "0.8075 (x0.70)",
+    "value": "1.197 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -12791,11 +12791,11 @@
     "fmt": "{}"
    },
    {
-    "check": "ne/p_th_profile_scale",
+    "check": "ne/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.824 (x0.70)",
-    "value": "1.177 (x1.30)",
+    "reference": "0.7095 (x0.70)",
+    "value": "1.288 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -12865,11 +12865,11 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.8635 (x0.70)",
-    "value": "1.137 (x1.30)",
+    "reference": "0.8021 (x0.70)",
+    "value": "1.201 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -12913,11 +12913,11 @@
     "fmt": "{}"
    },
    {
-    "check": "ne/p_th_profile_scale",
+    "check": "ne/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.8051 (x0.70)",
-    "value": "1.185 (x1.30)",
+    "reference": "0.7322 (x0.70)",
+    "value": "1.271 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -12987,11 +12987,11 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.8635 (x0.70)",
-    "value": "1.137 (x1.30)",
+    "reference": "0.8021 (x0.70)",
+    "value": "1.201 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -13035,11 +13035,11 @@
     "fmt": "{}"
    },
    {
-    "check": "ne/p_th_profile_scale",
+    "check": "ne/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.8051 (x0.70)",
-    "value": "1.185 (x1.30)",
+    "reference": "0.7322 (x0.70)",
+    "value": "1.271 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -13109,15 +13109,15 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "1.013 (x0.70)",
-    "value": "0.9931 (x1.30)",
+    "reference": "0.9176 (x0.70)",
+    "value": "1.054 (x1.30)",
     "delta": null,
     "tol": null,
-    "verdict": "FAIL",
-    "note": "ordering reversed: the scale was not applied as intended, or another setting changed between the two points",
+    "verdict": "PASS",
+    "note": "",
     "fmt": "{}"
    },
    {
@@ -13183,15 +13183,15 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "1.013 (x0.70)",
-    "value": "0.9931 (x1.30)",
+    "reference": "0.9176 (x0.70)",
+    "value": "1.054 (x1.30)",
     "delta": null,
     "tol": null,
-    "verdict": "FAIL",
-    "note": "ordering reversed: the scale was not applied as intended, or another setting changed between the two points",
+    "verdict": "PASS",
+    "note": "",
     "fmt": "{}"
    },
    {
@@ -13257,11 +13257,11 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.9966 (x0.70)",
-    "value": "1.015 (x1.30)",
+    "reference": "0.9793 (x0.70)",
+    "value": "1.03 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -13305,11 +13305,11 @@
     "fmt": "{}"
    },
    {
-    "check": "ne/p_th_profile_scale",
+    "check": "ne/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.993 (x0.70)",
-    "value": "1.111 (x1.30)",
+    "reference": "0.7803 (x0.70)",
+    "value": "1.352 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -13379,11 +13379,11 @@
     "fmt": "{:.4g}"
    },
    {
-    "check": "Te/p_th_profile_scale",
+    "check": "Te/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.9966 (x0.70)",
-    "value": "1.015 (x1.30)",
+    "reference": "0.9793 (x0.70)",
+    "value": "1.03 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
@@ -13427,11 +13427,11 @@
     "fmt": "{}"
    },
    {
-    "check": "ne/p_th_profile_scale",
+    "check": "ne/p_th_at_radius",
     "group": "campaign",
     "expect": "low < high",
-    "reference": "0.993 (x0.70)",
-    "value": "1.111 (x1.30)",
+    "reference": "0.7803 (x0.70)",
+    "value": "1.352 (x1.30)",
     "delta": null,
     "tol": null,
     "verdict": "PASS",
