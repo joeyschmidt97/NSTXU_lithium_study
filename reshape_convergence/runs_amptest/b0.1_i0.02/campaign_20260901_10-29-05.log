@@ -1,0 +1,29 @@
+=== reshape convergence campaign 20260901_10-29-05 ===
+log       : runs_amptest/b0.1_i0.02/campaign_20260901_10-29-05.log
+shots     : [129015]
+axes      : ['ne_ped_scale']
+scales    : [0.7]
+cheaseBS  : {'max_iter': 45, 'tol_bs': 0.001, 'tol_q': 0.001, 'tol_ip_rel': 0.02, 'bootstrap_mix': 0.1, 'istar_mix': 0.02, 'plot_errors': True, 'amplitude_warmup_iters': 0}
+solves    : 1
+pid       : 2152516
+
+loading and fitting 1 discharge(s) ...
+  done in 1s
+
+--- 129015  radii (0.85,) ---
+129015  radii (0.85,)  1 solves -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest/b0.1_i0.02/129015_20260901_10-29-06
+  ne_ped_scale 0.70 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/cheasebs_run_config.json
+[cheaseBS] no iteration_log.csv in /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700; no error plot written
+ RAISED RuntimeError: cheaseBS exited with code 1. Check output abov
+shot 129015
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   ne_ped_scale  0.70  3.070e+19  0.713    --    --    --      --      --     --      --      --    1826  RAISED
+  129015 done in 1826s -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest/b0.1_i0.02/129015_20260901_10-29-06
+
+=== campaign summary ===
+  129015: iters=[None] accepted=[None] 1826s
+  total wall: 1827s
+  PROBLEM shots (raised or not fully accepted): [129015]
+
+log: runs_amptest/b0.1_i0.02/campaign_20260901_10-29-05.log

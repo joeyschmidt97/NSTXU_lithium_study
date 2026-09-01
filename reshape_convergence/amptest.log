@@ -1,0 +1,11 @@
+nohup: ignoring input
+=== mixing sweep: shot 129015  ne_ped_scale 0.70  max_iter 45 ===
+settings: b0.1/i0.02
+outroot : runs_amptest
+probe cost ~ 45 iterations each; direction is the verdict, proj is the cost
+
+--- b0.1_i0.02 ---
+  $ /global/homes/j/joeschm/.conda/envs/TPED/bin/python -u /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py --shots 129015 --axes ne_ped_scale --scales 0.7 --max-iter 45 --bootstrap-mix 0.1 --istar-mix 0.02 --outroot runs_amptest/b0.1_i0.02 --amplitude-warmup-iters 0
+  log: runs_amptest/b0.1_i0.02/solve.log  (tail -f it for the solver's own output)
+  the discharge is loaded and fitted first, so the first iteration is a few minutes away
+    iteration 0/45  (1 min elapsed)

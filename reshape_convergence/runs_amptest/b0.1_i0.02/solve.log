@@ -1,0 +1,130 @@
+=== reshape convergence campaign 20260901_10-29-05 ===
+log       : runs_amptest/b0.1_i0.02/campaign_20260901_10-29-05.log
+shots     : [129015]
+axes      : ['ne_ped_scale']
+scales    : [0.7]
+cheaseBS  : {'max_iter': 45, 'tol_bs': 0.001, 'tol_q': 0.001, 'tol_ip_rel': 0.02, 'bootstrap_mix': 0.1, 'istar_mix': 0.02, 'plot_errors': True, 'amplitude_warmup_iters': 0}
+solves    : 1
+pid       : 2152516
+
+loading and fitting 1 discharge(s) ...
+[WARNING] TPED.projects.discharge_tools.src.discharge_data: time_ms mismatch: g129015.00409_450→409ms, p129015.00400_x8099→400ms  (files: /global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129015/g129015.00409_450, /global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129015/p129015.00400_x8099)
+  done in 1s
+
+--- 129015  radii (0.85,) ---
+129015  radii (0.85,)  1 solves -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest/b0.1_i0.02/129015_20260901_10-29-06
+  ne_ped_scale 0.70 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/cheasebs_run_config.json
+Starting iterative CHEASE workflow (coordinate=rhop, replay=istar, qspec=on)
+Output directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700
+Baseline directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/cheasebs_baseline
+Run targets: Ip=753908.302 A (source 753908.302 A), Bt=-0.475509 T (source -0.475509 T)
+Rebuilding baseline decomposition from reference profiles
+Preparing baseline inputs from g129015.00409
+Baseline radial mapping complete
+Baseline Step 1 complete: thermal/fast pressure split and Zeff
+Baseline Step 2 complete: bootstrap/driven current decomposition
+Baseline outputs written
+Baseline rebuild complete: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/cheasebs_baseline
+Starting iterative replay with target Ip=753908.302 A and initial amplitude=1.000000
+Iteration 00: running CHEASE (amplitude=1.000000, replay=I*, qspec=on)
+Iteration 00 complete: Ip=729233.916 A, rel_error=3.273e-02, bs_change=n/a, q_change=n/a, next_amplitude=1.017e+00, converged=no
+Iteration 01: running CHEASE (amplitude=1.016918, replay=I*, qspec=on)
+Iteration 01 complete: Ip=728930.149 A, rel_error=3.313e-02, bs_change=8.321e-05, q_change=2.930e-04, next_amplitude=6.779e-01, converged=no
+Iteration 02: running CHEASE (amplitude=0.677945, replay=I*, qspec=on)
+Iteration 02 complete: Ip=729553.972 A, rel_error=3.230e-02, bs_change=2.507e-04, q_change=4.592e-04, next_amplitude=4.520e-01, converged=no
+Iteration 03: running CHEASE (amplitude=0.451964, replay=I*, qspec=on)
+Iteration 03 complete: Ip=730766.855 A, rel_error=3.070e-02, bs_change=4.874e-04, q_change=8.046e-04, next_amplitude=3.013e-01, converged=no
+Iteration 04: running CHEASE (amplitude=0.301309, replay=I*, qspec=on)
+Iteration 04 complete: Ip=732361.454 A, rel_error=2.858e-02, bs_change=6.604e-04, q_change=9.864e-04, next_amplitude=2.009e-01, converged=no
+Iteration 05: running CHEASE (amplitude=0.200873, replay=I*, qspec=on)
+Iteration 05 complete: Ip=734227.706 A, rel_error=2.610e-02, bs_change=7.926e-04, q_change=1.096e-03, next_amplitude=1.339e-01, converged=no
+Iteration 06: running CHEASE (amplitude=0.133915, replay=I*, qspec=on)
+Iteration 06 complete: Ip=736304.252 A, rel_error=2.335e-02, bs_change=8.971e-04, q_change=1.169e-03, next_amplitude=8.928e-02, converged=no
+Iteration 07: running CHEASE (amplitude=0.089277, replay=I*, qspec=on)
+Iteration 07 complete: Ip=738541.738 A, rel_error=2.038e-02, bs_change=9.785e-04, q_change=1.214e-03, next_amplitude=5.952e-02, converged=no
+Iteration 08: running CHEASE (amplitude=0.059518, replay=I*, qspec=on)
+Iteration 08 complete: Ip=740920.433 A, rel_error=1.723e-02, bs_change=1.047e-03, q_change=1.245e-03, next_amplitude=3.968e-02, converged=no
+Iteration 09: running CHEASE (amplitude=0.039679, replay=I*, qspec=on)
+Iteration 09 complete: Ip=743402.059 A, rel_error=1.394e-02, bs_change=1.105e-03, q_change=1.267e-03, next_amplitude=2.645e-02, converged=no
+Iteration 10: running CHEASE (amplitude=0.026452, replay=I*, qspec=on)
+Iteration 10 complete: Ip=745965.714 A, rel_error=1.054e-02, bs_change=1.155e-03, q_change=1.284e-03, next_amplitude=1.763e-02, converged=no
+Iteration 11: running CHEASE (amplitude=0.017635, replay=I*, qspec=on)
+Iteration 11 complete: Ip=748636.580 A, rel_error=6.993e-03, bs_change=1.199e-03, q_change=1.297e-03, next_amplitude=1.176e-02, converged=no
+Iteration 12: running CHEASE (amplitude=0.011757, replay=I*, qspec=on)
+Iteration 12 complete: Ip=751417.436 A, rel_error=3.304e-03, bs_change=1.239e-03, q_change=1.306e-03, next_amplitude=1.000e-02, converged=no
+Iteration 13: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 13 complete: Ip=754279.506 A, rel_error=4.924e-04, bs_change=1.273e-03, q_change=1.310e-03, next_amplitude=1.016e-02, converged=no
+Iteration 14: running CHEASE (amplitude=0.010159, replay=I*, qspec=on)
+Iteration 14 complete: Ip=757204.647 A, rel_error=4.372e-03, bs_change=1.302e-03, q_change=1.311e-03, next_amplitude=1.003e-02, converged=no
+Iteration 15: running CHEASE (amplitude=0.010034, replay=I*, qspec=on)
+Iteration 15 complete: Ip=760214.231 A, rel_error=8.364e-03, bs_change=1.329e-03, q_change=1.312e-03, next_amplitude=1.022e-02, converged=no
+Iteration 16: running CHEASE (amplitude=0.010218, replay=I*, qspec=on)
+Iteration 16 complete: Ip=763394.222 A, rel_error=1.258e-02, bs_change=1.354e-03, q_change=1.313e-03, next_amplitude=1.000e-02, converged=no
+Iteration 17: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 17 complete: Ip=766580.002 A, rel_error=1.681e-02, bs_change=1.377e-03, q_change=1.315e-03, next_amplitude=1.061e-02, converged=no
+Iteration 18: running CHEASE (amplitude=0.010608, replay=I*, qspec=on)
+Iteration 18 complete: Ip=769844.117 A, rel_error=2.114e-02, bs_change=1.401e-03, q_change=1.317e-03, next_amplitude=1.000e-02, converged=no
+Iteration 19: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 19 complete: Ip=773291.528 A, rel_error=2.571e-02, bs_change=1.420e-03, q_change=1.321e-03, next_amplitude=1.239e-02, converged=no
+Iteration 20: running CHEASE (amplitude=0.012391, replay=I*, qspec=on)
+Iteration 20 complete: Ip=776855.251 A, rel_error=3.044e-02, bs_change=1.433e-03, q_change=1.318e-03, next_amplitude=1.000e-02, converged=no
+Iteration 21: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 21 complete: Ip=780502.988 A, rel_error=3.528e-02, bs_change=1.451e-03, q_change=1.327e-03, next_amplitude=1.500e-02, converged=no
+Iteration 22: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 22 complete: Ip=784265.961 A, rel_error=4.027e-02, bs_change=1.456e-03, q_change=1.318e-03, next_amplitude=1.000e-02, converged=no
+Iteration 23: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 23 complete: Ip=788285.940 A, rel_error=4.560e-02, bs_change=1.471e-03, q_change=1.333e-03, next_amplitude=1.500e-02, converged=no
+Iteration 24: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 24 complete: Ip=792405.713 A, rel_error=5.106e-02, bs_change=1.471e-03, q_change=1.322e-03, next_amplitude=1.000e-02, converged=no
+Iteration 25: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 25 complete: Ip=796674.955 A, rel_error=5.673e-02, bs_change=1.480e-03, q_change=1.336e-03, next_amplitude=1.500e-02, converged=no
+Iteration 26: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 26 complete: Ip=801082.125 A, rel_error=6.257e-02, bs_change=1.450e-03, q_change=1.309e-03, next_amplitude=1.000e-02, converged=no
+Iteration 27: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 27 complete: Ip=805698.474 A, rel_error=6.870e-02, bs_change=1.453e-03, q_change=1.322e-03, next_amplitude=1.500e-02, converged=no
+Iteration 28: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 28 complete: Ip=810314.434 A, rel_error=7.482e-02, bs_change=1.437e-03, q_change=1.305e-03, next_amplitude=1.000e-02, converged=no
+Iteration 29: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 29 complete: Ip=815392.006 A, rel_error=8.155e-02, bs_change=1.430e-03, q_change=1.315e-03, next_amplitude=1.500e-02, converged=no
+Iteration 30: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 30 complete: Ip=820801.239 A, rel_error=8.873e-02, bs_change=1.373e-03, q_change=1.283e-03, next_amplitude=1.000e-02, converged=no
+Iteration 31: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 31 complete: Ip=826274.900 A, rel_error=9.599e-02, bs_change=1.364e-03, q_change=1.300e-03, next_amplitude=1.500e-02, converged=no
+Iteration 32: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 32 complete: Ip=832414.730 A, rel_error=1.041e-01, bs_change=1.326e-03, q_change=1.284e-03, next_amplitude=1.000e-02, converged=no
+Iteration 33: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 33 complete: Ip=839301.409 A, rel_error=1.133e-01, bs_change=1.290e-03, q_change=1.302e-03, next_amplitude=1.500e-02, converged=no
+Iteration 34: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 34 complete: Ip=846770.026 A, rel_error=1.232e-01, bs_change=1.285e-03, q_change=1.301e-03, next_amplitude=1.000e-02, converged=no
+Iteration 35: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 35 complete: Ip=855782.948 A, rel_error=1.351e-01, bs_change=1.257e-03, q_change=1.328e-03, next_amplitude=1.500e-02, converged=no
+Iteration 36: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 36 complete: Ip=865623.392 A, rel_error=1.482e-01, bs_change=1.077e-03, q_change=1.320e-03, next_amplitude=1.000e-02, converged=no
+Iteration 37: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 37 complete: Ip=877640.738 A, rel_error=1.641e-01, bs_change=8.783e-04, q_change=1.385e-03, next_amplitude=1.500e-02, converged=no
+Iteration 38: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 38 complete: Ip=890211.991 A, rel_error=1.808e-01, bs_change=6.485e-04, q_change=1.466e-03, next_amplitude=1.000e-02, converged=no
+Iteration 39: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 39 complete: Ip=906925.708 A, rel_error=2.030e-01, bs_change=3.687e-04, q_change=1.706e-03, next_amplitude=1.500e-02, converged=no
+Iteration 40: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 40 complete: Ip=931109.081 A, rel_error=2.350e-01, bs_change=1.133e-03, q_change=2.541e-03, next_amplitude=1.000e-02, converged=no
+Iteration 41: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+Iteration 41 complete: Ip=974438.951 A, rel_error=2.925e-01, bs_change=1.377e-03, q_change=1.514e-03, next_amplitude=1.500e-02, converged=no
+Iteration 42: running CHEASE (amplitude=0.015000, replay=I*, qspec=on)
+Iteration 42 complete: Ip=1099109.988 A, rel_error=4.579e-01, bs_change=1.147e-01, q_change=1.306e-01, next_amplitude=1.000e-02, converged=no
+Iteration 43: running CHEASE (amplitude=0.010000, replay=I*, qspec=on)
+CHEASE did not produce an EQDSK output in /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700/iteration_43/chease_closure_q4y87fd3/stage
+[cheaseBS] no iteration_log.csv in /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_10-29-06-ne_ped_scale_0.700; no error plot written
+ RAISED RuntimeError: cheaseBS exited with code 1. Check output abov
+shot 129015
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   ne_ped_scale  0.70  3.070e+19  0.713    --    --    --      --      --     --      --      --    1826  RAISED
+  129015 done in 1826s -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest/b0.1_i0.02/129015_20260901_10-29-06
+
+=== campaign summary ===
+  129015: iters=[None] accepted=[None] 1826s
+  total wall: 1827s
+  PROBLEM shots (raised or not fully accepted): [129015]
+
+log: runs_amptest/b0.1_i0.02/campaign_20260901_10-29-05.log
