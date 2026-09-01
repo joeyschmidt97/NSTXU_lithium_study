@@ -1,0 +1,45 @@
+{
+ "shot": 132588,
+ "radii": [
+  0.736,
+  0.825
+ ],
+ "cheasebs": {
+  "max_iter": 45,
+  "tol_bs": 0.001,
+  "tol_q": 0.001,
+  "tol_ip_rel": 0.02,
+  "bootstrap_mix": 0.05,
+  "istar_mix": 0.05,
+  "plot_errors": true
+ },
+ "rows": [
+  {
+   "axis": "ne_ped_scale",
+   "scale": 0.7,
+   "savedir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.05_i0.05/132588_20260831_16-39-40/ne_ped_scale_0.700",
+   "metric": 5.2800803686693765e+19,
+   "metric_ratio": 0.8652197724907665,
+   "wall_s": 2578.7230277061462,
+   "accepted": true,
+   "reasons": [],
+   "ip_error_rel": 0.013746055043819032,
+   "q_errors_rel": {
+    "0.736": 0.005041323078597415,
+    "0.825": 0.019688876916621426
+   },
+   "q_edge_error_rel": 0.23488413769161443,
+   "iterations": 45,
+   "converged": false,
+   "final_ip_a": 996851.7236,
+   "target_ip_a": 983334.75,
+   "gfile": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.05_i0.05/132588_20260831_16-39-40/ne_ped_scale_0.700/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+   "dq_max": 0.6725959372670938,
+   "dq_at_rho": 0.15561774551144641,
+   "dq_rms": 0.22932425345686186,
+   "dp_max": 0.12355668306817519,
+   "dp_at_rho": 0.4026785005320904,
+   "dp_rms": 0.07544689064308882
+  }
+ ]
+}
