@@ -136,9 +136,17 @@ def point_dir(outroot, shot, axis, scale):
     return hits[-1] if hits else None
 
 
-def solve(shot, axis, scale, max_iter, mix, outroot, log_path):
+def solve(shot, axis, scale, max_iter, mix, outroot, log_path, poll_s=30.0):
     """One campaign run at one mixing setting. Never raises: a failed setting
-    is a result, and the remaining settings are still worth their wall time."""
+    is a result, and the remaining settings are still worth their wall time.
+
+    The child's output goes to log_path rather than the terminal, so that a
+    sweep of three settings does not interleave three solvers' chatter. That
+    silence is indistinguishable from a hang over the ~45 minutes a setting
+    takes, so the iteration count is polled off the run's own iteration_log.csv
+    and echoed here. Progress is read from the file the solver is already
+    writing -- nothing is inferred from elapsed time.
+    """
     b, i = mix
     cmd = [sys.executable, "-u", RUNNER,
            "--shots", str(shot), "--axes", axis, "--scales", "%g" % scale,
@@ -146,10 +154,23 @@ def solve(shot, axis, scale, max_iter, mix, outroot, log_path):
            "--bootstrap-mix", "%g" % b, "--istar-mix", "%g" % i,
            "--outroot", outroot]
     print("  $ " + " ".join(cmd), flush=True)
+    print("  log: %s  (tail -f it for the solver's own output)" % log_path,
+          flush=True)
+    print("  the discharge is loaded and fitted first, so the first iteration "
+          "is a few minutes away", flush=True)
     t0 = time.time()
     with open(log_path, "w", encoding="utf-8") as fh:
-        proc = subprocess.run(cmd, cwd=HERE, stdout=fh,
-                              stderr=subprocess.STDOUT)
+        proc = subprocess.Popen(cmd, cwd=HERE, stdout=fh,
+                                stderr=subprocess.STDOUT)
+        last = -1
+        while proc.poll() is None:
+            time.sleep(poll_s)
+            n = len(read_trace(os.path.join(point_dir(outroot, shot, axis, scale)
+                                            or "", "iteration_log.csv")))
+            if n != last:
+                last = n
+                print("    iteration %d/%d  (%.0f min elapsed)"
+                      % (n, max_iter, (time.time() - t0) / 60.0), flush=True)
     return proc.returncode, time.time() - t0
 
 
@@ -170,6 +191,8 @@ def main(argv=None):
                     help="tolerance the projection targets")
     ap.add_argument("--outroot", default=os.path.join(HERE, "runs_mixsweep"),
                     help="parent directory for the per-setting run directories")
+    ap.add_argument("--poll", type=float, default=30.0,
+                    help="seconds between progress lines while a solve runs")
     ap.add_argument("--score-only", action="store_true",
                     help="re-read existing sweep directories, solve nothing")
     args = ap.parse_args(argv)
@@ -193,7 +216,8 @@ def main(argv=None):
             os.makedirs(sub, exist_ok=True)
             print("--- %s ---" % tag, flush=True)
             rc, wall = solve(args.shot, args.axis, args.scale, args.max_iter,
-                             (b, i), sub, os.path.join(sub, "solve.log"))
+                             (b, i), sub, os.path.join(sub, "solve.log"),
+                             poll_s=args.poll)
             print("  exit %s in %.0f s" % (rc, wall), flush=True)
 
         pdir = point_dir(sub, args.shot, args.axis, args.scale)
