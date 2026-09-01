@@ -44,8 +44,19 @@ SCALES = SCALE_SANITY                       # (0.7, 1.3)
 # half of the box is expected to cost what the expensive half did. A cap that
 # truncates the hard point is the failure mode being avoided here; the cost of
 # an unnecessarily high cap is only wall time on points that converge early.
+# istar_mix 0.05 -> 0.02 (2026-08-31, mixing sweep on 132588 ne_ped_scale 0.70).
+# 0.1/0.05 diverges on that point to a +181% Ip error; three candidates at 45
+# iterations each settle it, and they do not settle it equally well:
+#
+#   b0.10/i0.02   Ip 0.47%   FALL    q@radii 0.86%   <- kept
+#   b0.05/i0.05   Ip 1.37%   FALL    q@radii 1.97%
+#   b0.075/i0.035 Ip 1.66%   RING    q@radii 1.89%
+#
+# So the destabiliser is istar_mix, not bootstrap_mix: lowering bootstrap_mix
+# instead damps the symptom and returns a three-times-worse equilibrium for the
+# same wall time. Bootstrap damping stays at its original 0.1.
 CHEASEBS = dict(max_iter=50, tol_bs=1e-3, tol_q=1e-3, tol_ip_rel=0.02,
-                bootstrap_mix=0.1, istar_mix=0.05, plot_errors=True)
+                bootstrap_mix=0.1, istar_mix=0.02, plot_errors=True)
 
 OUTROOT = os.path.join(os.path.dirname(__file__), "runs")
 
