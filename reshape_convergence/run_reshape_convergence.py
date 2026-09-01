@@ -138,6 +138,16 @@ def main(argv=None):
                     help="damping on the lagged bootstrap update")
     ap.add_argument("--istar-mix", type=float, default=rh.CHEASEBS["istar_mix"],
                     help="damping on the replayed total I* update")
+    # The amplitude search is the only actuator on Ip, and warmup >= 1 disables
+    # it permanently: the secant step in next_amplitude_guess is proportional to
+    # (a_now - a_prev), and the warmup guarantees the first two history entries
+    # are both the initial amplitude, so the step is exactly zero forever. Left
+    # as None means "whatever the cheaseBS template says" (2, i.e. disabled);
+    # pass 0 to let the proportional first step fire and the search start.
+    ap.add_argument("--amplitude-warmup-iters", type=int, default=None,
+                    help="iterations before the driven-amplitude search starts; "
+                         "0 enables it from iteration 0 (template default is 2, "
+                         "which freezes it at 1.0)")
     ap.add_argument("--outroot", default=rh.OUTROOT,
                     help="where per-shot run directories are written")
     ap.add_argument("--log", default=None,
@@ -154,6 +164,8 @@ def main(argv=None):
 
     cheasebs = dict(rh.CHEASEBS, max_iter=args.max_iter,
                     bootstrap_mix=args.bootstrap_mix, istar_mix=args.istar_mix)
+    if args.amplitude_warmup_iters is not None:
+        cheasebs["amplitude_warmup_iters"] = args.amplitude_warmup_iters
 
     print(f"=== reshape convergence campaign {stamp} ===")
     print(f"log       : {log_path}")

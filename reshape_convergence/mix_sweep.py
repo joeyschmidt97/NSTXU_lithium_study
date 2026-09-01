@@ -136,7 +136,8 @@ def point_dir(outroot, shot, axis, scale):
     return hits[-1] if hits else None
 
 
-def solve(shot, axis, scale, max_iter, mix, outroot, log_path, poll_s=30.0):
+def solve(shot, axis, scale, max_iter, mix, outroot, log_path, poll_s=30.0,
+          amplitude_warmup_iters=None):
     """One campaign run at one mixing setting. Never raises: a failed setting
     is a result, and the remaining settings are still worth their wall time.
 
@@ -153,6 +154,8 @@ def solve(shot, axis, scale, max_iter, mix, outroot, log_path, poll_s=30.0):
            "--max-iter", str(max_iter),
            "--bootstrap-mix", "%g" % b, "--istar-mix", "%g" % i,
            "--outroot", outroot]
+    if amplitude_warmup_iters is not None:
+        cmd += ["--amplitude-warmup-iters", str(amplitude_warmup_iters)]
     print("  $ " + " ".join(cmd), flush=True)
     print("  log: %s  (tail -f it for the solver's own output)" % log_path,
           flush=True)
@@ -191,6 +194,10 @@ def main(argv=None):
                     help="tolerance the projection targets")
     ap.add_argument("--outroot", default=os.path.join(HERE, "runs_mixsweep"),
                     help="parent directory for the per-setting run directories")
+    ap.add_argument("--amplitude-warmup-iters", type=int, default=None,
+                    help="passed through to the runner; 0 enables the Ip "
+                         "amplitude search, which the template default of 2 "
+                         "freezes at 1.0 permanently")
     ap.add_argument("--poll", type=float, default=30.0,
                     help="seconds between progress lines while a solve runs")
     ap.add_argument("--score-only", action="store_true",
@@ -217,7 +224,8 @@ def main(argv=None):
             print("--- %s ---" % tag, flush=True)
             rc, wall = solve(args.shot, args.axis, args.scale, args.max_iter,
                              (b, i), sub, os.path.join(sub, "solve.log"),
-                             poll_s=args.poll)
+                             poll_s=args.poll,
+                             amplitude_warmup_iters=args.amplitude_warmup_iters)
             print("  exit %s in %.0f s" % (rc, wall), flush=True)
 
         pdir = point_dir(sub, args.shot, args.axis, args.scale)
