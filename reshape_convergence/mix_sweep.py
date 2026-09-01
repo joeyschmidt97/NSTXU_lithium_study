@@ -137,17 +137,24 @@ def point_dir(outroot, shot, axis, scale):
 
 
 def solve(shot, axis, scale, max_iter, mix, outroot, log_path, poll_s=30.0,
-          amplitude_warmup_iters=None):
+          amplitude_warmup_iters=None, quiet=False):
     """One campaign run at one mixing setting. Never raises: a failed setting
     is a result, and the remaining settings are still worth their wall time.
 
-    The child's output goes to log_path rather than the terminal, so that a
-    sweep of three settings does not interleave three solvers' chatter. That
-    silence is indistinguishable from a hang over the ~45 minutes a setting
-    takes, so the iteration count is polled off the run's own iteration_log.csv
-    and echoed here. Progress is read from the file the solver is already
-    writing -- nothing is inferred from elapsed time.
+    The child's output is streamed to the terminal AND written to log_path.
+    Sending it only to the file was the wrong default: a 45-minute solve then
+    looks identical to a hang, which is exactly the thing being debugged. Pass
+    quiet=True to get the old file-only behaviour when sweeping several
+    settings and the interleaved chatter is not wanted.
+
+    A heartbeat prints whenever the child has been silent for poll_s, carrying
+    the iteration count read from the run's own iteration_log.csv. Silence with
+    a rising iteration count is a slow solve; silence with a frozen count is a
+    hang, and the two must be distinguishable without waiting for the exit.
     """
+    import queue
+    import threading
+
     b, i = mix
     cmd = [sys.executable, "-u", RUNNER,
            "--shots", str(shot), "--axes", axis, "--scales", "%g" % scale,
@@ -157,23 +164,42 @@ def solve(shot, axis, scale, max_iter, mix, outroot, log_path, poll_s=30.0,
     if amplitude_warmup_iters is not None:
         cmd += ["--amplitude-warmup-iters", str(amplitude_warmup_iters)]
     print("  $ " + " ".join(cmd), flush=True)
-    print("  log: %s  (tail -f it for the solver's own output)" % log_path,
-          flush=True)
-    print("  the discharge is loaded and fitted first, so the first iteration "
-          "is a few minutes away", flush=True)
+    print("  log: %s" % log_path, flush=True)
+    print("  the discharge is loaded and fitted before the first iteration, "
+          "which is a few minutes of quiet", flush=True)
+
     t0 = time.time()
+    lines = queue.Queue()
+
+    def pump(stream):
+        for line in iter(stream.readline, ""):
+            lines.put(line)
+        lines.put(None)
+
     with open(log_path, "w", encoding="utf-8") as fh:
-        proc = subprocess.Popen(cmd, cwd=HERE, stdout=fh,
-                                stderr=subprocess.STDOUT)
-        last = -1
-        while proc.poll() is None:
-            time.sleep(poll_s)
-            n = len(read_trace(os.path.join(point_dir(outroot, shot, axis, scale)
-                                            or "", "iteration_log.csv")))
-            if n != last:
-                last = n
-                print("    iteration %d/%d  (%.0f min elapsed)"
-                      % (n, max_iter, (time.time() - t0) / 60.0), flush=True)
+        proc = subprocess.Popen(cmd, cwd=HERE, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                bufsize=1, errors="replace")
+        threading.Thread(target=pump, args=(proc.stdout,), daemon=True).start()
+        done = False
+        while not done:
+            try:
+                line = lines.get(timeout=poll_s)
+            except queue.Empty:
+                pdir = point_dir(outroot, shot, axis, scale) or ""
+                n = len(read_trace(os.path.join(pdir, "iteration_log.csv")))
+                print("    ... quiet %.0fs, iteration %d/%d, %.0f min elapsed"
+                      % (poll_s, n, max_iter, (time.time() - t0) / 60.0),
+                      flush=True)
+                continue
+            if line is None:
+                done = True
+                continue
+            fh.write(line)
+            fh.flush()
+            if not quiet:
+                print("    | " + line.rstrip(), flush=True)
+        proc.wait()
     return proc.returncode, time.time() - t0
 
 
@@ -199,7 +225,10 @@ def main(argv=None):
                          "amplitude search, which the template default of 2 "
                          "freezes at 1.0 permanently")
     ap.add_argument("--poll", type=float, default=30.0,
-                    help="seconds between progress lines while a solve runs")
+                    help="seconds of child silence before a heartbeat line")
+    ap.add_argument("--quiet", action="store_true",
+                    help="send the solver output to the log file only, instead "
+                         "of streaming it to the terminal as well")
     ap.add_argument("--score-only", action="store_true",
                     help="re-read existing sweep directories, solve nothing")
     args = ap.parse_args(argv)
@@ -225,7 +254,8 @@ def main(argv=None):
             rc, wall = solve(args.shot, args.axis, args.scale, args.max_iter,
                              (b, i), sub, os.path.join(sub, "solve.log"),
                              poll_s=args.poll,
-                             amplitude_warmup_iters=args.amplitude_warmup_iters)
+                             amplitude_warmup_iters=args.amplitude_warmup_iters,
+                             quiet=args.quiet)
             print("  exit %s in %.0f s" % (rc, wall), flush=True)
 
         pdir = point_dir(sub, args.shot, args.axis, args.scale)
