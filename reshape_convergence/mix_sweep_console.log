@@ -1,0 +1,28 @@
+nohup: ignoring input
+=== mixing sweep: shot 132588  ne_ped_scale 0.70  max_iter 45 ===
+settings: b0.1/i0.02, b0.05/i0.05, b0.075/i0.035
+outroot : /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep
+probe cost ~ 45 iterations each; direction is the verdict, proj is the cost
+
+--- b0.1_i0.02 ---
+  $ /global/homes/j/joeschm/.conda/envs/TPED/bin/python -u /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py --shots 132588 --axes ne_ped_scale --scales 0.7 --max-iter 45 --bootstrap-mix 0.1 --istar-mix 0.02 --outroot /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.1_i0.02
+  exit 0 in 2544 s
+--- b0.05_i0.05 ---
+  $ /global/homes/j/joeschm/.conda/envs/TPED/bin/python -u /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py --shots 132588 --axes ne_ped_scale --scales 0.7 --max-iter 45 --bootstrap-mix 0.05 --istar-mix 0.05 --outroot /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.05_i0.05
+  exit 0 in 2585 s
+--- b0.075_i0.035 ---
+  $ /global/homes/j/joeschm/.conda/envs/TPED/bin/python -u /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py --shots 132588 --axes ne_ped_scale --scales 0.7 --max-iter 45 --bootstrap-mix 0.075 --istar-mix 0.035 --outroot /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.075_i0.035
+  exit 0 in 2569 s
+
+=== comparison ===
+mix b/i         iters   Ip first   Ip final    dir   proj   wall_s
+------------------------------------------------------------------
+0.1/0.02           45     0.0463     0.0047   FALL      0     2544
+0.05/0.05          45     0.0582     0.0137   FALL      0     2585
+0.075/0.035        45     0.0522     0.0166   RING      0     2569
+
+pick: bootstrap_mix 0.1 / istar_mix 0.02 -- converging, and the cheapest of the converging settings (~0 more iterations)
+confirm it on the other discharges before the campaign re-run:
+  python mix_sweep.py --shot 129015 --axis ne_ped_scale --scale 0.7 --mix 0.1,0.02 --max-iter 30
+
+wrote /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/mix_sweep.json

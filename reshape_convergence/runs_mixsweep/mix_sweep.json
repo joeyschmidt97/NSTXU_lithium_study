@@ -1,0 +1,48 @@
+{
+ "shot": 132588,
+ "axis": "ne_ped_scale",
+ "scale": 0.7,
+ "max_iter": 45,
+ "tol_ip_rel": 0.02,
+ "results": [
+  {
+   "bootstrap_mix": 0.1,
+   "istar_mix": 0.02,
+   "tag": "b0.1_i0.02",
+   "run_dir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.1_i0.02/132588_20260831_15-57-17/ne_ped_scale_0.700",
+   "iterations": 45,
+   "direction": "FALL",
+   "projected_extra_iters": 0,
+   "ip_first": 0.04631720683114272,
+   "ip_final": 0.004732304334815757,
+   "exit_code": 0,
+   "wall_s": 2544.326857328415
+  },
+  {
+   "bootstrap_mix": 0.05,
+   "istar_mix": 0.05,
+   "tag": "b0.05_i0.05",
+   "run_dir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.05_i0.05/132588_20260831_16-39-40/ne_ped_scale_0.700",
+   "iterations": 45,
+   "direction": "FALL",
+   "projected_extra_iters": 0,
+   "ip_first": 0.058246647949744455,
+   "ip_final": 0.013746055043819032,
+   "exit_code": 0,
+   "wall_s": 2584.610470056534
+  },
+  {
+   "bootstrap_mix": 0.075,
+   "istar_mix": 0.035,
+   "tag": "b0.075_i0.035",
+   "run_dir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixsweep/b0.075_i0.035/132588_20260831_17-22-45/ne_ped_scale_0.700",
+   "iterations": 45,
+   "direction": "RING",
+   "projected_extra_iters": 0,
+   "ip_first": 0.052224925438666775,
+   "ip_final": 0.01658914698173738,
+   "exit_code": 0,
+   "wall_s": 2568.8356132507324
+  }
+ ]
+}
