@@ -1,0 +1,22 @@
+{
+ "shot": 132543,
+ "axis": "ne_ped_scale",
+ "scale": 0.7,
+ "max_iter": 45,
+ "tol_ip_rel": 0.02,
+ "results": [
+  {
+   "bootstrap_mix": 0.1,
+   "istar_mix": 0.02,
+   "tag": "b0.1_i0.02",
+   "run_dir": "runs_mixconfirm/b0.1_i0.02/132543_20260831_21-43-53/ne_ped_scale_0.700",
+   "iterations": 45,
+   "direction": "GROW",
+   "projected_extra_iters": null,
+   "ip_first": 0.03848877932081788,
+   "ip_final": 0.06592976216042863,
+   "exit_code": 1,
+   "wall_s": 1867.9320197105408
+  }
+ ]
+}

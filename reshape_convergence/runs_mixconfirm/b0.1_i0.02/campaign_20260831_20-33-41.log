@@ -1,0 +1,32 @@
+=== reshape convergence campaign 20260831_20-33-41 ===
+log       : runs_mixconfirm/b0.1_i0.02/campaign_20260831_20-33-41.log
+shots     : [129015]
+axes      : ['ne_ped_scale']
+scales    : [0.7]
+cheaseBS  : {'max_iter': 45, 'tol_bs': 0.001, 'tol_q': 0.001, 'tol_ip_rel': 0.02, 'bootstrap_mix': 0.1, 'istar_mix': 0.02, 'plot_errors': True}
+solves    : 1
+pid       : 1572552
+
+loading and fitting 1 discharge(s) ...
+  done in 1s
+
+--- 129015  radii (0.85,) ---
+129015  radii (0.85,)  1 solves -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_mixconfirm/b0.1_i0.02/129015_20260831_20-33-42
+  ne_ped_scale 0.70 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260831_20-33-42-ne_ped_scale_0.700/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260831_20-33-42-ne_ped_scale_0.700/cheasebs_run_config.json
+Traceback (most recent call last):
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py", line 234, in <module>
+    sys.exit(main())
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py", line 180, in main
+    rows, workdir = rh.run_bounds(
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/reshape_helpers.py", line 204, in run_bounds
+    r = _solve(disc, axis, s,
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/reshape_helpers.py", line 84, in _solve
+    phys.output_gfile(
+  File "/global/homes/j/joeschm/tools/TPED/projects/discharge_tools/src/discharge_io.py", line 376, in output_gfile
+    chease_eqdsk = run_cheasebs_workflow(
+  File "/global/homes/j/joeschm/tools/TPED/projects/discharge_tools/src/cheasebs_runner.py", line 692, in run_cheasebs_workflow
+    returncode = _run_cheasebs_subprocess(
+  File "/global/homes/j/joeschm/tools/TPED/projects/discharge_tools/src/cheasebs_runner.py", line 879, in _run_cheasebs_subprocess
+    time.sleep(poll_s)
+KeyboardInterrupt
