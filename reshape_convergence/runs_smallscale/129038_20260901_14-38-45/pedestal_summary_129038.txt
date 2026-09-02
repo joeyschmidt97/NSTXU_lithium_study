@@ -1,0 +1,10 @@
+case                     Ip_err      amp  iters   conv   s(0.85)  ds(0.85)   max|ds|   at_rho
+---------------------------------------------------------------------------------------------
+Te_ped_scale_0.900        3.62%   1.0000     50  False     2.963     -0.4%    0.0805    0.936
+Te_ped_scale_0.950        4.54%   1.0000     50  False     2.958     -0.5%    0.0836    0.936
+Te_ped_scale_1.050        6.73%   1.0000     50  False     2.969     -0.2%    0.4666    0.936
+Te_ped_scale_1.100        7.32%   1.0000     50  False     2.994     +0.7%    0.3576    0.950
+
+Ip_err / amp / iters / conv come from the run's own record. s is the CHEASE-convention
+shear (rho/q) dq/drho; ds is after - before, with statistics capped at rho_tor 0.95
+because the outermost surfaces carry the standing q artefact rather than a profile response.
