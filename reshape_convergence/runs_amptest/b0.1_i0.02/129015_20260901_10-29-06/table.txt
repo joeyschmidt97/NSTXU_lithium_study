@@ -1,3 +1,0 @@
-shot 129015
-           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
-   ne_ped_scale  0.70  3.070e+19  0.713    --    --    --      --      --     --      --      --    1826  RAISED

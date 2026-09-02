@@ -9,3 +9,13 @@ probe cost ~ 45 iterations each; direction is the verdict, proj is the cost
   log: runs_amptest/b0.1_i0.02/solve.log  (tail -f it for the solver's own output)
   the discharge is loaded and fitted first, so the first iteration is a few minutes away
     iteration 0/45  (1 min elapsed)
+  exit 1 in 19427 s
+
+=== comparison ===
+mix b/i         iters   Ip first   Ip final    dir   proj   wall_s
+------------------------------------------------------------------
+0.1/0.02            0         --         --  SHORT     --    19427
+
+no run data found under runs_amptest -- nothing was solved, or --outroot points somewhere else. Expected <outroot>/<tag>/<shot>_<stamp>/<axis>_<scale>/iteration_log.csv
+
+wrote runs_amptest/mix_sweep.json
