@@ -1,0 +1,10 @@
+shot 132543
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   Te_ped_scale  0.90  3.000e+02  0.971     2  True  True   0.86%   1.47%  0.053   4.57%   0.17%     128        
+   Te_ped_scale  0.95  3.045e+02  0.985     2  True  True   0.88%   1.47%  0.053   3.42%   0.18%     130        
+   Te_ped_scale  1.05  3.135e+02  1.015     2  True  True   0.93%   1.47%  0.053   1.89%   0.23%     130        
+   Te_ped_scale  1.10  3.180e+02  1.029     2  True  True   0.95%   1.47%  0.053   2.39%   0.31%     128        
+   ne_ped_scale  0.90  5.065e+19  0.911    50 False False   3.24%   2.53%  0.981  12.25%   2.16%    2350        
+   ne_ped_scale  0.95  5.314e+19  0.955     2  True  True   1.92%   1.32%  0.053   6.76%   0.88%     131        
+   ne_ped_scale  1.05  5.810e+19  1.045     2  True  True   1.07%   1.48%  0.053   3.14%   0.14%     137        
+   ne_ped_scale  1.10  6.059e+19  1.089     2  True  True   0.64%   1.56%  0.053   8.06%   0.27%     138        

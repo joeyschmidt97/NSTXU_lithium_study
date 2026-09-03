@@ -1,0 +1,175 @@
+{
+ "stamp": "20260901_13-45-20",
+ "shots": [
+  129015,
+  129038,
+  132543,
+  132588
+ ],
+ "axes": [
+  "Te_ped_scale",
+  "ne_ped_scale"
+ ],
+ "scales": [
+  0.9,
+  0.95,
+  1.05,
+  1.1
+ ],
+ "cheasebs": {
+  "max_iter": 50,
+  "tol_bs": 0.001,
+  "tol_q": 0.001,
+  "tol_ip_rel": 0.02,
+  "bootstrap_mix": 0.1,
+  "istar_mix": 0.02,
+  "plot_errors": true
+ },
+ "summary": {
+  "129015": {
+   "workdir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129015_20260901_13-45-25",
+   "wall_s": 3200.5267112255096,
+   "iterations": [
+    2,
+    2,
+    2,
+    2,
+    50,
+    2,
+    2,
+    2
+   ],
+   "accepted": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "hit_max_iter": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false
+   ],
+   "rejected_or_raised": 0
+  },
+  "129038": {
+   "workdir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129038_20260901_14-38-45",
+   "wall_s": 20011.024631023407,
+   "iterations": [
+    50,
+    50,
+    50,
+    50,
+    50,
+    50,
+    50,
+    50
+   ],
+   "accepted": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hit_max_iter": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "rejected_or_raised": 8
+  },
+  "132543": {
+   "workdir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16",
+   "wall_s": 3277.520749568939,
+   "iterations": [
+    2,
+    2,
+    2,
+    2,
+    50,
+    2,
+    2,
+    2
+   ],
+   "accepted": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    true
+   ],
+   "hit_max_iter": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false
+   ],
+   "rejected_or_raised": 1
+  },
+  "132588": {
+   "workdir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54",
+   "wall_s": 20640.780519247055,
+   "iterations": [
+    50,
+    50,
+    50,
+    50,
+    50,
+    50,
+    50,
+    50
+   ],
+   "accepted": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    true,
+    true
+   ],
+   "hit_max_iter": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "rejected_or_raised": 4
+  }
+ },
+ "failed": [
+  129038,
+  132543,
+  132588
+ ]
+}

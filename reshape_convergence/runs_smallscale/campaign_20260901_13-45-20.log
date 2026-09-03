@@ -234,3 +234,401 @@ shot 129015
  50 iters, 2573s, accepted=False
   ne_ped_scale 0.90 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_17-25-40-ne_ped_scale_0.900/reference_profiles
 [cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_17-25-40-ne_ped_scale_0.900/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_17-25-40-ne_ped_scale_0.900/iteration_errors.png
+[cheaseBS]   every tracked metric saturates by iteration 47 of 49 — max_iter could come down
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         6.504%  (final 792807.0 A vs reference 744390.5 A)
+[cheaseBS]   q @ rho_tor 0.85    7.180%   (deviation from source)
+[cheaseBS]   q95 error        7.002%
+[cheaseBS]   q edge error    13.029%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 6.504% exceeds tolerance 3.000% (got 792807.0 A, target 744390.5 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_17-25-40-ne_ped_scale_0.900/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_17-25-40-ne_ped_scale_0.900
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129038_20260901_14-38-45/ne_ped_scale_0.900/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2656s, accepted=False
+  ne_ped_scale 0.95 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-09-57-ne_ped_scale_0.950/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-09-57-ne_ped_scale_0.950/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-09-57-ne_ped_scale_0.950/iteration_errors.png
+[cheaseBS]   every tracked metric saturates by iteration 46 of 49 — max_iter could come down
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         7.411%  (final 799559.3 A vs reference 744390.5 A)
+[cheaseBS]   q @ rho_tor 0.85    7.425%   (deviation from source)
+[cheaseBS]   q95 error        7.832%
+[cheaseBS]   q edge error    14.294%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 7.411% exceeds tolerance 3.000% (got 799559.3 A, target 744390.5 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-09-57-ne_ped_scale_0.950/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-09-57-ne_ped_scale_0.950
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129038_20260901_14-38-45/ne_ped_scale_0.950/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2527s, accepted=False
+  ne_ped_scale 1.05 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-52-05-ne_ped_scale_1.050/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-52-05-ne_ped_scale_1.050/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-52-05-ne_ped_scale_1.050/iteration_errors.png
+[cheaseBS]   every tracked metric saturates by iteration 45 of 49 — max_iter could come down
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         8.978%  (final 811219.0 A vs reference 744390.5 A)
+[cheaseBS]   q @ rho_tor 0.85    7.697%   (deviation from source)
+[cheaseBS]   q95 error        8.914%
+[cheaseBS]   q edge error    16.546%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 8.978% exceeds tolerance 3.000% (got 811219.0 A, target 744390.5 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-52-05-ne_ped_scale_1.050/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_18-52-05-ne_ped_scale_1.050
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129038_20260901_14-38-45/ne_ped_scale_1.050/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2424s, accepted=False
+  ne_ped_scale 1.10 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_19-32-29-ne_ped_scale_1.100/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_19-32-29-ne_ped_scale_1.100/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_19-32-29-ne_ped_scale_1.100/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         8.280%  (final 806024.3 A vs reference 744390.5 A)
+[cheaseBS]   q @ rho_tor 0.85    7.854%   (deviation from source)
+[cheaseBS]   q95 error        7.899%
+[cheaseBS]   q edge error    14.885%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 8.280% exceeds tolerance 3.000% (got 806024.3 A, target 744390.5 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_19-32-29-ne_ped_scale_1.100/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_19-32-29-ne_ped_scale_1.100
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129038_20260901_14-38-45/ne_ped_scale_1.100/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2387s, accepted=False
+shot 129038
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   Te_ped_scale  0.90  1.759e+02  0.891    50 False False   3.62%   4.55%  0.549  29.93%   4.03%    2548        
+   Te_ped_scale  0.95  1.867e+02  0.945    50 False False   4.54%   5.39%  0.982  27.29%   4.79%    2464        
+   Te_ped_scale  1.05  2.083e+02  1.055    50 False False   6.73%   7.63%  0.982  21.41%   6.20%    2427        
+   Te_ped_scale  1.10  2.191e+02  1.109    50 False False   7.32%   8.16%  0.982  18.10%   6.88%    2573        
+   ne_ped_scale  0.90  4.161e+19  0.902    50 False False   6.50%   7.86%  0.608  22.73%   7.18%    2656        
+   ne_ped_scale  0.95  4.386e+19  0.951    50 False False   7.41%   8.12%  0.982  18.13%   7.42%    2527        
+   ne_ped_scale  1.05  4.836e+19  1.049    50 False False   8.98%   9.90%  0.982  16.02%   7.70%    2424        
+   ne_ped_scale  1.10  5.061e+19  1.098    50 False False   8.28%   8.51%  0.982  20.46%   7.85%    2387        
+  129038 done in 20011s -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/129038_20260901_14-38-45
+
+--- 132543  radii (0.736, 0.825) ---
+132543  radii (0.736, 0.825)  8 solves -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16
+  Te_ped_scale 0.90 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-12-17-Te_ped_scale_0.900/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-12-17-Te_ped_scale_0.900/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-12-17-Te_ped_scale_0.900/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.856%  (final 938950.4 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.167%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.021%   (deviation from source)
+[cheaseBS]   q95 error        0.139%
+[cheaseBS]   q edge error    17.518%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-12-17-Te_ped_scale_0.900/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-12-17-Te_ped_scale_0.900
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/Te_ped_scale_0.900/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 128s, accepted=True
+  Te_ped_scale 0.95 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-14-25-Te_ped_scale_0.950/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-14-25-Te_ped_scale_0.950/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-14-25-Te_ped_scale_0.950/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.879%  (final 938737.2 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.178%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.064%   (deviation from source)
+[cheaseBS]   q95 error        0.121%
+[cheaseBS]   q edge error    17.522%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-14-25-Te_ped_scale_0.950/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-14-25-Te_ped_scale_0.950
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/Te_ped_scale_0.950/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 130s, accepted=True
+  Te_ped_scale 1.05 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-16-35-Te_ped_scale_1.050/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-16-35-Te_ped_scale_1.050/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-16-35-Te_ped_scale_1.050/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.927%  (final 938278.0 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.196%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.230%   (deviation from source)
+[cheaseBS]   q95 error        0.090%
+[cheaseBS]   q edge error    17.526%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-16-35-Te_ped_scale_1.050/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-16-35-Te_ped_scale_1.050
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/Te_ped_scale_1.050/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 130s, accepted=True
+  Te_ped_scale 1.10 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-18-46-Te_ped_scale_1.100/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-18-46-Te_ped_scale_1.100/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-18-46-Te_ped_scale_1.100/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.949%  (final 938069.8 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.203%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.310%   (deviation from source)
+[cheaseBS]   q95 error        0.069%
+[cheaseBS]   q edge error    17.532%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-18-46-Te_ped_scale_1.100/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-18-46-Te_ped_scale_1.100
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/Te_ped_scale_1.100/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 128s, accepted=True
+  ne_ped_scale 0.90 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-20-56-ne_ped_scale_0.900/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-20-56-ne_ped_scale_0.900/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-20-56-ne_ped_scale_0.900/iteration_errors.png
+[cheaseBS]   every tracked metric saturates by iteration 47 of 49 — max_iter could come down
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         3.239%  (final 916384.4 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   2.159%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   1.936%   (deviation from source)
+[cheaseBS]   q95 error        1.993%
+[cheaseBS]   q edge error    15.582%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 3.239% exceeds tolerance 3.000% (got 916384.4 A, target 947061.8 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-20-56-ne_ped_scale_0.900/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_20-20-56-ne_ped_scale_0.900
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/ne_ped_scale_0.900/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2350s, accepted=False
+  ne_ped_scale 0.95 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-00-06-ne_ped_scale_0.950/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-00-06-ne_ped_scale_0.950/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-00-06-ne_ped_scale_0.950/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         1.916%  (final 928918.0 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.884%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.682%   (deviation from source)
+[cheaseBS]   q95 error        0.771%
+[cheaseBS]   q edge error    16.881%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-00-06-ne_ped_scale_0.950/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-00-06-ne_ped_scale_0.950
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/ne_ped_scale_0.950/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 131s, accepted=True
+  ne_ped_scale 1.05 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-02-18-ne_ped_scale_1.050/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-02-18-ne_ped_scale_1.050/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-02-18-ne_ped_scale_1.050/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         1.065%  (final 936972.0 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.139%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.039%   (deviation from source)
+[cheaseBS]   q95 error        0.633%
+[cheaseBS]   q edge error    17.200%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-02-18-ne_ped_scale_1.050/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-02-18-ne_ped_scale_1.050
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/ne_ped_scale_1.050/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 137s, accepted=True
+  ne_ped_scale 1.10 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-04-35-ne_ped_scale_1.100/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-04-35-ne_ped_scale_1.100/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-04-35-ne_ped_scale_1.100/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.642%  (final 940978.6 A vs reference 947061.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.238%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.265%   (deviation from source)
+[cheaseBS]   q95 error        0.590%
+[cheaseBS]   q edge error    17.345%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (2 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-04-35-ne_ped_scale_1.100/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-04-35-ne_ped_scale_1.100
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16/ne_ped_scale_1.100/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 2 iters, 138s, accepted=True
+shot 132543
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   Te_ped_scale  0.90  3.000e+02  0.971     2  True  True   0.86%   1.47%  0.053   4.57%   0.17%     128        
+   Te_ped_scale  0.95  3.045e+02  0.985     2  True  True   0.88%   1.47%  0.053   3.42%   0.18%     130        
+   Te_ped_scale  1.05  3.135e+02  1.015     2  True  True   0.93%   1.47%  0.053   1.89%   0.23%     130        
+   Te_ped_scale  1.10  3.180e+02  1.029     2  True  True   0.95%   1.47%  0.053   2.39%   0.31%     128        
+   ne_ped_scale  0.90  5.065e+19  0.911    50 False False   3.24%   2.53%  0.981  12.25%   2.16%    2350        
+   ne_ped_scale  0.95  5.314e+19  0.955     2  True  True   1.92%   1.32%  0.053   6.76%   0.88%     131        
+   ne_ped_scale  1.05  5.810e+19  1.045     2  True  True   1.07%   1.48%  0.053   3.14%   0.14%     137        
+   ne_ped_scale  1.10  6.059e+19  1.089     2  True  True   0.64%   1.56%  0.053   8.06%   0.27%     138        
+  132543 done in 3278s -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132543_20260901_20-12-16
+
+--- 132588  radii (0.736, 0.825) ---
+132588  radii (0.736, 0.825)  8 solves -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54
+  Te_ped_scale 0.90 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-06-54-Te_ped_scale_0.900/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-06-54-Te_ped_scale_0.900/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-06-54-Te_ped_scale_0.900/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         7.274%  (final 1054865.1 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   6.061%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   7.004%   (deviation from source)
+[cheaseBS]   q95 error        8.209%
+[cheaseBS]   q edge error    27.583%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 7.274% exceeds tolerance 3.000% (got 1054865.1 A, target 983334.8 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-06-54-Te_ped_scale_0.900/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-06-54-Te_ped_scale_0.900
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/Te_ped_scale_0.900/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2409s, accepted=False
+  Te_ped_scale 0.95 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-47-04-Te_ped_scale_0.950/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-47-04-Te_ped_scale_0.950/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-47-04-Te_ped_scale_0.950/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         7.225%  (final 1054382.9 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   5.941%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   6.923%   (deviation from source)
+[cheaseBS]   q95 error        8.206%
+[cheaseBS]   q edge error    27.613%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 7.225% exceeds tolerance 3.000% (got 1054382.9 A, target 983334.8 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-47-04-Te_ped_scale_0.950/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_21-47-04-Te_ped_scale_0.950
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/Te_ped_scale_0.950/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2412s, accepted=False
+  Te_ped_scale 1.05 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_22-27-16-Te_ped_scale_1.050/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_22-27-16-Te_ped_scale_1.050/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_22-27-16-Te_ped_scale_1.050/iteration_errors.png
+[cheaseBS]   every tracked metric saturates by iteration 47 of 49 — max_iter could come down
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         7.207%  (final 1054201.0 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   5.946%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   6.964%   (deviation from source)
+[cheaseBS]   q95 error        8.277%
+[cheaseBS]   q edge error    27.521%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 7.207% exceeds tolerance 3.000% (got 1054201.0 A, target 983334.8 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_22-27-16-Te_ped_scale_1.050/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_22-27-16-Te_ped_scale_1.050
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/Te_ped_scale_1.050/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2425s, accepted=False
+  Te_ped_scale 1.10 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-07-42-Te_ped_scale_1.100/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-07-42-Te_ped_scale_1.100/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-07-42-Te_ped_scale_1.100/iteration_errors.png
+[cheaseBS]   every tracked metric saturates by iteration 47 of 49 — max_iter could come down
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: REJECTED
+[cheaseBS]   Ip error         7.527%  (final 1057349.2 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   6.175%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   7.274%   (deviation from source)
+[cheaseBS]   q95 error        8.652%
+[cheaseBS]   q edge error    27.887%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS]   REJECT: Ip error 7.527% exceeds tolerance 3.000% (got 1057349.2 A, target 983334.8 A)
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-07-42-Te_ped_scale_1.100/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-07-42-Te_ped_scale_1.100
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/Te_ped_scale_1.100/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2409s, accepted=False
+  ne_ped_scale 0.90 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-47-52-ne_ped_scale_0.900/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-47-52-ne_ped_scale_0.900/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-47-52-ne_ped_scale_0.900/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.134%  (final 984652.8 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.333%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.998%   (deviation from source)
+[cheaseBS]   q95 error        0.860%
+[cheaseBS]   q edge error    20.236%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-47-52-ne_ped_scale_0.900/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260901_23-47-52-ne_ped_scale_0.900
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/ne_ped_scale_0.900/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2786s, accepted=True
+  ne_ped_scale 0.95 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_00-34-19-ne_ped_scale_0.950/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_00-34-19-ne_ped_scale_0.950/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_00-34-19-ne_ped_scale_0.950/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         0.724%  (final 990457.4 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.256%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.340%   (deviation from source)
+[cheaseBS]   q95 error        0.374%
+[cheaseBS]   q edge error    20.660%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_00-34-19-ne_ped_scale_0.950/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_00-34-19-ne_ped_scale_0.950
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/ne_ped_scale_0.950/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2748s, accepted=True
+  ne_ped_scale 1.05 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_01-20-08-ne_ped_scale_1.050/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_01-20-08-ne_ped_scale_1.050/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_01-20-08-ne_ped_scale_1.050/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         1.206%  (final 995198.1 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.571%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.212%   (deviation from source)
+[cheaseBS]   q95 error        0.011%
+[cheaseBS]   q edge error    20.894%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_01-20-08-ne_ped_scale_1.050/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_01-20-08-ne_ped_scale_1.050
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/ne_ped_scale_1.050/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2738s, accepted=True
+  ne_ped_scale 1.10 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_02-05-46-ne_ped_scale_1.100/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_02-05-46-ne_ped_scale_1.100/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_02-05-46-ne_ped_scale_1.100/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         1.477%  (final 997859.2 A vs reference 983334.8 A)
+[cheaseBS]   q @ rho_tor 0.736   0.624%   (deviation from source)
+[cheaseBS]   q @ rho_tor 0.825   0.369%   (deviation from source)
+[cheaseBS]   q95 error        0.084%
+[cheaseBS]   q edge error    21.230%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=False (50 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_02-05-46-ne_ped_scale_1.100/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_49/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260902_02-05-46-ne_ped_scale_1.100
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54/ne_ped_scale_1.100/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 50 iters, 2708s, accepted=True
+shot 132588
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   Te_ped_scale  0.90  1.701e+02  0.938    50 False False   7.27%  21.80%  0.167  37.11%   7.00%    2409        
+   Te_ped_scale  0.95  1.757e+02  0.969    50 False False   7.23%  21.80%  0.167  38.49%   6.92%    2412        
+   Te_ped_scale  1.05  1.871e+02  1.031    50 False False   7.21%  21.85%  0.167  41.32%   6.96%    2425        
+   Te_ped_scale  1.10  1.927e+02  1.062    50 False False   7.53%  21.87%  0.167  43.24%   7.27%    2409        
+   ne_ped_scale  0.90  5.828e+19  0.955    50 False  True   0.13%  46.30%  0.156  24.41%   1.00%    2786        
+   ne_ped_scale  0.95  5.966e+19  0.978    50 False  True   0.72%  46.20%  0.156  29.84%   0.34%    2748        
+   ne_ped_scale  1.05  6.240e+19  1.022    50 False  True   1.21%  45.97%  0.156  40.13%   0.57%    2738        
+   ne_ped_scale  1.10  6.377e+19  1.045    50 False  True   1.48%  45.86%  0.156  45.27%   0.62%    2708        
+  132588 done in 20641s -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_smallscale/132588_20260901_21-06-54
+
+=== campaign summary ===
+  129015: iters=[2, 2, 2, 2, 50, 2, 2, 2] accepted=[True, True, True, True, True, True, True, True] 3201s HIT-MAX-ITER
+  129038: iters=[50, 50, 50, 50, 50, 50, 50, 50] accepted=[False, False, False, False, False, False, False, False] 20011s HIT-MAX-ITER
+  132543: iters=[2, 2, 2, 2, 50, 2, 2, 2] accepted=[True, True, True, True, False, True, True, True] 3278s HIT-MAX-ITER
+  132588: iters=[50, 50, 50, 50, 50, 50, 50, 50] accepted=[False, False, False, False, True, True, True, True] 20641s HIT-MAX-ITER
+  total wall: 47134s
+  PROBLEM shots (raised or not fully accepted): [129038, 132543, 132588]
+
+log: runs_smallscale/campaign_20260901_13-45-20.log
