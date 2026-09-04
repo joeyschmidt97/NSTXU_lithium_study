@@ -1,21 +1,13 @@
 nohup: ignoring input
-=== mixing sweep: shot 129015  ne_ped_scale 0.70  max_iter 45 ===
-settings: b0.1/i0.02
-outroot : runs_amptest
-probe cost ~ 45 iterations each; direction is the verdict, proj is the cost
-
---- b0.1_i0.02 ---
-  $ /global/homes/j/joeschm/.conda/envs/TPED/bin/python -u /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py --shots 129015 --axes ne_ped_scale --scales 0.7 --max-iter 45 --bootstrap-mix 0.1 --istar-mix 0.02 --outroot runs_amptest/b0.1_i0.02 --amplitude-warmup-iters 0
-  log: runs_amptest/b0.1_i0.02/solve.log  (tail -f it for the solver's own output)
-  the discharge is loaded and fitted first, so the first iteration is a few minutes away
-    iteration 0/45  (1 min elapsed)
-  exit 1 in 19427 s
-
-=== comparison ===
-mix b/i         iters   Ip first   Ip final    dir   proj   wall_s
-------------------------------------------------------------------
-0.1/0.02            0         --         --  SHORT     --    19427
-
-no run data found under runs_amptest -- nothing was solved, or --outroot points somewhere else. Expected <outroot>/<tag>/<shot>_<stamp>/<axis>_<scale>/iteration_log.csv
-
-wrote runs_amptest/mix_sweep.json
+Traceback (most recent call last):
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/run_reshape_convergence.py", line 49, in <module>
+    import reshape_helpers as rh  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/reshape_helpers.py", line 24, in <module>
+    from pedestal_scan import ANALYSIS_RADII, SCALE_SANITY  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/global/u1/j/joeschm/projects/NSTXU_lithium_study/pedestal_scan.py", line 30, in <module>
+    from TPED.projects.discharge_tools.src.discharge_data import DischargeData
+  File "/global/homes/j/joeschm/tools/TPED/projects/discharge_tools/src/discharge_data.py", line 4, in <module>
+    import xarray as xr
+ModuleNotFoundError: No module named 'xarray'

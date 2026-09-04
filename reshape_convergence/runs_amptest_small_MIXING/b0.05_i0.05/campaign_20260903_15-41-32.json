@@ -1,0 +1,39 @@
+{
+ "stamp": "20260903_15-41-32",
+ "shots": [
+  129015
+ ],
+ "axes": [
+  "ne_ped_scale"
+ ],
+ "scales": [
+  0.9
+ ],
+ "cheasebs": {
+  "max_iter": 45,
+  "tol_bs": 0.001,
+  "tol_q": 0.001,
+  "tol_ip_rel": 0.02,
+  "bootstrap_mix": 0.05,
+  "istar_mix": 0.05,
+  "plot_errors": true,
+  "amplitude_warmup_iters": 0
+ },
+ "summary": {
+  "129015": {
+   "workdir": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest_small/b0.05_i0.05/129015_20260903_15-41-32",
+   "wall_s": 149.19091320037842,
+   "iterations": [
+    3
+   ],
+   "accepted": [
+    true
+   ],
+   "hit_max_iter": [
+    false
+   ],
+   "rejected_or_raised": 0
+  }
+ },
+ "failed": []
+}

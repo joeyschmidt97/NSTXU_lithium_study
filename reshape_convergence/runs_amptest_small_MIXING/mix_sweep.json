@@ -1,0 +1,48 @@
+{
+ "shot": 129015,
+ "axis": "ne_ped_scale",
+ "scale": 0.9,
+ "max_iter": 45,
+ "tol_ip_rel": 0.02,
+ "results": [
+  {
+   "bootstrap_mix": 0.1,
+   "istar_mix": 0.02,
+   "tag": "b0.1_i0.02",
+   "run_dir": "runs_amptest_small/b0.1_i0.02/129015_20260903_15-39-02/ne_ped_scale_0.900",
+   "iterations": 3,
+   "direction": "FALL",
+   "projected_extra_iters": null,
+   "ip_first": 0.020398102871667358,
+   "ip_final": 0.019569679443588426,
+   "exit_code": 0,
+   "wall_s": 152.51889872550964
+  },
+  {
+   "bootstrap_mix": 0.05,
+   "istar_mix": 0.05,
+   "tag": "b0.05_i0.05",
+   "run_dir": "runs_amptest_small/b0.05_i0.05/129015_20260903_15-41-32/ne_ped_scale_0.900",
+   "iterations": 3,
+   "direction": "FALL",
+   "projected_extra_iters": null,
+   "ip_first": 0.020586494350608737,
+   "ip_final": 0.01854114852286106,
+   "exit_code": 0,
+   "wall_s": 152.00205087661743
+  },
+  {
+   "bootstrap_mix": 0.075,
+   "istar_mix": 0.035,
+   "tag": "b0.075_i0.035",
+   "run_dir": "runs_amptest_small/b0.075_i0.035/129015_20260903_15-44-04/ne_ped_scale_0.900",
+   "iterations": 3,
+   "direction": "FALL",
+   "projected_extra_iters": null,
+   "ip_first": 0.020492303319933552,
+   "ip_final": 0.019058486240147575,
+   "exit_code": 0,
+   "wall_s": 149.39947485923767
+  }
+ ]
+}
