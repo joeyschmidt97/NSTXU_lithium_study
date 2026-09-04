@@ -1,0 +1,19 @@
+{
+    "accepted": true,
+    "cheasebs_converged": true,
+    "cheasebs_iterations": 2,
+    "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260903_16-35-21-Te_ped_scale_1.300/iteration_01/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT",
+    "final_ip_a": 747420.659,
+    "ip_error_rel": 0.00860534760366658,
+    "ip_reference_valid": true,
+    "q95_error_rel": 0.0042701102224898145,
+    "q_edge_error_rel": 0.10930441175978442,
+    "q_errors_rel": {
+        "0.85": 0.006782267934039642
+    },
+    "reasons": [],
+    "reload_ok": true,
+    "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20260903_16-35-21-Te_ped_scale_1.300",
+    "source_eqdsk": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest/129015_20260903_15-51-42/Te_ped_scale_1.300/g129015.00409",
+    "target_ip_a": 753908.302
+}

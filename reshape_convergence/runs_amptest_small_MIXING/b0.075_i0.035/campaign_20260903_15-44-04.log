@@ -1,0 +1,40 @@
+=== reshape convergence campaign 20260903_15-44-04 ===
+log       : runs_amptest_small/b0.075_i0.035/campaign_20260903_15-44-04.log
+shots     : [129015]
+axes      : ['ne_ped_scale']
+scales    : [0.9]
+cheaseBS  : {'max_iter': 45, 'tol_bs': 0.001, 'tol_q': 0.001, 'tol_ip_rel': 0.02, 'bootstrap_mix': 0.075, 'istar_mix': 0.035, 'plot_errors': True, 'amplitude_warmup_iters': 0}
+solves    : 1
+pid       : 355794
+
+loading and fitting 1 discharge(s) ...
+  done in 1s
+
+--- 129015  radii (0.85,) ---
+129015  radii (0.85,)  1 solves -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest_small/b0.075_i0.035/129015_20260903_15-44-04
+  ne_ped_scale 0.90 ...[cheaseBS] reference profiles: /pscratch/sd/j/joeschm/cheaseBS_runs/20260903_15-44-04-ne_ped_scale_0.900/reference_profiles
+[cheaseBS] running: /global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py --config /pscratch/sd/j/joeschm/cheaseBS_runs/20260903_15-44-04-ne_ped_scale_0.900/cheasebs_run_config.json
+<IPython.core.display.Image object>
+[cheaseBS] error plot: /pscratch/sd/j/joeschm/cheaseBS_runs/20260903_15-44-04-ne_ped_scale_0.900/iteration_errors.png
+<IPython.core.display.Image object>
+[cheaseBS] acceptance: ACCEPTED
+[cheaseBS]   Ip error         1.906%  (final 739540.0 A vs reference 753908.3 A)
+[cheaseBS]   q @ rho_tor 0.85    0.733%   (deviation from source)
+[cheaseBS]   q95 error        0.699%
+[cheaseBS]   q edge error    10.277%   <- separatrix-adjacent, see module docstring
+[cheaseBS]   solver flag    converged=True (3 iteration(s)) — recorded, not gated by default
+[cheaseBS] run summary: /pscratch/sd/j/joeschm/cheaseBS_runs/20260903_15-44-04-ne_ped_scale_0.900/run_summary.png
+[cheaseBS]   note: after EQDSK taken from a per-iteration artifact (iteration_02/artifacts/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT) — the run directory root holds no EQDSK*.OUT, so this is the last iteration solved, not necessarily a converged result
+[cheaseBS] scratch run directory: /pscratch/sd/j/joeschm/cheaseBS_runs/20260903_15-44-04-ne_ped_scale_0.900
+[cheaseBS] new equilibrium written to: /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest_small/b0.075_i0.035/129015_20260903_15-44-04/ne_ped_scale_0.900/EQDSK_COCOS_02_POS_SOURCE_SIGNS.OUT
+ 3 iters, 146s, accepted=True
+shot 129015
+           axis scale    ped_top  ratio iters  conv   acc  Ip_err  dq_max  dq_at  dp_max    q@x0  wall_s  status
+   ne_ped_scale  0.90  3.896e+19  0.904     3  True  True   1.91%   1.61%  0.056  12.57%   0.73%     146        
+  129015 done in 147s -> /global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/runs_amptest_small/b0.075_i0.035/129015_20260903_15-44-04
+
+=== campaign summary ===
+  129015: iters=[3] accepted=[True] 147s
+  total wall: 147s
+
+log: runs_amptest_small/b0.075_i0.035/campaign_20260903_15-44-04.log
