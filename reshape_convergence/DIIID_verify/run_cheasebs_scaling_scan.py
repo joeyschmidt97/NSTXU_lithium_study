@@ -36,12 +36,15 @@ source pressure and every downward point silently reproduces its own baseline.
 That is a null test, not a scan, and it is invisible in the output. See
 "Reference profiles" in TPED's cheasebs_runner for the measured version.
 
-So the reference set defaults to cheaseBS's own bundled, validated
-`data/profiles/profiles_162940_{e,i,z}` -- the profiles the DIII-D regression
-tests use against this exact EQDSK. Override with `--reference-dir` /
-`--reference-stem`, or use `--reference-variation omt1p0_omne1p0` to take the
-unity point of the scan itself as the reference. The script refuses to alias the
-reference onto a scaled point unless `--allow-aliased-reference` is passed.
+So the reference set defaults to the unscaled `profiles_{e,i,z}` sitting beside
+the base gfile in the discharge directory the scan lives under -- same
+provenance as the scan, already under the canonical names. Failing that it falls
+back to cheaseBS's bundled `data/profiles/profiles_162940_{e,i,z}`, the set its
+DIII-D regression tests use against this exact EQDSK. Override with
+`--reference-dir` / `--reference-stem`, or use
+`--reference-variation omt1p0_omne1p0` to take the unity point of the scan
+itself. The script refuses to alias the reference onto a scaled point unless
+`--allow-aliased-reference` is passed.
 
 WHERE IT RUNS -- scratch, then copy back
 ----------------------------------------
@@ -260,6 +263,14 @@ def resolve_reference(args, case_dir, cheasebs_dir):
         ref_dir = os.path.join(case_dir, args.reference_variation)
         stem = f"profiles_{{spec}}_{args.reference_variation}"
         why = f"--reference-variation {args.reference_variation} (unity point of this scan)"
+    elif all(os.path.isfile(os.path.join(os.path.dirname(case_dir), f"profiles_{s}"))
+             for s in ("e", "i", "z")):
+        # The discharge directory the scan lives under carries the unscaled
+        # profiles beside the base gfile, already under the canonical names.
+        # Those are the plasma the source EQDSK contains, from the same
+        # provenance as the scan itself, so they beat a bundled copy.
+        ref_dir, stem = os.path.dirname(case_dir), "profiles"
+        why = f"base profiles in the discharge directory ({ref_dir})"
     else:
         ref_dir = os.path.join(cheasebs_dir, "data", "profiles")
         stem = args.reference_stem

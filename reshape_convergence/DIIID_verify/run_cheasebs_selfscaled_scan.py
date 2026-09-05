@@ -29,6 +29,11 @@ carries ni and nz with it. That mirrors the omt/omne convention the IFS scan
 directories are named for, so a point here has the same name and the same
 intended meaning as the point it is being compared against.
 
+The discharge directory (`--case-dir`) already holds the base gfile, pfile and
+`profiles_{e,i,z}` under exactly the names TPED expects, so it is handed to
+DischargeData as-is and auto-discovery does the rest. Nothing is staged,
+renamed or re-derived on the way in.
+
 The solve goes through TPED's `run_cheasebs_workflow` -- the function
 `output_gfile` itself calls -- on a scratch run directory, and only the
 equilibrium, the records and the end plots are copied into --outroot, using the
@@ -45,16 +50,14 @@ USAGE
 
     # one point first: the unity point, which should reproduce the source
     python -u run_cheasebs_selfscaled_scan.py \
-        --gfile /data/DIIID/DIIID162940/DIIID162940/chease/g162940.02944_670 \
-        --base-profile-dir <cheaseBS>/data/profiles --base-profile-stem profiles_162940 \
-        --only omt1p0_omne1p0
+        --case-dir /data/DIIID/DIIID162940/DIIID162940 --only omt1p0_omne1p0
 
     # the full grid, detached, matching the IFS scan's points
-    nohup python -u run_cheasebs_selfscaled_scan.py --gfile ... > /dev/null 2>&1 &
+    nohup python -u run_cheasebs_selfscaled_scan.py --case-dir ... > /dev/null 2>&1 &
     tail -f runs_162940_selfscaled/campaign_*.log
 
     # see the plan and the scaled profiles' gradients without solving anything
-    python run_cheasebs_selfscaled_scan.py --gfile ... --dry-run
+    python run_cheasebs_selfscaled_scan.py --case-dir ... --dry-run
 
 `-u` matters: without it Python block-buffers stdout when it is not a terminal
 and the log stays empty for hours.
@@ -68,7 +71,6 @@ import argparse
 import datetime
 import json
 import os
-import shutil
 import sys
 import time
 import traceback
@@ -125,43 +127,17 @@ def parse_pair(text):
         raise argparse.ArgumentTypeError(f"--pair values must be numbers: {text!r}")
 
 
-def stage_base_profiles(profiles, workdir):
-    """Copy the base profiles to canonical `profiles_{e,i,z}` names.
-
-    Not cosmetic. ProfilesData reads the species straight out of the filename
-    with `re.match(r"profiles[_\\-]?([A-Za-z0-9]+)")`, so the bundled
-    `profiles_162940_e` parses its species as "162940" -- all three files land
-    as the same unknown species and the harmonized dataset is wrong in a way
-    that does not raise. The canonical stem is the only name that parses.
-    """
-    staged = {}
-    os.makedirs(workdir, exist_ok=True)
-    for spec, src in profiles.items():
-        dst = os.path.join(workdir, f"profiles_{spec}")
-        shutil.copy2(src, dst)
-        staged[spec] = dst
-    return staged
-
-
-def resolve_base_profiles(args):
-    """{spec: path} for the three base profiles, from a dir+stem or three paths."""
-    if args.base_profiles:
-        if len(args.base_profiles) != 3:
-            raise SystemExit("--base-profiles takes exactly three paths, e/i/z in order")
-        found = dict(zip(("e", "i", "z"), [os.path.abspath(p) for p in args.base_profiles]))
-    else:
-        if not args.base_profile_dir:
-            raise SystemExit(
-                "Give the base profiles: --base-profile-dir (with --base-profile-stem) "
-                "or --base-profiles <e> <i> <z>."
-            )
-        found = {spec: os.path.join(os.path.abspath(args.base_profile_dir),
-                                    f"{args.base_profile_stem}_{spec}")
-                 for spec in ("e", "i", "z")}
-    missing = [p for p in found.values() if not os.path.isfile(p)]
-    if missing:
-        raise SystemExit("Base profiles not found:\n  " + "\n  ".join(missing))
-    return found
+def find_base_gfile(case_dir):
+    """The base EQDSK in the case directory: g<shot>.<time>, one of them."""
+    cands = sorted(p for p in glob.glob(os.path.join(case_dir, "g[0-9]*"))
+                   if os.path.isfile(p))
+    if not cands:
+        raise SystemExit(f"No base gfile (g<shot>.<time>) in {case_dir}. "
+                         f"Pass one explicitly with --gfile.")
+    if len(cands) > 1:
+        raise SystemExit("Multiple candidate gfiles; name one with --gfile:\n  "
+                         + "\n  ".join(cands))
+    return cands[0]
 
 
 def detect_pedestal(phys, var="ne"):
@@ -308,13 +284,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Scale the profiles with TPED, then run cheaseBS on each point.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--gfile", required=True, help="base EQDSK, the frozen geometry")
-    ap.add_argument("--base-profile-dir", default=None,
-                    help="directory holding the base profiles")
-    ap.add_argument("--base-profile-stem", default="profiles_162940",
-                    help="their filename stem; '<stem>_e' and so on")
-    ap.add_argument("--base-profiles", nargs=3, default=None, metavar=("E", "I", "Z"),
-                    help="the three base profile paths, e/i/z in order")
+    ap.add_argument("--case-dir", required=True,
+                    help="the discharge directory: base gfile, pfile and "
+                         "profiles_{e,i,z}, handed to DischargeData as-is")
+    ap.add_argument("--gfile", default=None,
+                    help="base EQDSK; default is the single g<shot>.* in --case-dir")
 
     ap.add_argument("--pair", type=parse_pair, action="append", default=None,
                     metavar="OMT,OMN",
@@ -365,14 +339,16 @@ def main(argv=None):
                     help="log file (default: <outroot>/campaign_<stamp>.log)")
     args = ap.parse_args(argv)
 
-    gfile = os.path.abspath(os.path.expanduser(args.gfile))
+    case_dir = os.path.abspath(os.path.expanduser(args.case_dir))
+    if not os.path.isdir(case_dir):
+        raise SystemExit(f"--case-dir does not exist: {case_dir}")
+    gfile = (os.path.abspath(os.path.expanduser(args.gfile)) if args.gfile
+             else find_base_gfile(case_dir))
     if not os.path.isfile(gfile):
         raise SystemExit(f"base gfile not found: {gfile}")
     shot = shot_of(gfile)
     if not os.path.isfile(args.cheasebs_config):
         raise SystemExit(f"cheaseBS config template not found: {args.cheasebs_config}")
-
-    base_profiles = resolve_base_profiles(args)
 
     pairs = [tuple(p) for p in (args.pair or DEFAULT_PAIRS)]
     if args.only:
@@ -452,9 +428,8 @@ def main(argv=None):
         solver["max_iter"] = args.max_iter
 
     print(f"=== cheaseBS self-scaled omt/omne scan {stamp} ===")
+    print(f"case dir  : {case_dir}")
     print(f"base gfile: {gfile}  (shot {shot})")
-    for spec in ("e", "i", "z"):
-        print(f"base prof : {base_profiles[spec]}")
     print(f"template  : {args.cheasebs_config}")
     print(f"cheaseBS  : {cheasebs_script}")
     print(f"chease    : {chease_binary}")
@@ -471,15 +446,15 @@ def main(argv=None):
     print()
 
     # The base discharge, harmonized once and reused: every point scales the
-    # source profiles, never its predecessor. Its untransformed _tree is what
-    # output_gfile hands cheaseBS as the reference set.
+    # source profiles, never its predecessor. Its untransformed dataset is what
+    # cheaseBS gets as the reference set.
     from TPED.projects.discharge_tools.src.discharge_data import DischargeData
     from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
 
-    staged = stage_base_profiles(base_profiles, os.path.join(outroot, "base_profiles"))
-    print(f"staged base profiles under canonical names: {os.path.dirname(staged['e'])}")
-    phys_base = DischargePhysics(
-        DischargeData(gfile=gfile, profiles=[staged[s] for s in ("e", "i", "z")]))
+    data = DischargeData(input_dir=case_dir, gfile=gfile)
+    print(f"base prof : {data.profiles_filepaths}")
+    print(f"base pfile: {data.pfile_filepath}")
+    phys_base = DischargePhysics(data)
 
     midped, topped = args.rhot_midped, args.rhot_topped
     if args.auto_pedestal:
@@ -530,8 +505,10 @@ def main(argv=None):
         # Written after every point, not at the end: a campaign that is killed
         # halfway still leaves a readable record of what it did.
         with open(os.path.join(outroot, "selfscaled_scan.json"), "w") as fh:
-            json.dump({"shot": shot, "gfile": gfile, "base_profiles": base_profiles,
-                       "staged_profiles": staged, "pairs": [list(p) for p in pairs],
+            json.dump({"shot": shot, "case_dir": case_dir, "gfile": gfile,
+                       "base_profiles": data.profiles_filepaths,
+                       "base_pfile": data.pfile_filepath,
+                       "pairs": [list(p) for p in pairs],
                        "rhot_midped": midped, "rhot_topped": topped,
                        "cheasebs_config": args.cheasebs_config,
                        "overrides": solver, "baseline_dir": baseline_dir,
