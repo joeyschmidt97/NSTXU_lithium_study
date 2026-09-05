@@ -127,17 +127,26 @@ def parse_pair(text):
         raise argparse.ArgumentTypeError(f"--pair values must be numbers: {text!r}")
 
 
-def find_base_gfile(case_dir):
-    """The base EQDSK in the case directory: g<shot>.<time>, one of them."""
-    cands = sorted(p for p in glob.glob(os.path.join(case_dir, "g[0-9]*"))
-                   if os.path.isfile(p))
-    if not cands:
-        raise SystemExit(f"No base gfile (g<shot>.<time>) in {case_dir}. "
-                         f"Pass one explicitly with --gfile.")
-    if len(cands) > 1:
-        raise SystemExit("Multiple candidate gfiles; name one with --gfile:\n  "
-                         + "\n  ".join(cands))
-    return cands[0]
+def load_base_discharge(case_dir, gfile=None):
+    """The base DischargeData for a case directory.
+
+    Finding the gfile is DischargeData's own job -- it sniffs the file's
+    contents rather than pattern-matching its name -- so this only constructs it
+    and reports what it picked up. Construction is filepath resolution only;
+    nothing is parsed until the physics object asks for it.
+    """
+    from TPED.projects.discharge_tools.src.discharge_data import DischargeData
+
+    data = DischargeData(input_dir=case_dir, gfile=gfile)
+    if not data.gfile_filepath:
+        raise SystemExit(
+            f"No gfile found in {case_dir}. Pass one explicitly with --gfile."
+        )
+    if not data.profiles_filepaths:
+        raise SystemExit(
+            f"No profiles_* files found in {case_dir}; the scan has nothing to scale."
+        )
+    return data
 
 
 def detect_pedestal(phys, var="ne"):
@@ -342,10 +351,10 @@ def main(argv=None):
     case_dir = os.path.abspath(os.path.expanduser(args.case_dir))
     if not os.path.isdir(case_dir):
         raise SystemExit(f"--case-dir does not exist: {case_dir}")
-    gfile = (os.path.abspath(os.path.expanduser(args.gfile)) if args.gfile
-             else find_base_gfile(case_dir))
-    if not os.path.isfile(gfile):
-        raise SystemExit(f"base gfile not found: {gfile}")
+    data = load_base_discharge(
+        case_dir,
+        gfile=os.path.abspath(os.path.expanduser(args.gfile)) if args.gfile else None)
+    gfile = os.path.abspath(data.gfile_filepath)
     shot = shot_of(gfile)
     if not os.path.isfile(args.cheasebs_config):
         raise SystemExit(f"cheaseBS config template not found: {args.cheasebs_config}")
@@ -430,6 +439,9 @@ def main(argv=None):
     print(f"=== cheaseBS self-scaled omt/omne scan {stamp} ===")
     print(f"case dir  : {case_dir}")
     print(f"base gfile: {gfile}  (shot {shot})")
+    for path in data.profiles_filepaths:
+        print(f"base prof : {path}")
+    print(f"base pfile: {data.pfile_filepath}")
     print(f"template  : {args.cheasebs_config}")
     print(f"cheaseBS  : {cheasebs_script}")
     print(f"chease    : {chease_binary}")
@@ -445,15 +457,11 @@ def main(argv=None):
     print(f"pid       : {os.getpid()}")
     print()
 
-    # The base discharge, harmonized once and reused: every point scales the
-    # source profiles, never its predecessor. Its untransformed dataset is what
-    # cheaseBS gets as the reference set.
-    from TPED.projects.discharge_tools.src.discharge_data import DischargeData
+    # Harmonized once and reused: every point scales the source profiles, never
+    # its predecessor. This untransformed dataset is what cheaseBS gets as the
+    # reference set.
     from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
 
-    data = DischargeData(input_dir=case_dir, gfile=gfile)
-    print(f"base prof : {data.profiles_filepaths}")
-    print(f"base pfile: {data.pfile_filepath}")
     phys_base = DischargePhysics(data)
 
     midped, topped = args.rhot_midped, args.rhot_topped

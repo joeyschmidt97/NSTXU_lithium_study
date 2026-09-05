@@ -114,7 +114,6 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
-import glob
 import json
 import os
 import re
@@ -197,8 +196,9 @@ def find_base_gfile(case_dir):
     Restricted to the root so a per-point `.eqdsk` written by the scaling code
     can never be mistaken for the source equilibrium.
     """
-    cands = sorted(p for p in glob.glob(os.path.join(case_dir, "g[0-9]*"))
-                   if os.path.isfile(p))
+    cands = sorted(os.path.join(case_dir, name) for name in os.listdir(case_dir)
+                   if len(name) > 1 and name[0] == "g" and name[1].isdigit()
+                   and os.path.isfile(os.path.join(case_dir, name)))
     if not cands:
         raise SystemExit(
             f"No base gfile (g<shot>.<time>) found at the root of {case_dir}. "
@@ -226,10 +226,10 @@ def discover_points(case_dir, only=None):
     is not a reason to drop the other twelve.
     """
     points, skipped = [], []
-    for path in sorted(glob.glob(os.path.join(case_dir, "omt*_omne*"))):
-        if not os.path.isdir(path):
+    for tag in sorted(os.listdir(case_dir)):
+        path = os.path.join(case_dir, tag)
+        if not os.path.isdir(path) or not tag.startswith("omt"):
             continue
-        tag = os.path.basename(path)
         parsed = parse_tag(tag)
         if parsed is None:
             skipped.append((tag, "directory name does not parse as omt<x>_omne<y>"))
