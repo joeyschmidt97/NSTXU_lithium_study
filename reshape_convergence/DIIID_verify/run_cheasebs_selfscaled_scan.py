@@ -183,7 +183,15 @@ def detect_pedestal(phys, var="ne"):
 
 
 def gradient_report(phys, radii=(0.9, 0.95, 0.99)):
-    """a/L_x at a few radii, so a dry run shows the scaling actually bit."""
+    """Gradient length L = -y/(dy/drhot) at a few radii, so a dry run shows the
+    scaling actually bit.
+
+    L, not a/L: TPED's gradient_length returns the length itself, so SMALLER is
+    a STEEPER profile. Scaling a gradient down (alpha < 1) therefore makes these
+    numbers larger. Read them at rhot_midped and inside the pedestal; at
+    rhot_topped the ramp's own derivative contributes a term of its own and the
+    response there is not a clean factor of alpha.
+    """
     out = {}
     for name in ("Te", "Ti", "ne"):
         try:
@@ -382,8 +390,13 @@ def main(argv=None):
     # which binary and which driver are "the" ones. The namelist is the one
     # exception: TPED's default is chease_namelist_nstx, wrong for DIII-D, so it
     # defaults to the repo's plain chease_namelist here.
+    #
+    # A dry run solves nothing, so it does not need any of it. Requiring a
+    # configured CHEASE to look at what the scaling did to the profiles would
+    # make the cheap check the expensive one.
     namelist, scratch_root = args.chease_namelist, args.scratch_root
     cheasebs_dir, chease_binary = args.cheasebs_dir, args.chease_binary
+    cheasebs_script = paths = workroot = baseline_dir = None
     try:
         from TPED.config.config_helper import Config
         cfg_paths = Config()
@@ -393,44 +406,48 @@ def main(argv=None):
         namelist = namelist or os.path.join(cheasebs_dir or "", "chease_namelist")
         scratch_root = scratch_root or cfg_paths.get_path("OUTPUT_PATH")
     except Exception as exc:
-        raise SystemExit(
-            f"Could not read the TPED config ({exc}). Pass --cheasebs-dir, "
-            f"--chease-binary, --chease-namelist and --scratch-root explicitly."
-        )
-    if not cheasebs_dir or not os.path.isdir(cheasebs_dir):
-        raise SystemExit(f"cheaseBS directory not found: {cheasebs_dir!r} "
-                         f"(set CHEASEBS_PATH or pass --cheasebs-dir)")
-    cheasebs_script = os.path.join(cheasebs_dir, "run_chease_iterative_profiles.py")
-    if not os.path.isfile(cheasebs_script):
-        raise SystemExit(f"cheaseBS driver not found: {cheasebs_script}")
-    if not chease_binary or not os.path.isfile(chease_binary):
-        raise SystemExit(f"CHEASE executable not found: {chease_binary!r} "
-                         f"(set CHEASE_PATH or pass --chease-binary)")
-    if not namelist or not os.path.isfile(namelist):
-        raise SystemExit(f"CHEASE namelist not found: {namelist!r} "
-                         f"(pass --chease-namelist)")
-    paths = {"cheasebs_script": cheasebs_script,
-             "chease_binary": os.path.abspath(chease_binary),
-             "chease_namelist": os.path.abspath(namelist)}
-
-    # cheaseBS works in scratch and only the result travels back, as in every
-    # other cheaseBS caller in this repo.
-    if args.in_place:
-        workroot = outroot
-    else:
-        if not scratch_root:
+        if not args.dry_run:
             raise SystemExit(
-                "No scratch root: set OUTPUT_PATH in the TPED user config, pass "
-                "--scratch-root, or use --in-place to run under --outroot."
+                f"Could not read the TPED config ({exc}). Pass --cheasebs-dir, "
+                f"--chease-binary, --chease-namelist and --scratch-root explicitly."
             )
-        workroot = os.path.join(os.path.abspath(os.path.expanduser(scratch_root)),
-                                "cheaseBS_runs", f"{stamp}-{shot}-selfscaled")
 
-    # One baseline for the campaign: it is a function of the EQDSK and the
-    # reference profiles, and both are the same at every point.
-    baseline_dir = args.baseline_dir or os.path.join(workroot, "baseline")
+    if not args.dry_run:
+        if not cheasebs_dir or not os.path.isdir(cheasebs_dir):
+            raise SystemExit(f"cheaseBS directory not found: {cheasebs_dir!r} "
+                             f"(set CHEASEBS_PATH or pass --cheasebs-dir)")
+        cheasebs_script = os.path.join(cheasebs_dir,
+                                       "run_chease_iterative_profiles.py")
+        if not os.path.isfile(cheasebs_script):
+            raise SystemExit(f"cheaseBS driver not found: {cheasebs_script}")
+        if not chease_binary or not os.path.isfile(chease_binary):
+            raise SystemExit(f"CHEASE executable not found: {chease_binary!r} "
+                             f"(set CHEASE_PATH or pass --chease-binary)")
+        if not namelist or not os.path.isfile(namelist):
+            raise SystemExit(f"CHEASE namelist not found: {namelist!r} "
+                             f"(pass --chease-namelist)")
+        paths = {"cheasebs_script": cheasebs_script,
+                 "chease_binary": os.path.abspath(chease_binary),
+                 "chease_namelist": os.path.abspath(namelist)}
 
-    paths["baseline_dir"] = baseline_dir
+        # cheaseBS works in scratch and only the result travels back, as in
+        # every other cheaseBS caller in this repo.
+        if args.in_place:
+            workroot = outroot
+        else:
+            if not scratch_root:
+                raise SystemExit(
+                    "No scratch root: set OUTPUT_PATH in the TPED user config, "
+                    "pass --scratch-root, or use --in-place to run under --outroot."
+                )
+            workroot = os.path.join(
+                os.path.abspath(os.path.expanduser(scratch_root)),
+                "cheaseBS_runs", f"{stamp}-{shot}-selfscaled")
+
+        # One baseline for the campaign: it is a function of the EQDSK and the
+        # reference profiles, and both are the same at every point.
+        baseline_dir = args.baseline_dir or os.path.join(workroot, "baseline")
+        paths["baseline_dir"] = baseline_dir
 
     solver = {}
     if args.max_iter is not None:
@@ -443,13 +460,16 @@ def main(argv=None):
         print(f"base prof : {path}")
     print(f"base pfile: {data.pfile_filepath}")
     print(f"template  : {args.cheasebs_config}")
-    print(f"cheaseBS  : {cheasebs_script}")
-    print(f"chease    : {chease_binary}")
-    print(f"namelist  : {namelist}")
-    print(f"outroot   : {outroot}   (results and records)")
-    print(f"workroot  : {workroot}"
-          f"{'   (in place)' if args.in_place else '   (scratch; not preserved)'}")
-    print(f"baseline  : {baseline_dir}")
+    if args.dry_run:
+        print("cheaseBS  : (not resolved; dry run solves nothing)")
+    else:
+        print(f"cheaseBS  : {cheasebs_script}")
+        print(f"chease    : {chease_binary}")
+        print(f"namelist  : {namelist}")
+        print(f"outroot   : {outroot}   (results and records)")
+        print(f"workroot  : {workroot}"
+              f"{'   (in place)' if args.in_place else '   (scratch; not preserved)'}")
+        print(f"baseline  : {baseline_dir}")
     print(f"overrides : {solver or '(template as-is)'}")
     print(f"radii     : {args.analysis_radii or '(q checks skipped)'}")
     print(f"points    : {len(pairs)} -> {', '.join(tag_of(*p) for p in pairs)}")
@@ -473,7 +493,8 @@ def main(argv=None):
         raise SystemExit(f"pedestal window is not ordered: topped={topped}, "
                          f"midped={midped}; both must lie in (0, 1) with top < mid")
     print(f"pedestal  : topped={topped:.4f}, midped={midped:.4f}")
-    print(f"base a/L  : {json.dumps(gradient_report(phys_base), default=str)}")
+    print(f"base L    : {json.dumps(gradient_report(phys_base), default=str)}"
+          f"   (gradient length in rhot; smaller = steeper)")
     print()
 
     if args.dry_run:
