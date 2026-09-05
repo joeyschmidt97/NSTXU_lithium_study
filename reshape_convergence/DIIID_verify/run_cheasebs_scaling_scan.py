@@ -43,10 +43,43 @@ tests use against this exact EQDSK. Override with `--reference-dir` /
 unity point of the scan itself as the reference. The script refuses to alias the
 reference onto a scaled point unless `--allow-aliased-reference` is passed.
 
+WHERE IT RUNS -- scratch, then copy back
+----------------------------------------
+Same split as every other cheaseBS caller in this repo (see `output_gfile` in
+TPED's discharge_io). cheaseBS itself runs against a timestamped directory under
+the configured scratch path (TPED `OUTPUT_PATH`), because the run tree -- the
+baseline decomposition plus per-iteration CHEASE artifacts for every point -- is
+bulky, transient working data. Only the result and the record are copied back
+into `--outroot`:
+
+    <outroot>/<tag>/EQDSK*.OUT              the reconstruction
+                   /profiles_{e,i,z}        the scaled profiles it solved with
+                   /reference_profiles/REF_profiles_{e,i,z}
+                   /cheasebs_run_config.json
+                   /convergence_summary.json
+                   /cheasebs_acceptance.json
+                   /iteration_log.csv
+                   /iteration_errors.png
+                   /run_summary.png
+
+The profile copies are the reason this is worth doing rather than just keeping
+paths: TPED's `resolve_run_files` prefers a run directory's own local copies
+over the absolute paths in the config, so a directory carrying them re-plots
+correctly years later, after scratch is purged and after the case directory has
+moved. Which profiles the baseline was built from is the difference between a
+real scan point and a null test, and it is not recoverable from the gfile alone.
+`iteration_log.csv` travels for the same reason: `convergence_summary.json` keeps
+only the final scalars, so without it "did the loop settle, or did it just hit
+max_iter" is unanswerable.
+
+`--in-place` skips scratch and runs directly under `--outroot`, which is only
+worth it when scratch is unavailable.
+
 The baseline decomposition depends only on (EQDSK, reference profiles), which
-are identical across points, so it is built once into `<outroot>/baseline` and
-reused by every solve. That is one CHEASE preprocessing pass for the campaign
-instead of one per point.
+are identical across points, so it is built once into a single scratch directory
+and reused by every solve. That is one CHEASE preprocessing pass for the
+campaign instead of one per point. It stays in scratch: it is rebuildable, and
+its own CHEASE artifacts are most of the bulk.
 
 USAGE
 
@@ -82,6 +115,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -109,6 +143,18 @@ SOLVER_DEFAULTS = {
 }
 
 TAG_RE = re.compile(r"^omt(\d+p\d+)_omne(\d+p\d+)$")
+
+# What travels from the scratch run directory into the permanent one. The final
+# EQDSK and the profile copies are handled separately; these are the files
+# cheaseBS and the scorer write under their own names.
+COPY_BACK = (
+    "cheasebs_run_config.json",
+    "convergence_summary.json",
+    "cheasebs_acceptance.json",
+    "iteration_log.csv",
+    "iteration_errors.png",
+    "run_summary.png",
+)
 
 
 class Tee:
@@ -334,14 +380,86 @@ def score(eqdsk, gfile, run_dir, cheasebs_script, radii):
         return None, f"acceptance scoring raised: {type(exc).__name__}: {exc}"
 
 
-def solve(point, cfg, cheasebs_script, gfile, radii):
-    """One point: write the config, run cheaseBS, score the result."""
-    tag, omt, omne, _profiles = point
-    out_dir = cfg["output_dir"]
-    os.makedirs(out_dir, exist_ok=True)
-    row = {"tag": tag, "omt": omt, "omne": omne, "run_dir": out_dir}
+def render_plots(run_dir, cfg):
+    """The end plots, rendered in the run directory before anything is copied.
 
-    config_path = os.path.join(out_dir, "cheasebs_run_config.json")
+    Diagnostics on top of a finished solve: never allowed to sink the run, since
+    the equilibrium is already written and scored by the time these are drawn.
+    run_summary in particular reads every input path back off disk, which is how
+    a reconstruction built from the wrong reference profiles becomes visible.
+    """
+    notes = []
+    try:
+        from TPED.projects.discharge_tools.src.cheasebs_runner import (
+            plot_iteration_errors, plot_run_summary)
+    except ImportError as exc:
+        return [f"TPED not importable ({exc}); no plots rendered"]
+
+    for name, fn in (("iteration_errors.png", plot_iteration_errors),
+                     ("run_summary.png", plot_run_summary)):
+        try:
+            fn(run_dir, os.path.join(run_dir, name), cfg=cfg, quiet=True)
+        except Exception as exc:
+            notes.append(f"{name} failed: {type(exc).__name__}: {exc}")
+    return notes
+
+
+def copy_back(run_dir, final_dir, eqdsk, cfg):
+    """Move the result and the record out of scratch into the permanent dir.
+
+    The profiles are copied under their canonical stems rather than left as
+    paths, because TPED's resolve_run_files prefers a run directory's own local
+    copies over the config's absolute paths -- so a directory carrying them
+    re-plots correctly after scratch is purged or the case directory moves.
+    """
+    os.makedirs(final_dir, exist_ok=True)
+    copied = []
+
+    if eqdsk and os.path.isfile(eqdsk):
+        dst = os.path.join(final_dir, os.path.basename(eqdsk))
+        shutil.copy2(eqdsk, dst)
+        copied.append(os.path.basename(dst))
+
+    for fname in COPY_BACK:
+        src = os.path.join(run_dir, fname)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(final_dir, fname))
+            copied.append(fname)
+
+    # The scaled profiles this point solved with, and the reference set the
+    # baseline was built from. Both are kilobytes of text and they are the only
+    # record of which is which once the config's absolute paths go stale.
+    for spec, longname in (("e", "electron"), ("i", "deuterium"), ("z", "carbon")):
+        src = cfg.get(f"{longname}_profile")
+        if src and os.path.isfile(src):
+            shutil.copy2(src, os.path.join(final_dir, f"profiles_{spec}"))
+            copied.append(f"profiles_{spec}")
+
+    ref_dir = os.path.join(final_dir, "reference_profiles")
+    for spec, longname in (("e", "electron"), ("i", "deuterium"), ("z", "carbon")):
+        src = cfg.get(f"reference_{longname}_profile")
+        if src and os.path.isfile(src):
+            os.makedirs(ref_dir, exist_ok=True)
+            shutil.copy2(src, os.path.join(ref_dir, f"REF_profiles_{spec}"))
+            copied.append(f"reference_profiles/REF_profiles_{spec}")
+
+    return copied
+
+
+def solve(point, cfg, cheasebs_script, gfile, radii, final_dir):
+    """One point: write the config, run cheaseBS, score it, plot it, copy it back.
+
+    cfg["output_dir"] is where cheaseBS actually works (scratch, normally);
+    final_dir is the permanent directory the result is copied into. They are the
+    same directory under --in-place, and copy_back then no-ops on itself.
+    """
+    tag, omt, omne, _profiles = point
+    run_dir = cfg["output_dir"]
+    os.makedirs(run_dir, exist_ok=True)
+    row = {"tag": tag, "omt": omt, "omne": omne,
+           "run_dir": run_dir, "final_dir": final_dir}
+
+    config_path = os.path.join(run_dir, "cheasebs_run_config.json")
     with open(config_path, "w") as fh:
         json.dump(cfg, fh, indent=4)
 
@@ -354,19 +472,19 @@ def solve(point, cfg, cheasebs_script, gfile, radii):
         row["error"] = f"cheaseBS exited {rc}"
         return row
 
-    summary = read_summary(out_dir)
+    summary = read_summary(run_dir)
     row["iterations"] = summary.get("iterations")
     row["converged"] = summary.get("final_converged", summary.get("converged"))
     row["final_ip_a"] = summary.get("final_ip_a")
     row["target_ip_a"] = summary.get("target_ip_a")
 
-    eqdsk = last_eqdsk(out_dir)
+    eqdsk = last_eqdsk(run_dir)
     row["eqdsk"] = eqdsk
     if not eqdsk:
         row["error"] = "cheaseBS exited 0 but iteration_log.csv has no eqdsk_path"
         return row
 
-    rec, note = score(eqdsk, gfile, out_dir, cheasebs_script, radii)
+    rec, note = score(eqdsk, gfile, run_dir, cheasebs_script, radii)
     if note:
         row["acceptance_note"] = note
         print(f"    {note}")
@@ -376,6 +494,25 @@ def solve(point, cfg, cheasebs_script, gfile, radii):
         row["ip_error_rel"] = rec.get("ip_error_rel")
         row["q_errors_rel"] = rec.get("q_errors_rel")
         row["q_edge_error_rel"] = rec.get("q_edge_error_rel")
+
+    for plot_note in render_plots(run_dir, cfg):
+        row.setdefault("plot_notes", []).append(plot_note)
+        print(f"    {plot_note}")
+
+    if os.path.normcase(os.path.realpath(run_dir)) != os.path.normcase(
+            os.path.realpath(final_dir)):
+        try:
+            copied = copy_back(run_dir, final_dir, eqdsk, cfg)
+            row["copied"] = copied
+            row["eqdsk_final"] = os.path.join(final_dir, os.path.basename(eqdsk))
+            print(f"    copied {len(copied)} file(s) -> {final_dir}")
+        except Exception as exc:
+            # The solve succeeded; failing to copy it out is worth reporting
+            # loudly but is not the same as the point having failed.
+            row["copy_error"] = f"{type(exc).__name__}: {exc}"
+            print(f"    COPY-BACK FAILED: {row['copy_error']}")
+    else:
+        row["eqdsk_final"] = eqdsk
     return row
 
 
@@ -435,6 +572,13 @@ def main(argv=None):
                     help="permit a point to use its own scaled profiles as the "
                          "reference. This makes that point a null test")
 
+    ap.add_argument("--scratch-root", default=None,
+                    help="where cheaseBS actually runs (default: TPED OUTPUT_PATH). "
+                         "Only the result and the record are copied to --outroot")
+    ap.add_argument("--in-place", action="store_true",
+                    help="run directly under --outroot instead of scratch, keeping "
+                         "the full per-iteration tree there")
+
     ap.add_argument("--chease-binary", default=None,
                     help="CHEASE executable (default: TPED CHEASE_PATH/src-f90/chease)")
     ap.add_argument("--cheasebs-dir", default=None,
@@ -480,17 +624,20 @@ def main(argv=None):
     # not given, so this script agrees with every other cheaseBS caller in the
     # repo about which binary and which driver are "the" ones.
     cheasebs_dir, chease_binary = args.cheasebs_dir, args.chease_binary
-    if cheasebs_dir is None or chease_binary is None:
+    scratch_root = args.scratch_root
+    if cheasebs_dir is None or chease_binary is None or (
+            scratch_root is None and not args.in_place):
         try:
             from TPED.config.config_helper import Config
             cfg_paths = Config()
             cheasebs_dir = cheasebs_dir or cfg_paths.get_path("CHEASEBS_PATH")
             chease_binary = chease_binary or os.path.join(
                 cfg_paths.get_path("CHEASE_PATH") or "", "src-f90", "chease")
+            scratch_root = scratch_root or cfg_paths.get_path("OUTPUT_PATH")
         except Exception as exc:
             raise SystemExit(
                 f"Could not read TPED config for the CHEASE paths ({exc}). "
-                f"Pass --cheasebs-dir and --chease-binary explicitly."
+                f"Pass --cheasebs-dir, --chease-binary and --scratch-root explicitly."
             )
     if not cheasebs_dir or not os.path.isdir(cheasebs_dir):
         raise SystemExit(f"cheaseBS directory not found: {cheasebs_dir!r} "
@@ -514,7 +661,25 @@ def main(argv=None):
 
     outroot = os.path.abspath(
         args.outroot or os.path.join(HERE, f"runs_{shot}_omn_omt_scaling"))
-    baseline_dir = os.path.join(outroot, "baseline")
+
+    # cheaseBS works in scratch and only the result travels back, matching every
+    # other cheaseBS caller in this repo. The per-iteration CHEASE tree for a
+    # thirteen-point scan is the bulk, and it is regenerable; --outroot is meant
+    # to hold the equilibria and the records, not the working files.
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H-%M-%S")
+    if args.in_place:
+        workroot = outroot
+    else:
+        if not scratch_root:
+            raise SystemExit(
+                "No scratch root: set OUTPUT_PATH in the TPED user config, pass "
+                "--scratch-root, or use --in-place to run under --outroot."
+            )
+        workroot = os.path.join(os.path.abspath(os.path.expanduser(scratch_root)),
+                                "cheaseBS_runs", f"{stamp}-{shot}-omn_omt_scaling")
+    # The baseline is shared by every point and stays where the work happens: it
+    # is rebuildable, and its own CHEASE artifacts are most of the bulk.
+    baseline_dir = os.path.join(workroot, "baseline")
 
     points, skipped = discover_points(case_dir, only=set(args.only) if args.only else None)
     if not points:
@@ -544,7 +709,6 @@ def main(argv=None):
     # per point would be one wasted CHEASE preprocessing pass each.
     solver["rebuild_baseline"] = bool(args.rebuild_baseline)
 
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H-%M-%S")
     os.makedirs(outroot, exist_ok=True)
     log_path = args.log or os.path.join(outroot, f"campaign_{stamp}.log")
     if not args.dry_run:
@@ -561,7 +725,9 @@ def main(argv=None):
     print(f"cheaseBS  : {cheasebs_script}")
     print(f"chease    : {chease_binary}")
     print(f"namelist  : {namelist}")
-    print(f"outroot   : {outroot}")
+    print(f"outroot   : {outroot}   (results and records)")
+    print(f"workroot  : {workroot}"
+          f"{'   (in place)' if args.in_place else '   (scratch; not preserved)'}")
     print(f"baseline  : {baseline_dir}")
     print(f"solver    : {solver}")
     print(f"radii     : {args.analysis_radii or '(q checks skipped)'}")
@@ -572,8 +738,9 @@ def main(argv=None):
     print(f"pid       : {os.getpid()}")
     print()
 
+    final_dirs = [os.path.join(outroot, p[0]) for p in points]
     configs = [build_config(p, refs, gfile, baseline_dir,
-                            os.path.join(outroot, p[0]),
+                            os.path.join(workroot, p[0]),
                             chease_binary, namelist, solver)
                for p in points]
     guard_paths(configs[0])
@@ -585,11 +752,12 @@ def main(argv=None):
 
     rows, failed = [], []
     t_camp = time.time()
-    for point, cfg in zip(points, configs):
+    for point, cfg, final_dir in zip(points, configs, final_dirs):
         tag = point[0]
         print(f"--- {tag}  (omt {point[1]:.2f}, omne {point[2]:.2f}) ---", flush=True)
         try:
-            row = solve(point, cfg, cheasebs_script, gfile, args.analysis_radii)
+            row = solve(point, cfg, cheasebs_script, gfile, args.analysis_radii,
+                        final_dir)
         except Exception:
             # One point failing outright must not take the rest of the scan with
             # it; the remaining points are independent hours of work.
@@ -611,6 +779,8 @@ def main(argv=None):
             json.dump({"shot": shot, "case_dir": case_dir, "gfile": gfile,
                        "reference": refs, "reference_choice": ref_why,
                        "solver": solver, "analysis_radii": args.analysis_radii,
+                       "workroot": workroot, "baseline_dir": baseline_dir,
+                       "in_place": bool(args.in_place),
                        "skipped": skipped, "rows": rows},
                       fh, indent=1, default=str)
         # Every point after the first reuses the baseline the first one built.
@@ -636,6 +806,9 @@ def main(argv=None):
                     print(f"  {r['tag']}: {reason}")
     print(f"\nrecord : {os.path.join(outroot, 'scaling_scan.json')}")
     print(f"table  : {os.path.join(outroot, 'table.txt')}")
+    print(f"results: {outroot}")
+    if not args.in_place:
+        print(f"scratch: {workroot}  (full per-iteration tree; purgeable)")
 
     if failed:
         return 1
