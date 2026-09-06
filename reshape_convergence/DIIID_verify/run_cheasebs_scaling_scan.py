@@ -528,15 +528,23 @@ def solve(point, cfg, cheasebs_script, gfile, radii, final_dir):
 
 
 def text_table(rows):
-    """The campaign result as plain text -- a log is the only place it is read."""
+    """The campaign result as plain text -- a log is the only place it is read.
+
+    A `method` column appears only when the rows carry one, so a single-method
+    campaign's table is unchanged and a comparison campaign's is sorted by the
+    thing being compared.
+    """
     cols = [("tag", "{}", 18), ("omt", "{:.2f}", 6), ("omne", "{:.2f}", 6),
             ("iters", "{}", 6), ("conv", "{}", 6), ("acc", "{}", 6),
             ("Ip_err", "{:.2%}", 9), ("q@x0", "{:.2%}", 9),
             ("wall_s", "{:.0f}", 8), ("status", "{}", 8)]
+    if any(r.get("method") for r in rows):
+        cols.insert(0, ("method", "{}", 12))
     lines = ["  " + "".join(name.rjust(w) for name, _, w in cols)]
     for r in rows:
         q = r.get("q_errors_rel") or {}
         vals = {
+            "method": r.get("method"),
             "tag": r["tag"], "omt": r["omt"], "omne": r["omne"],
             "iters": r.get("iterations"), "conv": r.get("converged"),
             "acc": r.get("accepted"), "Ip_err": r.get("ip_error_rel"),

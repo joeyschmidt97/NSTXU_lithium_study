@@ -1,62 +1,96 @@
 #!/usr/bin/env python3
-"""The same omt/omne scan, scaled by TPED instead of read off disk.
+"""Two ways of scaling the same DIII-D profiles, both put through cheaseBS.
 
-Companion to run_cheasebs_scaling_scan.py, which replays profiles the older IFS
-scaling code already wrote. That replay worked: the driven amplitude moved and q
-and the shear responded, on the same DIII-D EQDSK the reshape campaign uses. So
-the solver path is not the suspect, and what separates the two is how the
-profiles were made -- an mtanh fit and a pedestal reshape on one side, a direct
-gradient scaling on the other.
+The question this exists to answer: is the omn/omt gradient scaling more stable
+through cheaseBS than the full-mtanh pedestal scaling? Everything else is held
+fixed -- same base EQDSK, same base profiles, same reference set, same baseline
+decomposition, same solver settings, same point grid, same acceptance gate -- so
+the only thing that differs between the two campaigns is how the scaled profiles
+were produced.
 
-This script closes that gap by keeping everything except the scaling identical.
-Same base EQDSK, same base profiles, same cheaseBS settings, same output layout
-and the same point tags, so the two campaigns can be compared directory by
-directory. The only difference is that the scaled profiles are produced here,
-through the discharge object:
+Why the question is open. Replaying profiles the older IFS scaling code wrote
+worked: the driven amplitude moved and q and the shear responded, on this same
+EQDSK (run_cheasebs_scaling_scan.py, which is kept as the record of that run and
+supplies the shared helpers here). The reshape campaign, which builds its
+profiles from an mtanh fit, did not behave. That leaves the profile construction
+as the suspect and these two methods as the two candidates.
+
+METHOD 1 -- `omn_omt`, gradient scaling in the discharge object
 
     phys.apply_omt(alpha=omt, ...)      # Te and Ti, and Tz with them
         .apply_omne(alpha=omn, ...)     # ne, with ni and nz held quasineutral
 
-Both are the pedestal gradient transforms in TPED's pedestal_transforms: the
-profile is re-exponentiated about its mid-pedestal value,
-`T_new = T_mid * (T/T_mid)**alpha`, with alpha ramped smoothly from 1 in the
-core to its full value across [rhot_topped, rhot_midped]. No mtanh fit is
-involved at any point, which is what makes this a test of the fit rather than
-another run through it.
+TPED's pedestal gradient transforms: the profile is re-exponentiated about its
+mid-pedestal value, `T_new = T_mid * (T/T_mid)**alpha`, with alpha ramped from 1
+in the core to its full value across [rhot_topped, rhot_midped]. No fit is
+involved -- the profile's own shape is the thing being rescaled.
 
-`--omt` scales both temperatures, `--omn` scales the electron density and
-carries ni and nz with it. That mirrors the omt/omne convention the IFS scan
-directories are named for, so a point here has the same name and the same
-intended meaning as the point it is being compared against.
+METHOD 2 -- `mtanh_full`, the reshape campaign's machinery
 
-The discharge directory (`--case-dir`) already holds the base gfile, pfile and
-`profiles_{e,i,z}` under exactly the names TPED expects, so it is handed to
-DischargeData as-is and auto-discovery does the rest. Nothing is staged,
-renamed or re-derived on the way in.
+    phys.apply_mtanh_full('Te', fit=..., scale_height=omt)   # and Ti, Tz
+    phys.apply_mtanh_full('ne', fit=..., scale_height=omn)
 
-The solve goes through TPED's `run_cheasebs_workflow` -- the function
-`output_gfile` itself calls -- on a scratch run directory, and only the
-equilibrium, the records and the end plots are copied into --outroot, using the
-same copy_back the file-driven runner uses. `output_gfile` would be the shorter
-route but it hardcodes `chease_namelist_nstx` as an explicit argument, so a
-DIII-D namelist cannot be passed through its **cheasebs_overrides without
-colliding with it; calling one layer down is what buys the right namelist.
+A Stefanikova F_full profile is fitted to each variable and the fit's pedestal
+parameter is scaled, then the profile is rebuilt from the modified fit. This is
+the same transform and the same `pedestal_weight=8.0` fit setting the NSTX
+pedestal_scan campaign uses for its Te_ped_scale / ne_ped_scale axes; only the
+discharge is different. `--mtanh-knob` picks which fit parameter the scale
+multiplies, defaulting to `scale_height` to match that campaign.
 
-The reference profiles are the untransformed base dataset, so the baseline
-decomposition is a fixed frame rather than one that moves with the scan -- the
-failure that made every downward point a null test.
+The two are NOT the same operation and are not meant to be: one scales a
+gradient, the other a fitted pedestal height. A point tagged omt0p8_omne0p9
+means "0.8 on the temperature knob, 0.9 on the density knob" in each method's
+own terms. What is comparable is the solver's response -- iterations, Ip error,
+q error, acceptance -- across the same grid.
+
+Two asymmetries worth knowing before reading the results:
+
+  * The fit is a failure mode the gradient scaling does not have. Every fit's
+    relative rms is recorded per point and printed, so a method-2 point that
+    misbehaves can be checked against how well its own fit described the profile
+    in the first place. Fits are computed once on the base profiles and reused
+    at every point, as pedestal_scan does.
+  * mtanh_full on a temperature is fitted per variable, so Tz is fitted and
+    scaled in its own right rather than being carried along with Ti the way
+    apply_omt carries it.
+
+WHERE THINGS GO
+
+`--case-dir` is the discharge directory: base gfile, pfile and profiles_{e,i,z}
+under the names TPED expects, handed to DischargeData as-is. Results default to
+$SCRATCH, one subdirectory per method:
+
+    <outroot>/omn_omt/<tag>/     EQDSK, records, end plots, profiles
+    <outroot>/mtanh_full/<tag>/
+    <outroot>/comparison.json    every row from both methods
+    <outroot>/table.txt          both methods in one table, method first
+
+cheaseBS itself runs on a scratch working tree and only the result and the
+records are copied into those directories. Both methods share one baseline
+decomposition: it is a function of the EQDSK and the untransformed reference
+profiles, and neither depends on the method, so building it twice would only
+buy two chances to build it differently.
+
+The solve calls TPED's `run_cheasebs_workflow` -- the function `output_gfile`
+itself calls -- rather than `output_gfile`, which hardcodes `chease_namelist_nstx`
+as an explicit argument so a DIII-D namelist cannot be passed through its
+**cheasebs_overrides without colliding with it.
 
 USAGE
 
-    # one point first: the unity point, which should reproduce the source
+    # one point, both methods: the unity point, which should reproduce the source
     python -u run_cheasebs_selfscaled_scan.py \
-        --case-dir /data/DIIID/DIIID162940/DIIID162940 --only omt1p0_omne1p0
+        --case-dir $SCRATCH/DIIID162940/DIIID162940 --only omt1p0_omne1p0
 
-    # the full grid, detached, matching the IFS scan's points
-    nohup python -u run_cheasebs_selfscaled_scan.py --case-dir ... > /dev/null 2>&1 &
-    tail -f runs_162940_selfscaled/campaign_*.log
+    # the full comparison, detached
+    nohup python -u run_cheasebs_selfscaled_scan.py \
+        --case-dir $SCRATCH/DIIID162940/DIIID162940 > /dev/null 2>&1 &
+    tail -f $SCRATCH/cheasebs_scaling_comparison/*/campaign_*.log
 
-    # see the plan and the scaled profiles' gradients without solving anything
+    # one method only
+    python -u run_cheasebs_selfscaled_scan.py --case-dir ... --method mtanh_full
+
+    # what each method does to the profiles, solving nothing
     python run_cheasebs_selfscaled_scan.py --case-dir ... --dry-run
 
 `-u` matters: without it Python block-buffers stdout when it is not a terminal
@@ -84,6 +118,8 @@ sys.path.insert(0, HERE)
 from run_cheasebs_scaling_scan import (  # noqa: E402
     Tee, copy_back, render_plots, shot_of, text_table)
 
+METHODS = ("omn_omt", "mtanh_full")
+
 # The points the IFS scan directory holds for 162940, so this campaign lands
 # tag-for-tag beside it. (omt, omn).
 DEFAULT_PAIRS = (
@@ -94,15 +130,27 @@ DEFAULT_PAIRS = (
     (1.1, 1.0), (1.1, 1.1),
 )
 
-# TPED's own pedestal window for this transform pair (cheasebs_identity test).
-# Overridable, and --auto-pedestal measures them off the profile instead.
+# TPED's own pedestal window for the gradient transforms (cheasebs_identity
+# test). Overridable, and --auto-pedestal measures them off the profile instead.
 DEFAULT_MIDPED = 0.95
 DEFAULT_TOPPED = 0.90
 
+# pedestal_scan.FIT_KWARGS, unchanged: the pedestal is upweighted eightfold so
+# the core cannot dominate a least-squares fit whose pedestal is the point.
+# Copied rather than imported because pedestal_scan's module scope loads the
+# NSTX discharge table.
+FIT_KWARGS = dict(pedestal_weight=8.0)
+
+# Temperatures take the omt knob, densities the omn knob. Tz is listed for the
+# fit path because apply_mtanh_full fits each variable in its own right; the
+# gradient path gets Tz for free through apply_omt's apply_to_tz.
+TEMPERATURE_VARS = ("Te", "Ti", "Tz")
+DENSITY_VAR = "ne"
+
 # DIII-D validated solver path: j_parallel replay on rhot with QSPEC enforced.
-# Lives in a template file so it is the same object the file-driven runner and
-# any later re-run read, rather than a second copy that can drift.
 DEFAULT_CONFIG = os.path.join(HERE, "diiid_cheasebs_config.json")
+
+DEFAULT_OUTROOT_SUBDIR = "cheasebs_scaling_comparison"
 
 
 def fmt_alpha(v):
@@ -127,6 +175,13 @@ def parse_pair(text):
         raise argparse.ArgumentTypeError(f"--pair values must be numbers: {text!r}")
 
 
+def default_outroot(shot, stamp):
+    """$SCRATCH if the environment has one, else this directory."""
+    scratch = os.environ.get("SCRATCH")
+    root = os.path.join(scratch, DEFAULT_OUTROOT_SUBDIR) if scratch else HERE
+    return os.path.join(root, f"runs_{shot}_{stamp}")
+
+
 def load_base_discharge(case_dir, gfile=None):
     """The base DischargeData for a case directory.
 
@@ -149,15 +204,80 @@ def load_base_discharge(case_dir, gfile=None):
     return data
 
 
+def fit_base_profiles(phys_base):
+    """{var: (StefanikovaProfile, rms_relative)} for everything mtanh_full scales.
+
+    Fitted once on the base profiles and reused at every point, as pedestal_scan
+    does: the fit describes the unscaled plasma, and refitting per point would
+    let the fit quality drift from point to point and confound exactly the
+    stability comparison this script exists to make.
+
+    A variable whose fit raises is recorded rather than propagated -- it is a
+    result about the method, and the other variables still have something to say.
+    """
+    from TPED.projects.discharge_tools.src.transforms.mtanh_transforms import (
+        fit_mtanh_full)
+
+    fits, quality = {}, {}
+    for var in TEMPERATURE_VARS + (DENSITY_VAR,):
+        if var not in phys_base.ds:
+            continue
+        try:
+            profile, meta = fit_mtanh_full(phys_base.ds, var, **FIT_KWARGS)
+            fits[var] = profile
+            quality[var] = meta.get("rms_relative")
+        except Exception as exc:
+            quality[var] = f"FIT FAILED: {type(exc).__name__}: {exc}"
+    return fits, quality
+
+
+def scale_omn_omt(phys_base, omt, omn, midped, topped):
+    """Method 1: scale the profile gradients directly."""
+    return (phys_base
+            .apply_omt(alpha=omt, rhot_midped=midped, rhot_topped=topped)
+            .apply_omne(alpha=omn, rhot_midped=midped, rhot_topped=topped))
+
+
+def scale_mtanh_full(phys_base, omt, omn, fits, knob):
+    """Method 2: scale the fitted pedestal, one variable at a time.
+
+    Per variable rather than by passing a list, because apply_mtanh_full reuses
+    a single `fit` argument across every variable in a list -- correct only when
+    they share a fit, which these do not.
+
+    ne goes last and carries enforce_quasineutrality, so ni and nz are rebuilt
+    from the final ne rather than from an intermediate one.
+    """
+    phys = phys_base
+    for var in TEMPERATURE_VARS:
+        if var not in phys.ds or var not in fits:
+            continue
+        phys = phys.apply_mtanh_full(var, fit=fits[var], **{knob: omt})
+    if DENSITY_VAR in phys.ds and DENSITY_VAR in fits:
+        phys = phys.apply_mtanh_full(DENSITY_VAR, fit=fits[DENSITY_VAR],
+                                     enforce_quasineutrality=True, qz=6.0,
+                                     **{knob: omn})
+    return phys
+
+
+def scale(phys_base, method, omt, omn, midped, topped, fits, knob):
+    """The scaled discharge for one point under one method."""
+    if method == "omn_omt":
+        return scale_omn_omt(phys_base, omt, omn, midped, topped)
+    if method == "mtanh_full":
+        return scale_mtanh_full(phys_base, omt, omn, fits, knob)
+    raise ValueError(f"unknown scaling method: {method!r}")
+
+
 def detect_pedestal(phys, var="ne"):
     """(midped, topped) from the steepest gradient, for --auto-pedestal.
 
     Deliberately crude and fit-free: midped is where |d(var)/d rhot| peaks in the
     outer half, topped is the first point inboard of it where the gradient has
-    fallen to a third of that peak. The whole point of this script is to take the
-    mtanh fit out of the loop, so the pedestal window must not come from one
-    either. The numbers are printed; they are a starting point to sanity-check,
-    not an authority.
+    fallen to a third of that peak. Taking the gradient method's own window from
+    a fit would put the fit back in the loop it is being compared against. The
+    numbers are printed; they are a starting point to sanity-check, not an
+    authority.
     """
     import numpy as np
 
@@ -192,42 +312,33 @@ def gradient_report(phys, radii=(0.9, 0.95, 0.99)):
     rhot_topped the ramp's own derivative contributes a term of its own and the
     response there is not a clean factor of alpha.
     """
+    import numpy as np
+
     out = {}
     for name in ("Te", "Ti", "ne"):
         try:
             gl = phys.gradient_length(name)
             vals = gl.pint.magnitude if hasattr(gl, "pint") else gl.values
-            import numpy as np
             rhot = np.asarray(phys.rhot)
             order = np.argsort(rhot)
-            out[name] = {float(r): float(np.interp(r, rhot[order],
-                                                   np.asarray(vals, float)[order]))
-                         for r in radii}
+            out[name] = {float(r): round(float(np.interp(
+                r, rhot[order], np.asarray(vals, float)[order])), 5)
+                for r in radii}
         except Exception as exc:
             out[name] = f"unavailable: {type(exc).__name__}: {exc}"
     return out
 
 
-def solve(phys_base, omt, omn, midped, topped, run_dir, final_dir, gfile,
+def solve(phys, method, omt, omn, run_dir, final_dir, gfile, phys_base,
           args, paths, solver):
-    """One point: scale the profiles, then reconstruct the equilibrium.
-
-    The transforms are applied to the base discharge every time rather than
-    chained onto the previous point, so each point is a scaling of the source
-    profiles and not of its predecessor.
-    """
+    """Run cheaseBS on one already-scaled discharge, score it, copy it back."""
     from TPED.projects.discharge_tools.src.cheasebs_runner import (
         CheasebsAcceptance, run_cheasebs_workflow)
 
     tag = tag_of(omt, omn)
-    row = {"tag": tag, "omt": omt, "omne": omn,
-           "run_dir": run_dir, "final_dir": final_dir}
-
-    phys = (phys_base
-            .apply_omt(alpha=omt, rhot_midped=midped, rhot_topped=topped)
-            .apply_omne(alpha=omn, rhot_midped=midped, rhot_topped=topped))
-    row["history"] = phys.history
-    row["gradients"] = gradient_report(phys)
+    row = {"method": method, "tag": tag, "omt": omt, "omne": omn,
+           "run_dir": run_dir, "final_dir": final_dir,
+           "history": phys.history, "gradients": gradient_report(phys)}
 
     t0 = time.time()
     try:
@@ -297,15 +408,54 @@ def solve(phys_base, omt, omn, midped, topped, run_dir, final_dir, gfile,
     return row
 
 
+def summarize(rows):
+    """Per-method counts, which is the comparison in one block.
+
+    Accepted / converged / failed and the worst Ip error among the points that
+    completed. Not a verdict -- the per-point table and the run plots are -- but
+    it is the number that says whether one method is holding together better
+    than the other across the same grid.
+    """
+    lines = []
+    for method in METHODS:
+        sub = [r for r in rows if r.get("method") == method]
+        if not sub:
+            continue
+        done = [r for r in sub if "error" not in r]
+        ips = [r["ip_error_rel"] for r in done
+               if isinstance(r.get("ip_error_rel"), (int, float))]
+        iters = [r["iterations"] for r in done
+                 if isinstance(r.get("iterations"), (int, float))]
+        parts = [f"{len(done)}/{len(sub)} completed",
+                 f"{sum(1 for r in done if r.get('accepted'))} accepted",
+                 f"{sum(1 for r in done if r.get('converged'))} converged"]
+        if ips:
+            parts.append(f"worst Ip err {max(ips):.2%}")
+        if iters:
+            parts.append(f"mean iters {sum(iters) / len(iters):.1f}")
+        lines.append(f"  {method:<12} " + ", ".join(parts))
+    return "\n".join(lines)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Scale the profiles with TPED, then run cheaseBS on each point.",
+        description="Scale DIII-D profiles two ways and run cheaseBS on both.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--case-dir", required=True,
                     help="the discharge directory: base gfile, pfile and "
                          "profiles_{e,i,z}, handed to DischargeData as-is")
     ap.add_argument("--gfile", default=None,
-                    help="base EQDSK; default is the single g<shot>.* in --case-dir")
+                    help="base EQDSK; default is the one DischargeData finds")
+
+    ap.add_argument("--method", nargs="+", default=list(METHODS),
+                    choices=list(METHODS),
+                    help="which scaling method(s) to run; both by default, "
+                         "which is the comparison")
+    ap.add_argument("--mtanh-knob", default="scale_height",
+                    choices=["scale_height", "scale_width", "scale_core_height",
+                             "scale_sol", "scale_slope", "scale_core_width"],
+                    help="the apply_mtanh_full parameter the scale multiplies; "
+                         "scale_height matches the NSTX pedestal_scan axes")
 
     ap.add_argument("--pair", type=parse_pair, action="append", default=None,
                     metavar="OMT,OMN",
@@ -315,7 +465,7 @@ def main(argv=None):
                     help="run only these tags, e.g. --only omt1p0_omne1p0")
 
     ap.add_argument("--rhot-midped", type=float, default=DEFAULT_MIDPED,
-                    help="mid-pedestal rho_tor; the transforms pin the profile here")
+                    help="mid-pedestal rho_tor; omn_omt pins the profile here")
     ap.add_argument("--rhot-topped", type=float, default=DEFAULT_TOPPED,
                     help="top-of-pedestal rho_tor; alpha ramps in over [top, mid]")
     ap.add_argument("--auto-pedestal", action="store_true",
@@ -323,17 +473,17 @@ def main(argv=None):
                          "instead of using the defaults, and print what it found")
 
     ap.add_argument("--outroot", default=None,
-                    help="where per-point results go "
-                         "(default: <this dir>/runs_<shot>_selfscaled)")
+                    help="where results go (default: "
+                         "$SCRATCH/cheasebs_scaling_comparison/runs_<shot>_<stamp>)")
     ap.add_argument("--baseline-dir", default=None,
                     help="shared cheaseBS baseline; default is one per campaign "
-                         "under the scratch root")
+                         "under the scratch working tree")
     ap.add_argument("--scratch-root", default=None,
                     help="where cheaseBS actually runs (default: TPED OUTPUT_PATH). "
                          "Only the result and the record are copied to --outroot")
     ap.add_argument("--in-place", action="store_true",
-                    help="run directly under --outroot instead of scratch, keeping "
-                         "the full per-iteration tree there")
+                    help="run directly under --outroot instead of a scratch "
+                         "working tree, keeping the full per-iteration tree there")
     ap.add_argument("--cheasebs-config", default=DEFAULT_CONFIG,
                     help="cheaseBS JSON template holding the solver settings")
     ap.add_argument("--cheasebs-dir", default=None,
@@ -359,14 +509,16 @@ def main(argv=None):
     case_dir = os.path.abspath(os.path.expanduser(args.case_dir))
     if not os.path.isdir(case_dir):
         raise SystemExit(f"--case-dir does not exist: {case_dir}")
+    if not os.path.isfile(args.cheasebs_config):
+        raise SystemExit(f"cheaseBS config template not found: {args.cheasebs_config}")
+
     data = load_base_discharge(
         case_dir,
         gfile=os.path.abspath(os.path.expanduser(args.gfile)) if args.gfile else None)
     gfile = os.path.abspath(data.gfile_filepath)
     shot = shot_of(gfile)
-    if not os.path.isfile(args.cheasebs_config):
-        raise SystemExit(f"cheaseBS config template not found: {args.cheasebs_config}")
 
+    methods = [m for m in METHODS if m in args.method]     # stable order
     pairs = [tuple(p) for p in (args.pair or DEFAULT_PAIRS)]
     if args.only:
         wanted = set(args.only)
@@ -374,9 +526,8 @@ def main(argv=None):
         if not pairs:
             raise SystemExit(f"--only matched none of the points: {sorted(wanted)}")
 
-    outroot = os.path.abspath(
-        args.outroot or os.path.join(HERE, f"runs_{shot}_selfscaled"))
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H-%M-%S")
+    outroot = os.path.abspath(args.outroot or default_outroot(shot, stamp))
     os.makedirs(outroot, exist_ok=True)
 
     log_path = args.log or os.path.join(outroot, f"campaign_{stamp}.log")
@@ -391,9 +542,9 @@ def main(argv=None):
     # exception: TPED's default is chease_namelist_nstx, wrong for DIII-D, so it
     # defaults to the repo's plain chease_namelist here.
     #
-    # A dry run solves nothing, so it does not need any of it. Requiring a
-    # configured CHEASE to look at what the scaling did to the profiles would
-    # make the cheap check the expensive one.
+    # A dry run solves nothing, so it needs none of it. Requiring a configured
+    # CHEASE to look at what the scaling did would make the cheap check the
+    # expensive one.
     namelist, scratch_root = args.chease_namelist, args.scratch_root
     cheasebs_dir, chease_binary = args.cheasebs_dir, args.chease_binary
     cheasebs_script = paths = workroot = baseline_dir = None
@@ -430,8 +581,6 @@ def main(argv=None):
                  "chease_binary": os.path.abspath(chease_binary),
                  "chease_namelist": os.path.abspath(namelist)}
 
-        # cheaseBS works in scratch and only the result travels back, as in
-        # every other cheaseBS caller in this repo.
         if args.in_place:
             workroot = outroot
         else:
@@ -442,10 +591,12 @@ def main(argv=None):
                 )
             workroot = os.path.join(
                 os.path.abspath(os.path.expanduser(scratch_root)),
-                "cheaseBS_runs", f"{stamp}-{shot}-selfscaled")
+                "cheaseBS_runs", f"{stamp}-{shot}-scaling_comparison")
 
-        # One baseline for the campaign: it is a function of the EQDSK and the
-        # reference profiles, and both are the same at every point.
+        # One baseline for the whole comparison: it is a function of the EQDSK
+        # and the untransformed reference profiles, and neither depends on the
+        # method. Building it per method would only buy two chances to build it
+        # differently.
         baseline_dir = args.baseline_dir or os.path.join(workroot, "baseline")
         paths["baseline_dir"] = baseline_dir
 
@@ -453,12 +604,14 @@ def main(argv=None):
     if args.max_iter is not None:
         solver["max_iter"] = args.max_iter
 
-    print(f"=== cheaseBS self-scaled omt/omne scan {stamp} ===")
+    print(f"=== cheaseBS scaling-method comparison {stamp} ===")
     print(f"case dir  : {case_dir}")
     print(f"base gfile: {gfile}  (shot {shot})")
     for path in data.profiles_filepaths:
         print(f"base prof : {path}")
     print(f"base pfile: {data.pfile_filepath}")
+    print(f"methods   : {', '.join(methods)}")
+    print(f"mtanh knob: {args.mtanh_knob}")
     print(f"template  : {args.cheasebs_config}")
     if args.dry_run:
         print("cheaseBS  : (not resolved; dry run solves nothing)")
@@ -466,20 +619,21 @@ def main(argv=None):
         print(f"cheaseBS  : {cheasebs_script}")
         print(f"chease    : {chease_binary}")
         print(f"namelist  : {namelist}")
-        print(f"outroot   : {outroot}   (results and records)")
         print(f"workroot  : {workroot}"
               f"{'   (in place)' if args.in_place else '   (scratch; not preserved)'}")
-        print(f"baseline  : {baseline_dir}")
+        print(f"baseline  : {baseline_dir}   (shared by both methods)")
+    print(f"outroot   : {outroot}   (results and records)")
     print(f"overrides : {solver or '(template as-is)'}")
     print(f"radii     : {args.analysis_radii or '(q checks skipped)'}")
-    print(f"points    : {len(pairs)} -> {', '.join(tag_of(*p) for p in pairs)}")
+    print(f"points    : {len(pairs)} x {len(methods)} method(s) -> "
+          f"{', '.join(tag_of(*p) for p in pairs)}")
     print(f"log       : {log_path}")
     print(f"pid       : {os.getpid()}")
     print()
 
     # Harmonized once and reused: every point scales the source profiles, never
-    # its predecessor. This untransformed dataset is what cheaseBS gets as the
-    # reference set.
+    # its predecessor, and both methods start from the same object. This
+    # untransformed dataset is also what cheaseBS gets as the reference set.
     from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
 
     phys_base = DischargePhysics(data)
@@ -492,67 +646,90 @@ def main(argv=None):
     if not 0.0 < topped < midped < 1.0:
         raise SystemExit(f"pedestal window is not ordered: topped={topped}, "
                          f"midped={midped}; both must lie in (0, 1) with top < mid")
-    print(f"pedestal  : topped={topped:.4f}, midped={midped:.4f}")
+    print(f"pedestal  : topped={topped:.4f}, midped={midped:.4f}  (omn_omt only)")
+
+    fits, fit_quality = ({}, {})
+    if "mtanh_full" in methods:
+        fits, fit_quality = fit_base_profiles(phys_base)
+        print(f"mtanh fits: {json.dumps(fit_quality, default=str)}"
+              f"   (relative rms of each base fit)")
     print(f"base L    : {json.dumps(gradient_report(phys_base), default=str)}"
           f"   (gradient length in rhot; smaller = steeper)")
     print()
 
     if args.dry_run:
-        for omt, omn in pairs:
-            phys = (phys_base
-                    .apply_omt(alpha=omt, rhot_midped=midped, rhot_topped=topped)
-                    .apply_omne(alpha=omn, rhot_midped=midped, rhot_topped=topped))
-            print(f"{tag_of(omt, omn)}: "
-                  f"{json.dumps(gradient_report(phys), default=str)}")
+        for method in methods:
+            print(f"--- {method} ---")
+            for omt, omn in pairs:
+                try:
+                    phys = scale(phys_base, method, omt, omn, midped, topped,
+                                 fits, args.mtanh_knob)
+                    print(f"  {tag_of(omt, omn)}: "
+                          f"{json.dumps(gradient_report(phys), default=str)}")
+                except Exception as exc:
+                    print(f"  {tag_of(omt, omn)}: RAISED "
+                          f"{type(exc).__name__}: {exc}")
         print("\ndry run: no equilibrium was solved")
         return 0
 
     rows, failed = [], []
     t_camp = time.time()
-    for omt, omn in pairs:
-        tag = tag_of(omt, omn)
-        print(f"--- {tag}  (omt {omt:.2f}, omne {omn:.2f}) ---", flush=True)
-        try:
-            row = solve(phys_base, omt, omn, midped, topped,
-                        os.path.join(workroot, tag), os.path.join(outroot, tag),
-                        gfile, args, paths, solver)
-        except Exception:
-            # One point failing outright must not take the rest of the scan with
-            # it; the remaining points are independent hours of work.
-            print(f"!!! {tag} RAISED, continuing with the next point")
-            traceback.print_exc()
-            row = {"tag": tag, "omt": omt, "omne": omn,
-                   "error": "runner raised, see traceback in the log"}
-        rows.append(row)
-        if "error" in row:
-            failed.append(tag)
-            print(f"    FAILED: {row['error']}", flush=True)
-        else:
-            print(f"    {row.get('iterations')} iters, {row['wall_s']:.0f}s, "
-                  f"converged={row.get('converged')}, accepted={row.get('accepted')}",
+    for method in methods:
+        for omt, omn in pairs:
+            tag = tag_of(omt, omn)
+            print(f"--- {method} / {tag}  (omt {omt:.2f}, omne {omn:.2f}) ---",
                   flush=True)
-        # Written after every point, not at the end: a campaign that is killed
-        # halfway still leaves a readable record of what it did.
-        with open(os.path.join(outroot, "selfscaled_scan.json"), "w") as fh:
-            json.dump({"shot": shot, "case_dir": case_dir, "gfile": gfile,
-                       "base_profiles": data.profiles_filepaths,
-                       "base_pfile": data.pfile_filepath,
-                       "pairs": [list(p) for p in pairs],
-                       "rhot_midped": midped, "rhot_topped": topped,
-                       "cheasebs_config": args.cheasebs_config,
-                       "overrides": solver, "baseline_dir": baseline_dir,
-                       "workroot": workroot, "in_place": bool(args.in_place),
-                       "paths": paths,
-                       "analysis_radii": args.analysis_radii, "rows": rows},
-                      fh, indent=1, default=str)
+            try:
+                phys = scale(phys_base, method, omt, omn, midped, topped,
+                             fits, args.mtanh_knob)
+                row = solve(phys, method, omt, omn,
+                            os.path.join(workroot, method, tag),
+                            os.path.join(outroot, method, tag),
+                            gfile, phys_base, args, paths, solver)
+            except Exception:
+                # One point failing outright must not take the rest of the
+                # comparison with it; the remaining points are independent
+                # hours of work, and a method that fails here has said
+                # something about itself that the other points still measure.
+                print(f"!!! {method}/{tag} RAISED, continuing with the next point")
+                traceback.print_exc()
+                row = {"method": method, "tag": tag, "omt": omt, "omne": omn,
+                       "error": "runner raised, see traceback in the log"}
+            rows.append(row)
+            if "error" in row:
+                failed.append(f"{method}/{tag}")
+                print(f"    FAILED: {row['error']}", flush=True)
+            else:
+                print(f"    {row.get('iterations')} iters, {row['wall_s']:.0f}s, "
+                      f"converged={row.get('converged')}, "
+                      f"accepted={row.get('accepted')}", flush=True)
+            # Written after every point, not at the end: a campaign that is
+            # killed halfway still leaves a readable record of what it did.
+            with open(os.path.join(outroot, "comparison.json"), "w") as fh:
+                json.dump({"shot": shot, "case_dir": case_dir, "gfile": gfile,
+                           "base_profiles": data.profiles_filepaths,
+                           "base_pfile": data.pfile_filepath,
+                           "methods": methods, "mtanh_knob": args.mtanh_knob,
+                           "mtanh_fit_quality": fit_quality,
+                           "fit_kwargs": FIT_KWARGS,
+                           "pairs": [list(p) for p in pairs],
+                           "rhot_midped": midped, "rhot_topped": topped,
+                           "cheasebs_config": args.cheasebs_config,
+                           "overrides": solver, "baseline_dir": baseline_dir,
+                           "workroot": workroot, "in_place": bool(args.in_place),
+                           "paths": paths,
+                           "analysis_radii": args.analysis_radii, "rows": rows},
+                          fh, indent=1, default=str)
 
     table = text_table(rows)
     with open(os.path.join(outroot, "table.txt"), "w") as fh:
         fh.write(table + "\n")
-    print(f"\n=== {len(rows)} point(s) in {time.time() - t_camp:.0f}s ===")
+    print(f"\n=== {len(rows)} solve(s) in {time.time() - t_camp:.0f}s ===")
     print(table)
+    print("\nper method:")
+    print(summarize(rows))
 
-    rejected = [r["tag"] for r in rows
+    rejected = [f"{r['method']}/{r['tag']}" for r in rows
                 if "error" not in r and r.get("accepted") is False]
     if failed:
         print(f"\nFAILED to complete: {', '.join(failed)}")
@@ -561,8 +738,8 @@ def main(argv=None):
         for r in rows:
             if r.get("accepted") is False:
                 for reason in r.get("reasons") or []:
-                    print(f"  {r['tag']}: {reason}")
-    print(f"\nrecord : {os.path.join(outroot, 'selfscaled_scan.json')}")
+                    print(f"  {r['method']}/{r['tag']}: {reason}")
+    print(f"\nrecord : {os.path.join(outroot, 'comparison.json')}")
     print(f"table  : {os.path.join(outroot, 'table.txt')}")
     print(f"results: {outroot}")
     if not args.in_place:
