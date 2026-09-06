@@ -115,8 +115,8 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from run_cheasebs_scaling_scan import (  # noqa: E402
-    Tee, copy_back, render_plots, shot_of, text_table)
+from cheasebs_scan_common import (  # noqa: E402
+    Tee, copy_back_if_needed, fmt_alpha, render_plots, shot_of, text_table)
 
 METHODS = ("omn_omt", "mtanh_full")
 
@@ -151,12 +151,6 @@ DENSITY_VAR = "ne"
 DEFAULT_CONFIG = os.path.join(HERE, "diiid_cheasebs_config.json")
 
 DEFAULT_OUTROOT_SUBDIR = "cheasebs_scaling_comparison"
-
-
-def fmt_alpha(v):
-    """0.7 -> '0p7', 1.0 -> '1p0', 1.05 -> '1p05'. The scan's own tag spelling."""
-    s = f"{v:.1f}" if abs(v - round(v, 1)) < 1e-9 else f"{v:.2f}".rstrip("0")
-    return s.replace(".", "p")
 
 
 def tag_of(omt, omn):
@@ -336,7 +330,8 @@ def solve(phys, method, omt, omn, run_dir, final_dir, gfile, phys_base,
         CheasebsAcceptance, run_cheasebs_workflow)
 
     tag = tag_of(omt, omn)
-    row = {"method": method, "tag": tag, "omt": omt, "omne": omn,
+    row = {"branch": method, "method": method, "tag": tag,
+           "t": omt, "n": omn, "omt": omt, "omne": omn,
            "run_dir": run_dir, "final_dir": final_dir,
            "history": phys.history, "gradients": gradient_report(phys)}
 
@@ -391,21 +386,7 @@ def solve(phys, method, omt, omn, run_dir, final_dir, gfile, phys_base,
         row.setdefault("plot_notes", []).append(note)
         print(f"    {note}")
 
-    if os.path.normcase(os.path.realpath(run_dir)) != os.path.normcase(
-            os.path.realpath(final_dir)):
-        try:
-            copied = copy_back(run_dir, final_dir, eqdsk, cfg)
-            row["copied"] = copied
-            row["eqdsk_final"] = os.path.join(final_dir, os.path.basename(eqdsk))
-            print(f"    copied {len(copied)} file(s) -> {final_dir}")
-        except Exception as exc:
-            # The solve succeeded; failing to copy it out is worth reporting
-            # loudly but is not the same as the point having failed.
-            row["copy_error"] = f"{type(exc).__name__}: {exc}"
-            print(f"    COPY-BACK FAILED: {row['copy_error']}")
-    else:
-        row["eqdsk_final"] = eqdsk
-    return row
+    return copy_back_if_needed(row, run_dir, final_dir, eqdsk, cfg)
 
 
 def summarize(rows):
@@ -418,7 +399,7 @@ def summarize(rows):
     """
     lines = []
     for method in METHODS:
-        sub = [r for r in rows if r.get("method") == method]
+        sub = [r for r in rows if r.get("branch") == method]
         if not sub:
             continue
         done = [r for r in sub if "error" not in r]
@@ -693,7 +674,8 @@ def main(argv=None):
                 # something about itself that the other points still measure.
                 print(f"!!! {method}/{tag} RAISED, continuing with the next point")
                 traceback.print_exc()
-                row = {"method": method, "tag": tag, "omt": omt, "omne": omn,
+                row = {"branch": method, "method": method, "tag": tag,
+                       "t": omt, "n": omn, "omt": omt, "omne": omn,
                        "error": "runner raised, see traceback in the log"}
             rows.append(row)
             if "error" in row:
