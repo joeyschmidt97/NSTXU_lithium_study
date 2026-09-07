@@ -23,7 +23,10 @@ METHOD 1 -- `omn_omt`, gradient scaling in the discharge object
 TPED's pedestal gradient transforms: the profile is re-exponentiated about its
 mid-pedestal value, `T_new = T_mid * (T/T_mid)**alpha`, with alpha ramped from 1
 in the core to its full value across [rhot_topped, rhot_midped]. No fit is
-involved -- the profile's own shape is the thing being rescaled.
+involved in the scaling -- the profile's own shape is the thing being rescaled.
+The window itself is per discharge, measured once from an mtanh_full fit to pe
+and tabulated in PEDESTAL_WINDOWS; the 0.90/0.95 that used to serve every shot
+is an NSTX number that lies entirely inboard of DIII-D 162940's pedestal.
 
 METHOD 2 -- `mtanh_full`, the reshape campaign's machinery
 
@@ -123,17 +126,43 @@ METHODS = ("omn_omt", "mtanh_full")
 # The points the IFS scan directory holds for 162940, so this campaign lands
 # tag-for-tag beside it. (omt, omn).
 DEFAULT_PAIRS = (
-    (0.7, 0.7), (0.7, 0.8), (0.7, 0.9),
-    (0.8, 0.8), (0.8, 0.9), (0.8, 1.0), (0.8, 1.1),
-    (0.9, 0.9), (0.9, 1.0), (0.9, 1.1),
-    (1.0, 1.0), (1.0, 1.1),
-    (1.1, 1.0), (1.1, 1.1),
+    # The diagonal, which is the axis the comparison is really about: how far
+    # each method can be pushed before the solver stops behaving. 1.0 is the
+    # null test and the first thing to read -- mtanh_full does not reproduce the
+    # source there, because it replaces the profile with its own fit even at
+    # unity, while omn_omt does.
+    (0.7, 0.7), (0.8, 0.8), (0.9, 0.9), (1.0, 1.0), (1.1, 1.1),
+    # One opposed corner and one of each single-axis move, so a method that
+    # only misbehaves when the two knobs disagree is not invisible.
+    (0.8, 1.1), (1.1, 1.0), (1.0, 1.1),
 )
 
-# TPED's own pedestal window for the gradient transforms (cheasebs_identity
-# test). Overridable, and --auto-pedestal measures them off the profile instead.
-DEFAULT_MIDPED = 0.95
-DEFAULT_TOPPED = 0.90
+# (rhot_topped, rhot_midped) per shot, measured from an mtanh_full fit to
+# pe = ne*Te on that discharge's own base profiles: midped is the fitted
+# pedestal midpoint b_pos, topped is b_pos - 2*b_width, the inner edge of the
+# pedestal (b_width is a QUARTER width, so the full pedestal spans 4*b_width).
+# pe rather than Te or ne because pressure is what the equilibrium responds to,
+# and it is what pedestal_scan already locates its pedestal region from.
+#
+# The 0.90/0.95 that used to be the default for everything is an NSTX number,
+# and on DIII-D it is wrong in a way that matters: 162940's pedestal is ~2.5x
+# narrower and sits further out, so that band lies entirely INBOARD of it and
+# the gradient ramp reached full alpha at 0.95, right where the real pedestal
+# starts. 129015 is where the old default does land correctly.
+#
+# Fitted 2026-09-07 on the bundled base profiles. Te and ne windows agreed with
+# pe to within 0.01 on 162940; on 129015 the ne pedestal sits ~0.03 further out
+# than pe, so a pe window slightly under-covers the density pedestal there.
+PEDESTAL_WINDOWS = {
+    "162940": (0.954, 0.971),      # DIII-D; full pe width 0.033, fit rms 0.19%
+    "129015": (0.885, 0.926),      # NSTX;   full pe width 0.081, fit rms 0.29%
+}
+
+# For a shot with no measured window. Deliberately the old NSTX value rather
+# than something derived: an unmeasured discharge should get the number whose
+# provenance is known, and a loud line in the log saying so.
+FALLBACK_TOPPED = 0.90
+FALLBACK_MIDPED = 0.95
 
 # pedestal_scan.FIT_KWARGS, unchanged: the pedestal is upweighted eightfold so
 # the core cannot dominate a least-squares fit whose pedestal is the point.
@@ -261,6 +290,36 @@ def scale(phys_base, method, omt, omn, midped, topped, fits, knob):
     if method == "mtanh_full":
         return scale_mtanh_full(phys_base, omt, omn, fits, knob)
     raise ValueError(f"unknown scaling method: {method!r}")
+
+
+def resolve_window(shot, topped_arg, midped_arg):
+    """(topped, midped, why) for a shot: explicit flags, else the measured window.
+
+    Each flag overrides independently, so one can be pinned while the other
+    keeps its measured value. `why` is printed, because a window silently
+    falling back to the NSTX default on a discharge it does not describe is the
+    failure this table exists to prevent.
+    """
+    measured = PEDESTAL_WINDOWS.get(str(shot))
+    if measured:
+        topped, midped = measured
+        why = f"measured mtanh_full pe window for {shot}"
+    else:
+        topped, midped = FALLBACK_TOPPED, FALLBACK_MIDPED
+        why = (f"NO measured window for shot {shot} -- falling back to the NSTX "
+               f"default {FALLBACK_TOPPED}/{FALLBACK_MIDPED}, which may not "
+               f"describe this pedestal. Fit it and add it to PEDESTAL_WINDOWS")
+
+    overridden = []
+    if topped_arg is not None:
+        topped = topped_arg
+        overridden.append("topped")
+    if midped_arg is not None:
+        midped = midped_arg
+        overridden.append("midped")
+    if overridden:
+        why += f"; {' and '.join(overridden)} overridden on the command line"
+    return topped, midped, why
 
 
 def detect_pedestal(phys, var="ne"):
@@ -445,10 +504,12 @@ def main(argv=None):
     ap.add_argument("--only", nargs="+", default=None, metavar="TAG",
                     help="run only these tags, e.g. --only omt1p0_omne1p0")
 
-    ap.add_argument("--rhot-midped", type=float, default=DEFAULT_MIDPED,
-                    help="mid-pedestal rho_tor; omn_omt pins the profile here")
-    ap.add_argument("--rhot-topped", type=float, default=DEFAULT_TOPPED,
-                    help="top-of-pedestal rho_tor; alpha ramps in over [top, mid]")
+    ap.add_argument("--rhot-midped", type=float, default=None,
+                    help="mid-pedestal rho_tor; omn_omt pins the profile here. "
+                         "Default is this shot's measured window (PEDESTAL_WINDOWS)")
+    ap.add_argument("--rhot-topped", type=float, default=None,
+                    help="top-of-pedestal rho_tor; alpha ramps in over [top, mid]. "
+                         "Default is this shot's measured window")
     ap.add_argument("--auto-pedestal", action="store_true",
                     help="measure the pedestal window off the base ne gradient "
                          "instead of using the defaults, and print what it found")
@@ -619,15 +680,16 @@ def main(argv=None):
 
     phys_base = DischargePhysics(data)
 
-    midped, topped = args.rhot_midped, args.rhot_topped
+    topped, midped, window_why = resolve_window(shot, args.rhot_topped,
+                                                args.rhot_midped)
     if args.auto_pedestal:
         midped, topped = detect_pedestal(phys_base)
-        print(f"auto pedestal: rhot_topped={topped:.4f}, rhot_midped={midped:.4f} "
-              f"(steepest ne gradient; check this)")
+        window_why = "measured now off the base ne gradient (--auto-pedestal)"
     if not 0.0 < topped < midped < 1.0:
         raise SystemExit(f"pedestal window is not ordered: topped={topped}, "
                          f"midped={midped}; both must lie in (0, 1) with top < mid")
     print(f"pedestal  : topped={topped:.4f}, midped={midped:.4f}  (omn_omt only)")
+    print(f"            {window_why}")
 
     fits, fit_quality = ({}, {})
     if "mtanh_full" in methods:
