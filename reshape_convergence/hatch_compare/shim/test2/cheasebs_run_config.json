@@ -1,0 +1,11 @@
+{
+  "_hatch_reconstruction": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/g_final.eqdsk",
+  "_hatch_source_run": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2",
+  "carbon_profile": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/profiles_z_1.3T",
+  "deuterium_profile": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/profiles_i_1.3T",
+  "electron_profile": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/profiles_e_1.3T",
+  "eqdsk": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/g129015.00409",
+  "reference_carbon_profile": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/profiles_z",
+  "reference_deuterium_profile": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/profiles_i",
+  "reference_electron_profile": "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test2/profiles_e"
+}
