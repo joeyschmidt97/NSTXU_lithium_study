@@ -19,25 +19,30 @@ identifies which suffix a run used by content rather than by name (scoring each
 candidate against the `EXPTNZ` cheaseBS wrote). This script imports that
 resolution wholesale, so the two cannot disagree about which files a run is.
 
-WHAT IT CHANGES IN THE CONFIG, AND WHY ONLY THAT
+THE CONFIG SUPPLIES SOLVER SETTINGS. THE RUN DIRECTORY SUPPLIES PATHS.
 
-The hatch config is the unit of truth and is passed to
-`run_chease_iterative_profiles.py` directly rather than through TPED's wrapper,
-which would re-derive the paths and reject keys it does not know. Only these are
-rewritten, all to absolute paths:
+Every path key is DISCARDED from the hatch config and rebuilt from the run
+directory being solved:
 
-    eqdsk                        <- the resolved source g<shot>.<time>
-    electron/deuterium/carbon    <- the chosen profile stem
-    reference_*                  <- the reference (bare) stem
+    eqdsk                        <- the g<shot>.<time> at this run root
+    electron/deuterium/carbon    <- profiles_{e,i,z}<suffix> at this run root
+    reference_*                  <- profiles_{e,i,z} (bare) at this run root
     baseline_dir, output_dir     <- inside --outroot, never the hatch tree
     chease_binary, namelist      <- kept if absolute and present, else TPED config
 
-Every solver key -- coordinate, replay representation, mixing, tolerances,
-`max_iter`, `amplitude_warmup_iters` -- is carried through untouched unless a
-flag overrides it, and the diff against the original config is printed before
-anything runs. Relative paths in the original are resolved against the config's
-own directory, which is the only anchor that survives; cheaseBS itself resolved
-them against a working directory that is not recoverable after the fact.
+The config's own path entries are not usable and are not consulted. They are
+written relative to a working directory that is not recoverable after the fact
+(`test`'s config says `../test/profiles_e_1.3n`, which only resolves because
+that config happens to sit in `test/`), and a config borrowed from a sibling
+carries paths that resolve into the SIBLING's directory -- `test2` solved with
+`../test/profiles_*` would silently reconstruct `test`'s profiles under
+`test2`'s name. Discarding them makes that class of error impossible rather
+than merely unlikely.
+
+What survives from the config is every solver key -- coordinate, replay
+representation, mixing, tolerances, `max_iter`, `amplitude_warmup_iters` --
+carried through untouched unless a flag overrides it, with the diff printed
+before anything runs.
 
 The baseline is rebuilt into `--outroot` rather than reused in place, because
 the reference profiles are what define the `p_fast` split and a decomposition
@@ -82,6 +87,13 @@ DEFAULT_ROOT = "/pscratch/sd/j/joeschm/cheaseBS_hatch_results/for_joey/test"
 
 PROFILE_KEYS = {"e": "electron_profile", "i": "deuterium_profile",
                 "z": "carbon_profile"}
+
+# Dropped from the hatch config and rebuilt from the run directory. See the
+# module docstring: a config's path entries either do not resolve or resolve
+# into the wrong run.
+PATH_KEYS = (("eqdsk", "baseline_dir", "output_dir")
+             + tuple(PROFILE_KEYS.values())
+             + tuple("reference_" + k for k in PROFILE_KEYS.values()))
 DRIVER = "run_chease_iterative_profiles.py"
 NSTX_NAMELIST = "chease_namelist_nstx"
 
@@ -129,6 +141,61 @@ def stem_label(stem):
     return stem.lstrip("_") or "reference"
 
 
+def find_sibling_config(cm, run_root):
+    """(path, run name) of a sibling run's config, when exactly one exists.
+
+    Not every hatch run keeps its config: `test2` has none, and its solver
+    settings are not recoverable from anything it did write -- cheaseBS's
+    `convergence_summary.json` records the coordinate, the replay representation
+    and the Ip/Bt targets, but not the mixing, the tolerances, `max_iter` or the
+    warm-up. A sibling's config is the only available stand-in, so it is used
+    when there is exactly one candidate and refused when there are several,
+    rather than picking one silently.
+    """
+    parent = os.path.dirname(os.path.abspath(run_root))
+    found = []
+    for entry in sorted(os.listdir(parent)):
+        d = os.path.join(parent, entry)
+        if not os.path.isdir(d) or os.path.samefile(d, run_root):
+            continue
+        path, _ = cm.read_run_config(d)
+        if path:
+            found.append((path, entry))
+    if len(found) == 1:
+        return found[0]
+    return None, None
+
+
+def settings_from_summary(run_root):
+    """Config keys a run recorded about itself, for use over a borrowed config.
+
+    Only the four that cheaseBS actually writes into convergence_summary.json
+    and that are also config keys. The Ip/Bt targets are carried only when they
+    differ from the source values, since that is the case where they were a
+    deliberate override rather than the EQDSK's own numbers.
+    """
+    path = os.path.join(run_root, "output", "convergence_summary.json")
+    if not os.path.isfile(path):
+        path = os.path.join(run_root, "convergence_summary.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path) as fh:
+            summary = json.load(fh)
+    except Exception:
+        return {}
+    out = {}
+    for key in ("coordinate", "replay_representation"):
+        if summary.get(key):
+            out[key] = summary[key]
+    for key, source in (("target_ip_a", "source_ip_a"),
+                        ("target_bt_t", "source_bt_t")):
+        value, src = summary.get(key), summary.get(source)
+        if value is not None and src is not None and value != src:
+            out[key] = value
+    return out
+
+
 def build_config(spec, stems, stem, out_dir, baseline_dir, overrides, tped):
     """(config dict, list of (key, old, new)) for one re-run.
 
@@ -137,15 +204,18 @@ def build_config(spec, stems, stem, out_dir, baseline_dir, overrides, tped):
     """
     cheasebs_dir, chease_binary, namelist = tped
     with open(spec["config_path"]) as fh:
-        cfg = json.load(fh)
-    original = dict(cfg)
+        original = json.load(fh)
+    # Solver settings only. Every path is rebuilt below from the run directory,
+    # so a stale or sibling-relative entry cannot survive into the new config.
+    cfg = {k: v for k, v in original.items() if k not in PATH_KEYS}
 
+    if "" not in stems:
+        raise ValueError("no bare profiles_{e,i,z} at the run root to use as "
+                         "the reference set")
     cfg["eqdsk"] = spec["gfile_before"]
     for sp, key in PROFILE_KEYS.items():
         cfg[key] = stems[stem][sp]
-        ref = (spec["profiles_before"] or {}).get(sp)
-        if ref:
-            cfg["reference_" + key] = ref
+        cfg["reference_" + key] = stems[""][sp]
     cfg["output_dir"] = out_dir
     cfg["baseline_dir"] = baseline_dir
     # An empty baseline directory has nothing to reuse, so the decomposition has
@@ -194,6 +264,9 @@ def main(argv=None):
                     help="amplitude_warmup_iters")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="override any config key; value is JSON-decoded")
+    ap.add_argument("--no-borrow-config", action="store_true",
+                    help="do not fall back to a sibling run's config when a run "
+                         "has none of its own")
     ap.add_argument("--no-verify", action="store_true",
                     help="skip the EXPTNZ content match when deciding which "
                          "profile set a run used")
@@ -247,15 +320,47 @@ def main(argv=None):
     print()
 
     jobs, failed = [], 0
+    # An explicit single --stem also answers resolve_run's own question about
+    # which set the run was solved with, which it raises on when it cannot tell.
+    forced = None
+    if len(args.stem) == 1 and args.stem[0] != "all":
+        forced = ("" if args.stem[0] in ("", "reference")
+                  else args.stem[0] if args.stem[0].startswith("_")
+                  else "_" + args.stem[0])
     for run in runs:
-        spec = cm.resolve_run(run, verify=not args.no_verify)
+        try:
+            spec = cm.resolve_run(run, forced_stem=forced,
+                                  verify=not args.no_verify)
+        except SystemExit as exc:
+            # resolve_run exits when it cannot identify the run's profile set.
+            # One such run must not cancel the others: pass a single --stem to
+            # answer it, or --no-verify to skip the content match.
+            print(f"  SKIPPED {os.path.basename(run)}: {exc}", file=sys.stderr)
+            failed += 1
+            continue
         cm.report(spec)
 
+        run_overrides = dict(overrides)
         if args.config:
             spec["config_path"] = os.path.abspath(args.config)
+        elif not spec.get("config_path") and not args.no_borrow_config:
+            borrowed, from_run = find_sibling_config(cm, run)
+            if borrowed:
+                own = settings_from_summary(run)
+                spec["config_path"] = borrowed
+                # The run's own record wins over the sibling's for the keys it
+                # actually holds; --set still wins over both.
+                run_overrides = {**own, **overrides}
+                print(f"  ! no config at this run; borrowing {from_run}/"
+                      f"{os.path.basename(borrowed)}. Its mixing, tolerances, "
+                      f"max_iter and warm-up are ASSUMED to match — cheaseBS "
+                      f"records none of them per run."
+                      + (f" Taken from this run's own convergence_summary.json: "
+                         f"{own}" if own else ""), file=sys.stderr)
         if not spec.get("config_path"):
-            print(f"  SKIPPED: no cheaseBS config at {run} and none passed "
-                  f"with --config", file=sys.stderr)
+            print(f"  SKIPPED: no cheaseBS config at {run}, no single sibling "
+                  f"to borrow from, and none passed with --config",
+                  file=sys.stderr)
             failed += 1
             continue
         if not spec.get("gfile_before"):
@@ -270,11 +375,36 @@ def main(argv=None):
             wanted = ["" if s in ("", "reference") else
                       (s if s.startswith("_") else "_" + s) for s in args.stem]
         else:
-            # The set this run was solved with, as resolved above -- reproducing
-            # the hatch run is the default, scanning is opt-in.
+            # The set this run was solved with -- reproducing the hatch run is
+            # the default, scanning is opt-in. Taken from the resolution above,
+            # but only when it names a set that is actually AT THIS RUN ROOT: a
+            # config can name a path in a sibling run, or one that is gone.
             after = (spec.get("profiles_after") or {}).get("e", "")
-            base = os.path.basename(after)
-            wanted = [base[len("profiles_e"):]] if base else [""]
+            wanted = []
+            if after:
+                same_root = (os.path.dirname(os.path.abspath(after))
+                             == os.path.abspath(spec["root"]))
+                suffix = os.path.basename(after)[len("profiles_e"):]
+                if same_root and suffix in stems:
+                    wanted = [suffix]
+                else:
+                    print("  ! the resolved run profiles (%s) are not a "
+                          "profiles_e<suffix> at this run root; ignoring them "
+                          "for the default stem" % after, file=sys.stderr)
+            if not wanted:
+                scaled = [s for s in sorted(stems) if s]
+                if len(scaled) == 1:
+                    wanted = scaled
+                    print("  ! defaulting to the only scaled set present: %s"
+                          % stem_label(scaled[0]), file=sys.stderr)
+                else:
+                    print("  SKIPPED %s: cannot tell which set it solved with; "
+                          "pass --stem (present: %s)"
+                          % (spec["name"],
+                             ", ".join(stem_label(s) for s in sorted(stems))),
+                          file=sys.stderr)
+                    failed += 1
+                    continue
 
         # A requested stem that this run does not carry is skipped, not fatal:
         # the hatch tree does not hold the same scalings for every run (the test
@@ -298,9 +428,19 @@ def main(argv=None):
             baseline = (os.path.join(spec["root"], "baseline")
                         if args.reuse_baseline
                         else os.path.join(outroot, f"{spec['name']}_baseline"))
-            cfg, diff = build_config(spec, stems, stem, out_dir, baseline,
-                                     overrides, tped)
+            try:
+                cfg, diff = build_config(spec, stems, stem, out_dir, baseline,
+                                         run_overrides, tped)
+            except ValueError as exc:
+                print(f"  SKIPPED {spec['name']}/{label}: {exc}", file=sys.stderr)
+                failed += 1
+                continue
             print(f"\n--- {spec['name']} / {label} ---")
+            print("  profiles     : modified %s   reference %s   (both from "
+                  "this run root)"
+                  % (os.path.basename(stems[stem]["e"]),
+                     os.path.basename(stems[""]["e"]) if "" in stems
+                     else "(absent)"))
             print(f"  output_dir   : {out_dir}")
             print(f"  baseline_dir : {baseline}"
                   f"{'   (hatch run, reused)' if args.reuse_baseline else '   (rebuilt)'}")
