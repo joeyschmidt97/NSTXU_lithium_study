@@ -44,11 +44,22 @@ representation, mixing, tolerances, `max_iter`, `amplitude_warmup_iters` --
 carried through untouched unless a flag overrides it, with the diff printed
 before anything runs.
 
-The baseline is rebuilt into `--outroot` rather than reused in place, because
-the reference profiles are what define the `p_fast` split and a decomposition
-carried over from another directory cannot be checked against them. `--reuse-
-baseline` points at the hatch baseline instead, for comparing against exactly
-the footing that run used.
+THE BARE PROFILE SET IS NEVER SOLVED
+
+`profiles_{e,i,z}` feeds `reference_*`, which is what cheaseBS builds the
+baseline decomposition and the frozen `p_fast` from. It is not a run. Solving it
+hands the same files to both roles: the decomposition gets built from the
+profiles being replayed, `p_fast` absorbs the whole difference, and the result is
+a reconstruction of the reference that answers nothing this comparison asks. So
+`--stem all` means every SCALED set, and naming the bare set is refused. Every
+solve still gets a baseline -- it just does not get its own reconstruction run.
+
+One baseline per hatch run, built by the first solve and reused by the rest: it
+is a function of the reference profiles and the source EQDSK, and neither
+changes between stems. It is built inside `--outroot` rather than read from the
+hatch tree so it can be checked against the profiles it claims to come from;
+`--reuse-baseline` points at the hatch run's own instead, for reproducing
+exactly the footing that run had.
 
     # what is there, and which profile set each run solved with. Solves nothing.
     python run_hatch_cheasebs.py --list
@@ -56,8 +67,8 @@ the footing that run used.
     # re-run the run's own profile set
     python run_hatch_cheasebs.py --outroot $SCRATCH/hatch_rerun
 
-    # the 1.3T and 1.3n sets explicitly, and the unscaled reference
-    python run_hatch_cheasebs.py --stem 1.3T --stem 1.3n --stem "" \
+    # both scaled sets ("all" means every scaled set, never the bare one)
+    python run_hatch_cheasebs.py --stem 1.3T --stem 1.3n \
         --outroot $SCRATCH/hatch_rerun
 
     # same inputs, our own solver settings on top
@@ -250,9 +261,11 @@ def main(argv=None):
     ap.add_argument("--run", action="append", default=[], metavar="NAME",
                     help="run directory under --root; repeatable, default all")
     ap.add_argument("--stem", action="append", default=[], metavar="SUFFIX",
-                    help="profile set to solve: 1.3T, 1.3n, \"\" for the "
-                         "reference set, or 'all'. Repeatable. Default is the "
-                         "set the original run was solved with")
+                    help="scaled profile set to solve: 1.3T, 1.3n, or 'all' "
+                         "for every scaled set present. Repeatable. Default is "
+                         "the set the original run was solved with. The bare "
+                         "profiles_{e,i,z} cannot be named: it is the reference "
+                         "the baseline is built from, not a run")
     ap.add_argument("--outroot", default=None,
                     help="where the re-runs are written (default "
                          "$SCRATCH/hatch_rerun/<stamp>, cwd if SCRATCH is unset)")
@@ -374,10 +387,18 @@ def main(argv=None):
 
         stems = cm.candidate_stems(spec["root"])
         if args.stem and "all" in args.stem:
-            wanted = sorted(stems)
+            # Scaled sets only -- the bare set is the reference, not a run.
+            wanted = [s for s in sorted(stems) if s]
         elif args.stem:
-            wanted = ["" if s in ("", "reference") else
-                      (s if s.startswith("_") else "_" + s) for s in args.stem]
+            named = [s for s in args.stem if s not in ("", "reference")]
+            if len(named) != len(args.stem):
+                raise SystemExit(
+                    "the bare profiles_{e,i,z} set cannot be solved: it is what "
+                    "reference_* points at, so solving it would build the "
+                    "baseline decomposition from the profiles being replayed "
+                    "and p_fast would absorb the whole difference. Name a "
+                    "scaled set instead.")
+            wanted = [s if s.startswith("_") else "_" + s for s in named]
         else:
             # The set this run was solved with -- reproducing the hatch run is
             # the default, scanning is opt-in. Taken from the resolution above,
@@ -395,6 +416,10 @@ def main(argv=None):
                     print("  ! the resolved run profiles (%s) are not a "
                           "profiles_e<suffix> at this run root; ignoring them "
                           "for the default stem" % after, file=sys.stderr)
+            if wanted == [""]:
+                print("  ! this run was solved with the bare profile set, so "
+                      "there is no scaled set to reproduce", file=sys.stderr)
+                wanted = []
             if not wanted:
                 scaled = [s for s in sorted(stems) if s]
                 if len(scaled) == 1:
