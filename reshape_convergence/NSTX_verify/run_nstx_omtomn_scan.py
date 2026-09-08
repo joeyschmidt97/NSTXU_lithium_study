@@ -42,9 +42,14 @@ DIII-D `rhot` / `jparallel` path. The CHEASE namelist is `chease_namelist_nstx`.
 
     # a VALUE scaling -- Te x 1.3 (Te alone, as the hatch 1.3T sets do) replayed
     # against the unscaled reference. Solved by run_hatch_cheasebs.py, since a
-    # multiply is not one of this campaign's methods.
+    # multiply is not one of this campaign's methods. Flat by default, so it
+    # reaches the core; --scale-ramp leaves the core alone instead. Which is
+    # right is whatever the notebook measured -- check the printed ratio row.
     python run_nstx_omtomn_scan.py --shot 129015 --scale-t 1.3 \
         --outroot $SCRATCH/NSTX_hatch_mimic
+
+    python run_nstx_omtomn_scan.py --shot 129015 --scale-t 1.3 \
+        --scale-ramp 0.8,1.0 --outroot $SCRATCH/NSTX_hatch_mimic
 
 Anything this script does not define itself is forwarded, so
 `--analysis-radii`, `--baseline-dir` and the rest of the DIII-D scan's flags
@@ -137,7 +142,7 @@ def discharge_root():
         f"DISCHARGE_ROOT_CANDIDATES (tried {DISCHARGE_ROOT_CANDIDATES})")
 
 
-def stage_case_dir(shot, dest, factors=None):
+def stage_case_dir(shot, dest, factors=None, ramp=None):
     """Write a case directory the DIII-D scan can read: gfile + profiles_e/i/z.
 
     Returns (dest, notes). The profiles are written from the discharge as loaded,
@@ -152,6 +157,18 @@ def stage_case_dir(shot, dest, factors=None):
     move the separatrix, while a multiply scales every radius including the
     core. Hatch's runs are of this second kind, which is why mimicking them
     needs a knob here rather than an alpha.
+
+    `ramp` is `(topped, midped)` or None. None gives a FLAT multiply, constant
+    at every radius including the core. With a ramp the factor becomes
+
+        1 + (c - 1) * (tanh((rhot - topped)/(midped - topped)) + 1)/2
+
+    i.e. 1 in the core and c outboard -- the "ramped x c" form the notebook fits.
+    Which one to use is a measurement, not a preference: read the `value` row of
+    the notebook's section-5 table. Flat at c across all radii means no ramp;
+    rising from 1 in the core to c at the edge means a ramp, and the fitted
+    topped/midped go here. The staged ratio is printed at the same radii the
+    notebook probes, so the two tables can be compared line for line.
 
     Quasineutrality is checked, not assumed: ne = ni + qz*nz is linear in a
     common factor, so scaling the whole density family preserves it while
@@ -207,16 +224,24 @@ def stage_case_dir(shot, dest, factors=None):
     # 2026-09-08 -- makes the baseline decomposition and the replayed profiles
     # the same files: p_fast absorbs the whole multiply, the reconstruction
     # matches its own baseline, and the plots come out flat.
-    suffix = scale_suffix(factors)
+    suffix = scale_suffix(factors) + ("_ramp%g-%g" % ramp if ramp else "")
     if suffix:
         scaled = ds.copy()
+        rhot = np.asarray(ds.coords["rhot"].values, dtype=float)
+        if ramp is None:
+            shape = np.ones_like(rhot)
+            how = "flat, all radii including the core"
+        else:
+            top, mid = ramp
+            shape = (np.tanh((rhot - top) / (mid - top)) + 1) / 2
+            how = f"ramped, topped={top:g} midped={mid:g} (core untouched)"
         for var, factor in sorted((factors or {}).items()):
             if var not in scaled:
                 notes.append(f"{var} x {factor:g} requested, but {var} is not in "
                              f"this discharge; skipped")
                 continue
-            scaled[var] = scaled[var] * factor
-            notes.append(f"{var} x {factor:g}")
+            scaled[var] = scaled[var] * (1 + (factor - 1) * shape)
+            notes.append(f"{var} x {factor:g}   [{how}]")
         notes.append(f"written as profiles_*{suffix}; the bare set stays "
                      f"unscaled and is what reference_* points at")
         qn = float(np.max(np.abs(
@@ -225,6 +250,18 @@ def stage_case_dir(shot, dest, factors=None):
         notes.append("quasineutrality residual max|ni + %g*nz - ne|/ne = %.2e%s"
                      % (QZ, qn, "" if qn < 1e-6
                         else "   <- BROKEN, CHEASE absorbs it through Zeff"))
+        # The staged value ratio at the radii the notebook probes. Compare this
+        # against that table's `value` row: identical rows mean the mimic is the
+        # same operation as the thing being mimicked.
+        idx = [int(np.abs(rhot - x).argmin()) for x in PROBE_RHO]
+        notes.append("value ratio vs rho_tor  "
+                     + " ".join("%7.2f" % x for x in PROBE_RHO))
+        for var in SUFFIX_ORDER:
+            if var not in (factors or {}) or var not in scaled:
+                continue
+            ratio = scaled[var].values / ds[var].values
+            notes.append("%-23s " % var
+                         + " ".join("%7.3f" % ratio[k] for k in idx))
         tmp = os.path.join(dest, "_scaled_tmp")
         os.makedirs(tmp, exist_ok=True)
         write_gene_profiles(scaled, tmp)
@@ -242,6 +279,10 @@ def stage_case_dir(shot, dest, factors=None):
 
 
 SUFFIX_ORDER = ("Te", "Ti", "Tz", "ne", "ni", "nz")
+
+# The radii nstx_scaling_check.ipynb section 5 tabulates, so the ratio printed
+# here lines up with the one measured from the files being mimicked.
+PROBE_RHO = (0.0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 0.99)
 
 
 def scale_suffix(factors):
@@ -322,6 +363,12 @@ def main(argv=None):
     ap.add_argument("--scale-n", type=float, default=None, metavar="C",
                     help="shorthand: multiply ne, ni and nz by C, the multiply "
                          "that keeps ne = ni + qz*nz")
+    ap.add_argument("--scale-ramp", default=None, metavar="TOP,MID",
+                    help="apply the scalings through the ramp "
+                         "1 + (C-1)*(tanh((rho-TOP)/(MID-TOP))+1)/2 instead of "
+                         "flat, so the core is untouched. Use when the "
+                         "notebook's value-ratio row rises from 1 in the core "
+                         "to C at the edge rather than sitting flat at C")
     for _var in ("Te", "Ti", "Tz", "ne", "ni", "nz"):
         ap.add_argument("--scale-" + _var.lower(), type=float, default=None,
                         metavar="C",
@@ -369,7 +416,16 @@ def main(argv=None):
         f"{args.shot}_{stamp}")
     outroot = os.path.abspath(os.path.expandvars(os.path.expanduser(outroot)))
     factors = collect_factors(args)
-    tag = scale_suffix(factors)
+    ramp = None
+    if args.scale_ramp:
+        try:
+            top, mid = (float(v) for v in args.scale_ramp.replace(":", ",").split(","))
+        except ValueError:
+            raise SystemExit(f"--scale-ramp wants TOP,MID (got {args.scale_ramp!r})")
+        if not mid > top:
+            raise SystemExit(f"--scale-ramp needs TOP < MID (got {top}, {mid})")
+        ramp = (top, mid)
+    tag = scale_suffix(factors) + ("_ramp%g-%g" % ramp if ramp else "")
     stage = os.path.abspath(os.path.expandvars(
         args.stage_dir
         or os.path.join(outroot, f"base_{args.shot}{tag}".replace(".", "p"))))
@@ -381,12 +437,13 @@ def main(argv=None):
     print(f"template  : {args.cheasebs_config}")
     print(f"outroot   : {outroot}")
 
-    case_dir, notes = stage_case_dir(args.shot, stage, factors=factors)
+    case_dir, notes = stage_case_dir(args.shot, stage, factors=factors,
+                                     ramp=ramp)
     print(f"staged    : {case_dir}")
     for note in notes:
         print(f"            {note}")
 
-    suffix = scale_suffix(factors)
+    suffix = scale_suffix(factors) + ("_ramp%g-%g" % ramp if ramp else "")
     if suffix:
         # A value scaling is not one of the campaign's methods, and it must not
         # be mistaken for one: the campaign derives reference_* from the case
