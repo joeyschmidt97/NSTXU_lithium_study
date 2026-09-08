@@ -40,6 +40,12 @@ DIII-D `rhot` / `jparallel` path. The CHEASE namelist is `chease_namelist_nstx`.
     # stage and scale only; solve nothing
     python run_nstx_omtomn_scan.py --shot 132588 --dry-run
 
+    # a VALUE scaling -- Te,Ti,Tz x 1.3 replayed against the unscaled reference,
+    # which is what the hatch runs do. Solved by run_hatch_cheasebs.py, since a
+    # multiply is not one of this campaign's methods.
+    python run_nstx_omtomn_scan.py --shot 129015 --scale-t 1.3 \
+        --outroot $SCRATCH/NSTX_hatch_mimic
+
 Anything this script does not define itself is forwarded, so
 `--analysis-radii`, `--baseline-dir` and the rest of the DIII-D scan's flags
 still work:
@@ -53,6 +59,7 @@ import argparse
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -164,16 +171,6 @@ def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
     ds = phys.ds.copy()
 
     notes = []
-    for factor, family, label in ((scale_t, ("Te", "Ti", "Tz"), "temperatures"),
-                                  (scale_n, ("ne", "ni", "nz"), "densities")):
-        if factor is None:
-            continue
-        touched = [v for v in family if v in ds]
-        for v in touched:
-            ds[v] = ds[v] * factor
-        notes.append(f"{label} multiplied by {factor:g} "
-                     f"({', '.join(touched)}) -- a value scaling, not a "
-                     f"gradient one")
     if "nz" not in ds:
         # Quasineutrality at Z = 6, the same closure apply_omne enforces after a
         # density scaling. Without it write_gene_profiles emits no profiles_z at
@@ -194,7 +191,49 @@ def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
                if not os.path.isfile(os.path.join(dest, f"profiles_{s}"))]
     if missing:
         raise SystemExit(f"staging wrote no {', '.join(missing)} into {dest}")
+
+    # The bare set above is the REFERENCE and is never scaled. A value scaling
+    # is written beside it as profiles_{e,i,z}<suffix>, the layout the hatch
+    # runs use, so the solve replays the scaled set against the unscaled
+    # reference. Multiplying the bare set instead -- which this script did until
+    # 2026-09-08 -- makes the baseline decomposition and the replayed profiles
+    # the same files: p_fast absorbs the whole multiply, the reconstruction
+    # matches its own baseline, and the plots come out flat.
+    suffix = scale_suffix(scale_t, scale_n)
+    if suffix:
+        scaled = ds.copy()
+        for factor, family, label in ((scale_t, ("Te", "Ti", "Tz"), "temperatures"),
+                                      (scale_n, ("ne", "ni", "nz"), "densities")):
+            if factor is None:
+                continue
+            touched = [v for v in family if v in scaled]
+            for v in touched:
+                scaled[v] = scaled[v] * factor
+            notes.append(f"{label} x {factor:g} ({', '.join(touched)}) written as "
+                         f"profiles_*{suffix}; the bare set stays unscaled and is "
+                         f"what reference_* points at")
+        tmp = os.path.join(dest, "_scaled_tmp")
+        os.makedirs(tmp, exist_ok=True)
+        write_gene_profiles(scaled, tmp)
+        for sp in ("e", "i", "z"):
+            src_f = os.path.join(tmp, f"profiles_{sp}")
+            if os.path.isfile(src_f):
+                os.replace(src_f, os.path.join(dest, f"profiles_{sp}{suffix}"))
+        if os.path.isdir(tmp) and not os.listdir(tmp):
+            os.rmdir(tmp)
+        absent = [f"profiles_{s}{suffix}" for s in ("e", "i", "z")
+                  if not os.path.isfile(os.path.join(dest, f"profiles_{s}{suffix}"))]
+        if absent:
+            raise SystemExit(f"staging wrote no {', '.join(absent)} into {dest}")
     return dest, notes
+
+
+def scale_suffix(scale_t, scale_n):
+    """`_t1.3`, `_n1.3`, `_t1.3n1.3`, or "" when nothing is scaled."""
+    parts = [("t%g" % scale_t) if scale_t is not None else "",
+             ("n%g" % scale_n) if scale_n is not None else ""]
+    tag = "".join(parts)
+    return ("_" + tag) if tag else ""
 
 
 def resolve_namelist(explicit):
@@ -298,6 +337,30 @@ def main(argv=None):
     for note in notes:
         print(f"            {note}")
 
+    suffix = scale_suffix(args.scale_t, args.scale_n)
+    if suffix:
+        # A value scaling is not one of the campaign's methods, and it must not
+        # be mistaken for one: the campaign derives reference_* from the case
+        # directory's own base profiles, so a scaled base would be replayed
+        # against itself. run_hatch_cheasebs.py already solves exactly this
+        # layout -- a suffixed set against the bare one -- so it does the solve.
+        hatch = os.path.join(os.path.dirname(HERE), "hatch_compare",
+                             "run_hatch_cheasebs.py")
+        if not os.path.isfile(hatch):
+            raise SystemExit(f"cannot find the hatch runner at {hatch}")
+        cmd = [sys.executable, "-u", hatch,
+               "--root", case_dir,
+               "--stem", suffix.lstrip("_"),
+               "--config", args.cheasebs_config,
+               "--outroot", outroot]
+        if args.dry_run:
+            cmd.append("--list")
+        cmd += [a for a in args.rest if a != "--"]
+        print(f"solver    : {args.cheasebs_config}")
+        print(f"handing off to run_hatch_cheasebs.py (value scaling, replayed "
+              f"against the unscaled reference)\n{' '.join(cmd)}\n", flush=True)
+        return subprocess.call(cmd)
+
     namelist = resolve_namelist(args.chease_namelist)
     if namelist is None and not args.dry_run:
         raise SystemExit(
@@ -318,16 +381,7 @@ def main(argv=None):
         inner += ["--in-place"]
     if args.dry_run:
         inner += ["--dry-run"]
-    pairs = args.pair
-    if not pairs and (args.scale_t is not None or args.scale_n is not None):
-        # The multiply is already in the staged profiles, so the gradient
-        # transform has to be the identity -- otherwise the campaign's default
-        # 8-point sweep would run on top of it.
-        pairs = ["1.0,1.0"]
-        print("scaling  : gradient transform pinned to the identity "
-              "(--pair 1.0,1.0) because --scale-t/--scale-n already moved the "
-              "staged profiles")
-    for pair in pairs or []:
+    for pair in args.pair or []:
         inner += ["--pair", pair]
     radii = ANALYSIS_RADII.get(args.shot, ())
     if radii and not any(a == "--analysis-radii" for a in args.rest):
