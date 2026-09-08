@@ -219,6 +219,11 @@ def main(argv=None):
                     help="solver template (default the NSTX one beside this script)")
     ap.add_argument("--chease-namelist", default=None,
                     help=f"CHEASE namelist (default {NSTX_NAMELIST} in CHEASEBS_PATH)")
+    ap.add_argument("--warmup", type=int, default=None, metavar="N",
+                    help="amplitude_warmup_iters: hold the driven amplitude "
+                         "fixed for the first N outer iterations so the "
+                         "bootstrap settles first. The NSTX template uses 2; "
+                         "--warmup 0 turns the warm-up off")
     ap.add_argument("--stage-dir", default=None,
                     help="where to write the staged case directory "
                          "(default <outroot>/base_<shot>)")
@@ -276,6 +281,8 @@ def main(argv=None):
              "--outroot", outroot]
     if namelist:
         inner += ["--chease-namelist", namelist]
+    if args.warmup is not None:
+        inner += ["--amplitude-warmup-iters", str(args.warmup)]
     if not args.scratch_run:
         inner += ["--in-place"]
     if args.dry_run:

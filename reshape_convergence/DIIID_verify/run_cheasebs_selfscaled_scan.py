@@ -558,6 +558,12 @@ def main(argv=None):
 
     ap.add_argument("--max-iter", type=int, default=None,
                     help="override the template's max_iter")
+    ap.add_argument("--amplitude-warmup-iters", type=int, default=None,
+                    help="override the template's amplitude_warmup_iters: hold "
+                         "the driven amplitude fixed for the first N outer "
+                         "iterations so the bootstrap settles before the "
+                         "amplitude controller starts moving. 0 disables the "
+                         "warm-up entirely")
     ap.add_argument("--analysis-radii", type=float, nargs="*", default=[],
                     help="rho_tor values where q is scored; empty skips the q checks")
     ap.add_argument("--no-gate", action="store_true",
@@ -665,6 +671,9 @@ def main(argv=None):
     solver = {}
     if args.max_iter is not None:
         solver["max_iter"] = args.max_iter
+    if args.amplitude_warmup_iters is not None:
+        # 0 is a meaningful value, not "unset", so the sentinel is None.
+        solver["amplitude_warmup_iters"] = args.amplitude_warmup_iters
 
     print(f"=== cheaseBS scaling-method comparison {stamp} ===")
     print(f"case dir  : {case_dir}")
