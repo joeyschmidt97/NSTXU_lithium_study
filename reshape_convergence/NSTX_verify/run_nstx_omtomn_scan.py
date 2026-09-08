@@ -137,22 +137,30 @@ def discharge_root():
         f"DISCHARGE_ROOT_CANDIDATES (tried {DISCHARGE_ROOT_CANDIDATES})")
 
 
-def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
+def stage_case_dir(shot, dest, factors=None):
     """Write a case directory the DIII-D scan can read: gfile + profiles_e/i/z.
 
     Returns (dest, notes). The profiles are written from the discharge as loaded,
     so this is also the only record of what the campaign treated as its base --
     the pfile it came from stays untouched.
 
-    scale_t / scale_n multiply the temperature and density FAMILIES by a
-    constant before writing. This is a different operation from apply_omt /
+    `factors` is an explicit {variable: constant} map, applied per VARIABLE
+    rather than per family, so a measured scaling can be reproduced exactly
+    instead of approximately. This is a different operation from apply_omt /
     apply_omne, not a special case of them: the gradient transforms hold the
     value at rhot_midped fixed and re-exponentiate the shape, so they cannot
-    move the separatrix, while a multiply scales every radius including it.
-    Hatch's runs are of this second kind, which is why mimicking them needs a
-    knob here rather than an alpha. Quasineutrality survives because the whole
-    family is scaled by the same factor: ne = ni + qz*nz is linear in it.
+    move the separatrix, while a multiply scales every radius including the
+    core. Hatch's runs are of this second kind, which is why mimicking them
+    needs a knob here rather than an alpha.
+
+    Quasineutrality is checked, not assumed: ne = ni + qz*nz is linear in a
+    common factor, so scaling the whole density family preserves it while
+    scaling ne alone does not. Both are permitted -- reproducing a measured
+    scaling matters more than being tidy -- and the residual is printed either
+    way, so a broken one cannot pass unnoticed.
     """
+    import numpy as np
+
     from TPED.projects.discharge_tools.src.discharge_data import DischargeData
     from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
     from TPED.projects.discharge_tools.src.writers.gene_writer import write_gene_profiles
@@ -199,26 +207,24 @@ def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
     # 2026-09-08 -- makes the baseline decomposition and the replayed profiles
     # the same files: p_fast absorbs the whole multiply, the reconstruction
     # matches its own baseline, and the plots come out flat.
-    suffix = scale_suffix(scale_t, scale_n)
+    suffix = scale_suffix(factors)
     if suffix:
         scaled = ds.copy()
-        # Te ALONE for the temperature knob: the hatch 1.3T sets move the
-        # electron temperature and leave Ti (and with it Tz) where they were, so
-        # scaling the whole family would be a different experiment -- a bigger
-        # pressure change, and an ion channel that moved when his did not.
-        # The density knob does take the whole family, because that is what
-        # keeps ne = ni + qz*nz: the relation is linear in the factor, so
-        # scaling ne alone would break quasineutrality instead.
-        for factor, family, label in ((scale_t, ("Te",), "Te"),
-                                      (scale_n, ("ne", "ni", "nz"), "densities")):
-            if factor is None:
+        for var, factor in sorted((factors or {}).items()):
+            if var not in scaled:
+                notes.append(f"{var} x {factor:g} requested, but {var} is not in "
+                             f"this discharge; skipped")
                 continue
-            touched = [v for v in family if v in scaled]
-            for v in touched:
-                scaled[v] = scaled[v] * factor
-            notes.append(f"{label} x {factor:g} ({', '.join(touched)}) written as "
-                         f"profiles_*{suffix}; the bare set stays unscaled and is "
-                         f"what reference_* points at")
+            scaled[var] = scaled[var] * factor
+            notes.append(f"{var} x {factor:g}")
+        notes.append(f"written as profiles_*{suffix}; the bare set stays "
+                     f"unscaled and is what reference_* points at")
+        qn = float(np.max(np.abs(
+            (scaled["ni"].values + QZ * scaled["nz"].values
+             - scaled["ne"].values) / scaled["ne"].values)))
+        notes.append("quasineutrality residual max|ni + %g*nz - ne|/ne = %.2e%s"
+                     % (QZ, qn, "" if qn < 1e-6
+                        else "   <- BROKEN, CHEASE absorbs it through Zeff"))
         tmp = os.path.join(dest, "_scaled_tmp")
         os.makedirs(tmp, exist_ok=True)
         write_gene_profiles(scaled, tmp)
@@ -235,12 +241,42 @@ def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
     return dest, notes
 
 
-def scale_suffix(scale_t, scale_n):
-    """`_t1.3`, `_n1.3`, `_t1.3n1.3`, or "" when nothing is scaled."""
-    parts = [("t%g" % scale_t) if scale_t is not None else "",
-             ("n%g" % scale_n) if scale_n is not None else ""]
-    tag = "".join(parts)
+SUFFIX_ORDER = ("Te", "Ti", "Tz", "ne", "ni", "nz")
+
+
+def scale_suffix(factors):
+    """`_Te1.3`, `_ne1.3ni1.3nz1.3`, or "" when nothing is scaled.
+
+    Built from the variables actually scaled, so the directory name states the
+    experiment instead of a family shorthand that may not describe it.
+    """
+    if not factors:
+        return ""
+    tag = "".join("%s%g" % (v, factors[v]) for v in SUFFIX_ORDER if v in factors)
     return ("_" + tag) if tag else ""
+
+
+def collect_factors(args):
+    """{variable: factor} from the shorthand and per-variable flags.
+
+    A per-variable flag always wins over a shorthand, so `--scale-n 1.3
+    --scale-ni 1.0` is the way to say "ne and nz only" without editing anything.
+    """
+    factors = {}
+    if args.scale_t is not None:
+        # Te alone: the hatch 1.3T sets move the electron temperature and leave
+        # Ti (and with it Tz) where they were.
+        factors["Te"] = args.scale_t
+    if args.scale_n is not None:
+        # The whole density family, which is the multiply that keeps
+        # ne = ni + qz*nz. Override any member individually to depart from it.
+        for v in ("ne", "ni", "nz"):
+            factors[v] = args.scale_n
+    for var in SUFFIX_ORDER:
+        explicit = getattr(args, "scale_" + var.lower(), None)
+        if explicit is not None:
+            factors[var] = explicit
+    return {v: c for v, c in factors.items() if c != 1.0} or factors
 
 
 def resolve_namelist(explicit):
@@ -278,13 +314,20 @@ def main(argv=None):
     ap.add_argument("--rhot-midped", type=float, default=None,
                     help="override this shot's ramp midped (RAMP_WINDOWS)")
     ap.add_argument("--scale-t", type=float, default=None, metavar="C",
-                    help="multiply Te ALONE by C, leaving Ti and Tz alone, as "
-                         "the hatch 1.3T sets do. A value scaling, which "
-                         "apply_omt cannot express at any alpha: it moves the "
-                         "separatrix, the gradient transform pins it")
+                    help="shorthand: multiply Te ALONE by C, leaving Ti and Tz "
+                         "where they are, as the hatch 1.3T sets do. A value "
+                         "scaling, which apply_omt cannot express at any alpha: "
+                         "it moves the separatrix and reaches the core, the "
+                         "gradient transform pins the separatrix and cannot")
     ap.add_argument("--scale-n", type=float, default=None, metavar="C",
-                    help="multiply ne by C, with ni and nz following so that "
-                         "ne = ni + qz*nz still holds (mimics a hatch 1.3n set)")
+                    help="shorthand: multiply ne, ni and nz by C, the multiply "
+                         "that keeps ne = ni + qz*nz")
+    for _var in ("Te", "Ti", "Tz", "ne", "ni", "nz"):
+        ap.add_argument("--scale-" + _var.lower(), type=float, default=None,
+                        metavar="C",
+                        help=f"multiply {_var} by C; overrides the shorthand, so "
+                             f"the staged set can match a measured scaling "
+                             f"variable by variable")
     ap.add_argument("--pair", action="append", default=None, metavar="OMT,OMN",
                     help="one scan point; repeatable. Default is the DIII-D "
                          "campaign's point list")
@@ -325,8 +368,8 @@ def main(argv=None):
         os.environ.get("SCRATCH", os.getcwd()), "NSTX_omn_omt_cheaseBS",
         f"{args.shot}_{stamp}")
     outroot = os.path.abspath(os.path.expandvars(os.path.expanduser(outroot)))
-    tag = "".join(("_t%g" % args.scale_t if args.scale_t is not None else "",
-                   "_n%g" % args.scale_n if args.scale_n is not None else ""))
+    factors = collect_factors(args)
+    tag = scale_suffix(factors)
     stage = os.path.abspath(os.path.expandvars(
         args.stage_dir
         or os.path.join(outroot, f"base_{args.shot}{tag}".replace(".", "p"))))
@@ -338,13 +381,12 @@ def main(argv=None):
     print(f"template  : {args.cheasebs_config}")
     print(f"outroot   : {outroot}")
 
-    case_dir, notes = stage_case_dir(args.shot, stage,
-                                     scale_t=args.scale_t, scale_n=args.scale_n)
+    case_dir, notes = stage_case_dir(args.shot, stage, factors=factors)
     print(f"staged    : {case_dir}")
     for note in notes:
         print(f"            {note}")
 
-    suffix = scale_suffix(args.scale_t, args.scale_n)
+    suffix = scale_suffix(factors)
     if suffix:
         # A value scaling is not one of the campaign's methods, and it must not
         # be mistaken for one: the campaign derives reference_* from the case
