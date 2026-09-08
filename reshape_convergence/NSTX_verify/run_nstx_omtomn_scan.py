@@ -67,6 +67,11 @@ import shutil
 import subprocess
 import sys
 
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import scaling_forms                                          # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SELFSCALED = os.path.join(os.path.dirname(HERE), "DIIID_verify",
                           "run_cheasebs_selfscaled_scan.py")
@@ -142,7 +147,8 @@ def discharge_root():
         f"DISCHARGE_ROOT_CANDIDATES (tried {DISCHARGE_ROOT_CANDIDATES})")
 
 
-def stage_case_dir(shot, dest, factors=None, ramp=None):
+def stage_case_dir(shot, dest, factors=None, ramp=None, measured=None,
+                   suffix_override=None):
     """Write a case directory the DIII-D scan can read: gfile + profiles_e/i/z.
 
     Returns (dest, notes). The profiles are written from the discharge as loaded,
@@ -157,6 +163,13 @@ def stage_case_dir(shot, dest, factors=None, ramp=None):
     move the separatrix, while a multiply scales every radius including the
     core. Hatch's runs are of this second kind, which is why mimicking them
     needs a knob here rather than an alpha.
+
+    `measured` is `{variable: (form, params, rms)}` as returned by
+    `scaling_forms.measure_sets` -- the --match-hatch path. When given it wins
+    over `factors`/`ramp` entirely and each variable is rebuilt by
+    `scaling_forms.rebuild`, the same function the notebook applies, so the
+    staged set is the notebook's reproduction by construction rather than by
+    agreement.
 
     `ramp` is `(topped, midped)` or None. None gives a FLAT multiply, constant
     at every radius including the core. With a ramp the factor becomes
@@ -224,7 +237,40 @@ def stage_case_dir(shot, dest, factors=None, ramp=None):
     # 2026-09-08 -- makes the baseline decomposition and the replayed profiles
     # the same files: p_fast absorbs the whole multiply, the reconstruction
     # matches its own baseline, and the plots come out flat.
-    suffix = scale_suffix(factors) + ("_ramp%g-%g" % ramp if ramp else "")
+    suffix = suffix_override or (scale_suffix(factors)
+                                 + ("_ramp%g-%g" % ramp if ramp else ""))
+    if measured:
+        scaled = ds.copy()
+        rhot = np.asarray(ds.coords["rhot"].values, dtype=float)
+        for var, (form, params, rms) in sorted(measured.items()):
+            if var not in scaled:
+                notes.append(f"{var}: measured {form} but {var} is not in this "
+                             f"discharge; skipped")
+                continue
+            scaled[var] = ("rhot", scaling_forms.rebuild(
+                rhot, np.asarray(scaled[var].values, dtype=float), form, params))
+            notes.append("%-4s %-11s %-28s fit rms %.5f"
+                         % (var, form,
+                            ", ".join("%.4f" % v for v in params), rms))
+        notes.append(f"written as profiles_*{suffix}; the bare set stays "
+                     f"unscaled and is what reference_* points at")
+        qn = float(np.max(np.abs(
+            (scaled["ni"].values + QZ * scaled["nz"].values
+             - scaled["ne"].values) / scaled["ne"].values)))
+        notes.append("quasineutrality residual max|ni + %g*nz - ne|/ne = %.2e%s"
+                     % (QZ, qn, "" if qn < 1e-6
+                        else "   <- BROKEN, as the measured scaling is"))
+        idx = [int(np.abs(rhot - x).argmin()) for x in scaling_forms.PROBE_RHO]
+        notes.append("value ratio vs rho_tor  "
+                     + " ".join("%7.2f" % x for x in scaling_forms.PROBE_RHO))
+        for var in SUFFIX_ORDER:
+            if var not in measured or var not in scaled:
+                continue
+            ratio = scaled[var].values / ds[var].values
+            notes.append("%-23s " % var
+                         + " ".join("%7.3f" % ratio[k] for k in idx))
+        _write_scaled(dest, scaled, suffix, write_gene_profiles)
+        return dest, notes
     if suffix:
         scaled = ds.copy()
         rhot = np.asarray(ds.coords["rhot"].values, dtype=float)
@@ -262,20 +308,25 @@ def stage_case_dir(shot, dest, factors=None, ramp=None):
             ratio = scaled[var].values / ds[var].values
             notes.append("%-23s " % var
                          + " ".join("%7.3f" % ratio[k] for k in idx))
-        tmp = os.path.join(dest, "_scaled_tmp")
-        os.makedirs(tmp, exist_ok=True)
-        write_gene_profiles(scaled, tmp)
-        for sp in ("e", "i", "z"):
-            src_f = os.path.join(tmp, f"profiles_{sp}")
-            if os.path.isfile(src_f):
-                os.replace(src_f, os.path.join(dest, f"profiles_{sp}{suffix}"))
-        if os.path.isdir(tmp) and not os.listdir(tmp):
-            os.rmdir(tmp)
-        absent = [f"profiles_{s}{suffix}" for s in ("e", "i", "z")
-                  if not os.path.isfile(os.path.join(dest, f"profiles_{s}{suffix}"))]
-        if absent:
-            raise SystemExit(f"staging wrote no {', '.join(absent)} into {dest}")
+        _write_scaled(dest, scaled, suffix, write_gene_profiles)
     return dest, notes
+
+
+def _write_scaled(dest, scaled, suffix, write_gene_profiles):
+    """Write one scaled dataset as profiles_{e,i,z}<suffix> under dest."""
+    tmp = os.path.join(dest, "_scaled_tmp")
+    os.makedirs(tmp, exist_ok=True)
+    write_gene_profiles(scaled, tmp)
+    for sp in ("e", "i", "z"):
+        src_f = os.path.join(tmp, f"profiles_{sp}")
+        if os.path.isfile(src_f):
+            os.replace(src_f, os.path.join(dest, f"profiles_{sp}{suffix}"))
+    if os.path.isdir(tmp) and not os.listdir(tmp):
+        os.rmdir(tmp)
+    absent = [f"profiles_{s}{suffix}" for s in ("e", "i", "z")
+              if not os.path.isfile(os.path.join(dest, f"profiles_{s}{suffix}"))]
+    if absent:
+        raise SystemExit(f"staging wrote no {', '.join(absent)} into {dest}")
 
 
 SUFFIX_ORDER = ("Te", "Ti", "Tz", "ne", "ni", "nz")
@@ -363,6 +414,15 @@ def main(argv=None):
     ap.add_argument("--scale-n", type=float, default=None, metavar="C",
                     help="shorthand: multiply ne, ni and nz by C, the multiply "
                          "that keeps ne = ni + qz*nz")
+    ap.add_argument("--match-hatch", default=None, metavar="RUN_DIR",
+                    help="measure the scaling from a hatch run directory (its "
+                         "bare profiles_{e,i,z} against a suffixed set) and "
+                         "apply exactly that, per variable, through "
+                         "scaling_forms.rebuild -- the same code the notebook "
+                         "uses. Overrides every --scale-* flag")
+    ap.add_argument("--match-stem", default=None, metavar="SUFFIX",
+                    help="which set of --match-hatch to measure (1.3T, 1.3n). "
+                         "Required when the run holds more than one")
     ap.add_argument("--scale-ramp", default=None, metavar="TOP,MID",
                     help="apply the scalings through the ramp "
                          "1 + (C-1)*(tanh((rho-TOP)/(MID-TOP))+1)/2 instead of "
@@ -416,6 +476,34 @@ def main(argv=None):
         f"{args.shot}_{stamp}")
     outroot = os.path.abspath(os.path.expandvars(os.path.expanduser(outroot)))
     factors = collect_factors(args)
+    measured, match_suffix = None, None
+    if args.match_hatch:
+        root = os.path.abspath(os.path.expandvars(os.path.expanduser(args.match_hatch)))
+        runs = scaling_forms.hatch_runs(root)
+        if not runs:
+            raise SystemExit(f"no profiles_{{e,i,z}} + suffixed set under {root}")
+        if len(runs) > 1:
+            raise SystemExit("--match-hatch wants ONE run directory; %s holds %s"
+                             % (root, ", ".join(sorted(runs))))
+        sets = next(iter(runs.values()))
+        scaled_stems = [s for s in sorted(sets) if s]
+        want = args.match_stem
+        if want:
+            want = want if want.startswith("_") else "_" + want
+            if want not in sets:
+                raise SystemExit("no set %r in %s (present: %s)"
+                                 % (args.match_stem, root,
+                                    ", ".join(s.lstrip("_") for s in scaled_stems)))
+        elif len(scaled_stems) == 1:
+            want = scaled_stems[0]
+        else:
+            raise SystemExit("--match-stem is required: %s holds %s"
+                             % (root, ", ".join(s.lstrip("_") for s in scaled_stems)))
+        measured = scaling_forms.measure_sets(sets, want)
+        match_suffix = want
+        print(f"matching  : {root}  set {want.lstrip('_')}")
+        print(f"            measured per variable with scaling_forms, the "
+              f"notebook's own fit")
     ramp = None
     if args.scale_ramp:
         try:
@@ -425,7 +513,8 @@ def main(argv=None):
         if not mid > top:
             raise SystemExit(f"--scale-ramp needs TOP < MID (got {top}, {mid})")
         ramp = (top, mid)
-    tag = scale_suffix(factors) + ("_ramp%g-%g" % ramp if ramp else "")
+    tag = (match_suffix or scale_suffix(factors)
+           + ("_ramp%g-%g" % ramp if ramp else ""))
     stage = os.path.abspath(os.path.expandvars(
         args.stage_dir
         or os.path.join(outroot, f"base_{args.shot}{tag}".replace(".", "p"))))
@@ -438,12 +527,14 @@ def main(argv=None):
     print(f"outroot   : {outroot}")
 
     case_dir, notes = stage_case_dir(args.shot, stage, factors=factors,
-                                     ramp=ramp)
+                                     ramp=ramp, measured=measured,
+                                     suffix_override=match_suffix)
     print(f"staged    : {case_dir}")
     for note in notes:
         print(f"            {note}")
 
-    suffix = scale_suffix(factors) + ("_ramp%g-%g" % ramp if ramp else "")
+    suffix = (match_suffix or scale_suffix(factors)
+              + ("_ramp%g-%g" % ramp if ramp else ""))
     if suffix:
         # A value scaling is not one of the campaign's methods, and it must not
         # be mistaken for one: the campaign derives reference_* from the case
