@@ -130,12 +130,21 @@ def discharge_root():
         f"DISCHARGE_ROOT_CANDIDATES (tried {DISCHARGE_ROOT_CANDIDATES})")
 
 
-def stage_case_dir(shot, dest):
+def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
     """Write a case directory the DIII-D scan can read: gfile + profiles_e/i/z.
 
     Returns (dest, notes). The profiles are written from the discharge as loaded,
     so this is also the only record of what the campaign treated as its base --
     the pfile it came from stays untouched.
+
+    scale_t / scale_n multiply the temperature and density FAMILIES by a
+    constant before writing. This is a different operation from apply_omt /
+    apply_omne, not a special case of them: the gradient transforms hold the
+    value at rhot_midped fixed and re-exponentiate the shape, so they cannot
+    move the separatrix, while a multiply scales every radius including it.
+    Hatch's runs are of this second kind, which is why mimicking them needs a
+    knob here rather than an alpha. Quasineutrality survives because the whole
+    family is scaled by the same factor: ne = ni + qz*nz is linear in it.
     """
     from TPED.projects.discharge_tools.src.discharge_data import DischargeData
     from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
@@ -155,6 +164,16 @@ def stage_case_dir(shot, dest):
     ds = phys.ds.copy()
 
     notes = []
+    for factor, family, label in ((scale_t, ("Te", "Ti", "Tz"), "temperatures"),
+                                  (scale_n, ("ne", "ni", "nz"), "densities")):
+        if factor is None:
+            continue
+        touched = [v for v in family if v in ds]
+        for v in touched:
+            ds[v] = ds[v] * factor
+        notes.append(f"{label} multiplied by {factor:g} "
+                     f"({', '.join(touched)}) -- a value scaling, not a "
+                     f"gradient one")
     if "nz" not in ds:
         # Quasineutrality at Z = 6, the same closure apply_omne enforces after a
         # density scaling. Without it write_gene_profiles emits no profiles_z at
@@ -212,6 +231,14 @@ def main(argv=None):
                     help="override this shot's ramp topped (RAMP_WINDOWS)")
     ap.add_argument("--rhot-midped", type=float, default=None,
                     help="override this shot's ramp midped (RAMP_WINDOWS)")
+    ap.add_argument("--scale-t", type=float, default=None, metavar="C",
+                    help="multiply Te, Ti and Tz by C before staging. A value "
+                         "scaling, which apply_omt cannot express at any alpha: "
+                         "it moves the separatrix, the gradient transform pins "
+                         "it. Use this to mimic a hatch 1.3T set")
+    ap.add_argument("--scale-n", type=float, default=None, metavar="C",
+                    help="multiply ne, ni and nz by C before staging (mimics a "
+                         "hatch 1.3n set); quasineutrality is preserved")
     ap.add_argument("--pair", action="append", default=None, metavar="OMT,OMN",
                     help="one scan point; repeatable. Default is the DIII-D "
                          "campaign's point list")
@@ -252,8 +279,11 @@ def main(argv=None):
         os.environ.get("SCRATCH", os.getcwd()), "NSTX_omn_omt_cheaseBS",
         f"{args.shot}_{stamp}")
     outroot = os.path.abspath(os.path.expandvars(os.path.expanduser(outroot)))
+    tag = "".join(("_t%g" % args.scale_t if args.scale_t is not None else "",
+                   "_n%g" % args.scale_n if args.scale_n is not None else ""))
     stage = os.path.abspath(os.path.expandvars(
-        args.stage_dir or os.path.join(outroot, f"base_{args.shot}")))
+        args.stage_dir
+        or os.path.join(outroot, f"base_{args.shot}{tag}".replace(".", "p"))))
 
     print(f"=== NSTX omn_omt scan: shot {args.shot} ===")
     print(f"discharge : {os.path.join(discharge_root(), str(args.shot))}")
@@ -262,7 +292,8 @@ def main(argv=None):
     print(f"template  : {args.cheasebs_config}")
     print(f"outroot   : {outroot}")
 
-    case_dir, notes = stage_case_dir(args.shot, stage)
+    case_dir, notes = stage_case_dir(args.shot, stage,
+                                     scale_t=args.scale_t, scale_n=args.scale_n)
     print(f"staged    : {case_dir}")
     for note in notes:
         print(f"            {note}")
@@ -287,7 +318,16 @@ def main(argv=None):
         inner += ["--in-place"]
     if args.dry_run:
         inner += ["--dry-run"]
-    for pair in args.pair or []:
+    pairs = args.pair
+    if not pairs and (args.scale_t is not None or args.scale_n is not None):
+        # The multiply is already in the staged profiles, so the gradient
+        # transform has to be the identity -- otherwise the campaign's default
+        # 8-point sweep would run on top of it.
+        pairs = ["1.0,1.0"]
+        print("scaling  : gradient transform pinned to the identity "
+              "(--pair 1.0,1.0) because --scale-t/--scale-n already moved the "
+              "staged profiles")
+    for pair in pairs or []:
         inner += ["--pair", pair]
     radii = ANALYSIS_RADII.get(args.shot, ())
     if radii and not any(a == "--analysis-radii" for a in args.rest):
