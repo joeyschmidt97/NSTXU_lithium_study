@@ -24,9 +24,10 @@ TPED's pedestal gradient transforms: the profile is re-exponentiated about its
 mid-pedestal value, `T_new = T_mid * (T/T_mid)**alpha`, with alpha ramped from 1
 in the core to its full value across [rhot_topped, rhot_midped]. No fit is
 involved in the scaling -- the profile's own shape is the thing being rescaled.
-The window itself is per discharge, measured once from an mtanh_full fit to pe
-and tabulated in PEDESTAL_WINDOWS; the 0.90/0.95 that used to serve every shot
-is an NSTX number that lies entirely inboard of DIII-D 162940's pedestal.
+The window itself is per discharge and tabulated in RAMP_WINDOWS. For 162940 it
+is not a measured pedestal at all: it is the pair the handed-over IFS scan was
+generated with (rhotTopPed/rhotMidPed = 0.8/1.0), so this campaign scales the
+same way the set it is being compared against did.
 
 METHOD 2 -- `mtanh_full`, the reshape campaign's machinery
 
@@ -137,25 +138,40 @@ DEFAULT_PAIRS = (
     (0.8, 1.1), (1.1, 1.0), (1.0, 1.1),
 )
 
-# (rhot_topped, rhot_midped) per shot, measured from an mtanh_full fit to
-# pe = ne*Te on that discharge's own base profiles: midped is the fitted
-# pedestal midpoint b_pos, topped is b_pos - 2*b_width, the inner edge of the
-# pedestal (b_width is a QUARTER width, so the full pedestal spans 4*b_width).
-# pe rather than Te or ne because pressure is what the equilibrium responds to,
-# and it is what pedestal_scan already locates its pedestal region from.
+# (rhot_topped, rhot_midped) per shot: the exponent ramp
 #
-# The 0.90/0.95 that used to be the default for everything is an NSTX number,
-# and on DIII-D it is wrong in a way that matters: 162940's pedestal is ~2.5x
-# narrower and sits further out, so that band lies entirely INBOARD of it and
-# the gradient ramp reached full alpha at 0.95, right where the real pedestal
-# starts. 129015 is where the old default does land correctly.
+#     alpha_profile = 1 + (alpha-1) * (tanh((rhot-topped)/(midped-topped)) + 1)/2
 #
-# Fitted 2026-09-07 on the bundled base profiles. Te and ne windows agreed with
-# pe to within 0.01 on 162940; on 129015 the ne pedestal sits ~0.03 further out
-# than pe, so a pe window slightly under-covers the density pedestal there.
-PEDESTAL_WINDOWS = {
-    "162940": (0.954, 0.971),      # DIII-D; full pe width 0.033, fit rms 0.19%
-    "129015": (0.885, 0.926),      # NSTX;   full pe width 0.081, fit rms 0.29%
+# with the power law pivoted at the value at rhot_midped. midped >= 1.0 pivots on
+# the separatrix and holds it fixed; topped is where the ramp reaches half its
+# travel, so the transform is the identity well inboard of it.
+#
+# 162940 is NOT a measured pedestal. It is the pair the handed-over IFS
+# `modProfs` scan was generated with, taken from that scan's own fit record --
+# the point of this campaign is to scale the way the set it is compared against
+# was scaled. topped=0.8 leaves the core untouched (the ramp is 3e-4 of the way
+# to alpha at the axis) and puts the whole change in rhot > 0.6.
+#
+# 129015 is a measured mtanh_full pe window (fitted 2026-09-07 on the bundled
+# base profiles; full pe width 0.081, fit rms 0.29%), i.e. a different kind of
+# number in the same table -- see WINDOW_PROVENANCE, which is what gets logged.
+#
+# The measured 162940 pe window, 0.954/0.971, is kept here for the record and
+# deliberately not used: it is 0.017 wide, which makes alpha_profile exactly 1
+# everywhere inboard of 0.94, so every alpha returned the same profile and the
+# first campaign's omn/omt points could not move the equilibrium.
+RAMP_WINDOWS = {
+    "162940": (0.8, 1.0),          # DIII-D; IFS handoff ramp, separatrix pivot
+    "129015": (0.885, 0.926),      # NSTX;   measured mtanh_full pe window
+}
+
+WINDOW_PROVENANCE = {
+    "162940": "IFS modProfs handoff record (rhotTopPed/rhotMidPed)",
+    "129015": "measured mtanh_full pe window",
+}
+
+MEASURED_PE_WINDOWS = {            # for the record; not used for scaling
+    "162940": (0.954, 0.971),      # full pe width 0.033, fit rms 0.19%
 }
 
 # For a shot with no measured window. Deliberately the old NSTX value rather
@@ -172,7 +188,9 @@ FIT_KWARGS = dict(pedestal_weight=8.0)
 
 # Temperatures take the omt knob, densities the omn knob. Tz is listed for the
 # fit path because apply_mtanh_full fits each variable in its own right; the
-# gradient path gets Tz for free through apply_omt's apply_to_tz.
+# gradient path gets Tz through apply_omt's apply_to_tz, passed explicitly below
+# to mirror the handoff's `tz_eq_ti: true` rather than leaning on the default.
+TZ_EQ_TI = True
 TEMPERATURE_VARS = ("Te", "Ti", "Tz")
 DENSITY_VAR = "ne"
 
@@ -257,7 +275,8 @@ def fit_base_profiles(phys_base):
 def scale_omn_omt(phys_base, omt, omn, midped, topped):
     """Method 1: scale the profile gradients directly."""
     return (phys_base
-            .apply_omt(alpha=omt, rhot_midped=midped, rhot_topped=topped)
+            .apply_omt(alpha=omt, rhot_midped=midped, rhot_topped=topped,
+                       apply_to_tz=TZ_EQ_TI)
             .apply_omne(alpha=omn, rhot_midped=midped, rhot_topped=topped))
 
 
@@ -300,15 +319,16 @@ def resolve_window(shot, topped_arg, midped_arg):
     falling back to the NSTX default on a discharge it does not describe is the
     failure this table exists to prevent.
     """
-    measured = PEDESTAL_WINDOWS.get(str(shot))
-    if measured:
-        topped, midped = measured
-        why = f"measured mtanh_full pe window for {shot}"
+    tabulated = RAMP_WINDOWS.get(str(shot))
+    if tabulated:
+        topped, midped = tabulated
+        why = "%s for %s" % (WINDOW_PROVENANCE.get(str(shot), "tabulated window"),
+                             shot)
     else:
         topped, midped = FALLBACK_TOPPED, FALLBACK_MIDPED
         why = (f"NO measured window for shot {shot} -- falling back to the NSTX "
                f"default {FALLBACK_TOPPED}/{FALLBACK_MIDPED}, which may not "
-               f"describe this pedestal. Fit it and add it to PEDESTAL_WINDOWS")
+               f"describe this pedestal. Fit it and add it to RAMP_WINDOWS")
 
     overridden = []
     if topped_arg is not None:
@@ -506,7 +526,7 @@ def main(argv=None):
 
     ap.add_argument("--rhot-midped", type=float, default=None,
                     help="mid-pedestal rho_tor; omn_omt pins the profile here. "
-                         "Default is this shot's measured window (PEDESTAL_WINDOWS)")
+                         "Default is this shot's tabulated ramp (RAMP_WINDOWS)")
     ap.add_argument("--rhot-topped", type=float, default=None,
                     help="top-of-pedestal rho_tor; alpha ramps in over [top, mid]. "
                          "Default is this shot's measured window")
@@ -685,9 +705,14 @@ def main(argv=None):
     if args.auto_pedestal:
         midped, topped = detect_pedestal(phys_base)
         window_why = "measured now off the base ne gradient (--auto-pedestal)"
-    if not 0.0 < topped < midped < 1.0:
-        raise SystemExit(f"pedestal window is not ordered: topped={topped}, "
-                         f"midped={midped}; both must lie in (0, 1) with top < mid")
+    # midped == 1.0 is not an edge case to be rejected, it is the IFS handoff's
+    # own choice: it pivots the power law on the separatrix and so holds the
+    # separatrix values fixed. topped == 0.0 is likewise legal (ramp on from the
+    # axis). What must hold is only that the ramp has positive width and that
+    # both ends are inside the closed radial domain.
+    if not 0.0 <= topped < midped <= 1.0:
+        raise SystemExit(f"ramp window is not ordered: topped={topped}, "
+                         f"midped={midped}; need 0 <= topped < midped <= 1")
     print(f"pedestal  : topped={topped:.4f}, midped={midped:.4f}  (omn_omt only)")
     print(f"            {window_why}")
 
