@@ -129,7 +129,7 @@ def stem_label(stem):
     return stem.lstrip("_") or "reference"
 
 
-def build_config(spec, cm, stem, out_dir, baseline_dir, overrides, tped):
+def build_config(spec, stems, stem, out_dir, baseline_dir, overrides, tped):
     """(config dict, list of (key, old, new)) for one re-run.
 
     The hatch config is copied and only the keys above are replaced, so a diff
@@ -139,13 +139,6 @@ def build_config(spec, cm, stem, out_dir, baseline_dir, overrides, tped):
     with open(spec["config_path"]) as fh:
         cfg = json.load(fh)
     original = dict(cfg)
-
-    stems = cm.candidate_stems(spec["root"])
-    if stem not in stems:
-        raise SystemExit(
-            "run %s has no profiles_{e,i,z}%s set (candidates: %s)"
-            % (spec["name"], stem,
-               ", ".join(stem_label(s) for s in sorted(stems)) or "none"))
 
     cfg["eqdsk"] = spec["gfile_before"]
     for sp, key in PROFILE_KEYS.items():
@@ -283,13 +276,29 @@ def main(argv=None):
             base = os.path.basename(after)
             wanted = [base[len("profiles_e"):]] if base else [""]
 
+        # A requested stem that this run does not carry is skipped, not fatal:
+        # the hatch tree does not hold the same scalings for every run (the test
+        # run has 1.3n and no 1.3T), and one absent set should not cancel the
+        # sets that are there.
+        absent = [s for s in wanted if s not in stems]
+        for stem in absent:
+            print(f"  ! no profiles_{{e,i,z}}{stem} in {spec['name']}; skipped. "
+                  f"Present: {', '.join(stem_label(s) for s in sorted(stems))}",
+                  file=sys.stderr)
+        wanted = [s for s in wanted if s in stems]
+        if not wanted:
+            print(f"  SKIPPED: none of the requested profile sets exist in "
+                  f"{spec['name']}", file=sys.stderr)
+            failed += 1
+            continue
+
         for stem in wanted:
             label = stem_label(stem)
             out_dir = os.path.join(outroot, f"{spec['name']}_{label}")
             baseline = (os.path.join(spec["root"], "baseline")
                         if args.reuse_baseline
                         else os.path.join(outroot, f"{spec['name']}_baseline"))
-            cfg, diff = build_config(spec, cm, stem, out_dir, baseline,
+            cfg, diff = build_config(spec, stems, stem, out_dir, baseline,
                                      overrides, tped)
             print(f"\n--- {spec['name']} / {label} ---")
             print(f"  output_dir   : {out_dir}")
