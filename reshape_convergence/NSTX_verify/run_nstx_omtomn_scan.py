@@ -40,8 +40,8 @@ DIII-D `rhot` / `jparallel` path. The CHEASE namelist is `chease_namelist_nstx`.
     # stage and scale only; solve nothing
     python run_nstx_omtomn_scan.py --shot 132588 --dry-run
 
-    # a VALUE scaling -- Te,Ti,Tz x 1.3 replayed against the unscaled reference,
-    # which is what the hatch runs do. Solved by run_hatch_cheasebs.py, since a
+    # a VALUE scaling -- Te x 1.3 (Te alone, as the hatch 1.3T sets do) replayed
+    # against the unscaled reference. Solved by run_hatch_cheasebs.py, since a
     # multiply is not one of this campaign's methods.
     python run_nstx_omtomn_scan.py --shot 129015 --scale-t 1.3 \
         --outroot $SCRATCH/NSTX_hatch_mimic
@@ -202,7 +202,14 @@ def stage_case_dir(shot, dest, scale_t=None, scale_n=None):
     suffix = scale_suffix(scale_t, scale_n)
     if suffix:
         scaled = ds.copy()
-        for factor, family, label in ((scale_t, ("Te", "Ti", "Tz"), "temperatures"),
+        # Te ALONE for the temperature knob: the hatch 1.3T sets move the
+        # electron temperature and leave Ti (and with it Tz) where they were, so
+        # scaling the whole family would be a different experiment -- a bigger
+        # pressure change, and an ion channel that moved when his did not.
+        # The density knob does take the whole family, because that is what
+        # keeps ne = ni + qz*nz: the relation is linear in the factor, so
+        # scaling ne alone would break quasineutrality instead.
+        for factor, family, label in ((scale_t, ("Te",), "Te"),
                                       (scale_n, ("ne", "ni", "nz"), "densities")):
             if factor is None:
                 continue
@@ -271,13 +278,13 @@ def main(argv=None):
     ap.add_argument("--rhot-midped", type=float, default=None,
                     help="override this shot's ramp midped (RAMP_WINDOWS)")
     ap.add_argument("--scale-t", type=float, default=None, metavar="C",
-                    help="multiply Te, Ti and Tz by C before staging. A value "
-                         "scaling, which apply_omt cannot express at any alpha: "
-                         "it moves the separatrix, the gradient transform pins "
-                         "it. Use this to mimic a hatch 1.3T set")
+                    help="multiply Te ALONE by C, leaving Ti and Tz alone, as "
+                         "the hatch 1.3T sets do. A value scaling, which "
+                         "apply_omt cannot express at any alpha: it moves the "
+                         "separatrix, the gradient transform pins it")
     ap.add_argument("--scale-n", type=float, default=None, metavar="C",
-                    help="multiply ne, ni and nz by C before staging (mimics a "
-                         "hatch 1.3n set); quasineutrality is preserved")
+                    help="multiply ne by C, with ni and nz following so that "
+                         "ne = ni + qz*nz still holds (mimics a hatch 1.3n set)")
     ap.add_argument("--pair", action="append", default=None, metavar="OMT,OMN",
                     help="one scan point; repeatable. Default is the DIII-D "
                          "campaign's point list")
