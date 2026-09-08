@@ -196,7 +196,8 @@ def settings_from_summary(run_root):
     return out
 
 
-def build_config(spec, stems, stem, out_dir, baseline_dir, overrides, tped):
+def build_config(spec, stems, stem, out_dir, baseline_dir, overrides, tped,
+                 rebuild_baseline=None):
     """(config dict, list of (key, old, new)) for one re-run.
 
     The hatch config is copied and only the keys above are replaced, so a diff
@@ -218,11 +219,13 @@ def build_config(spec, stems, stem, out_dir, baseline_dir, overrides, tped):
         cfg["reference_" + key] = stems[""][sp]
     cfg["output_dir"] = out_dir
     cfg["baseline_dir"] = baseline_dir
-    # An empty baseline directory has nothing to reuse, so the decomposition has
-    # to be built; pointing at the hatch baseline is the --reuse-baseline case
-    # and leaves the flag as the config had it.
-    if not os.path.isdir(baseline_dir) or not os.listdir(baseline_dir):
-        cfg["rebuild_baseline"] = True
+    # The decomposition is a function of the reference profiles and the source
+    # EQDSK, so every stem of one run shares it: built by the first solve, read
+    # by the rest. Rebuilding per stem is not just wasted time -- cheaseBS
+    # rmtree's the directory first, so the later solves delete the baseline the
+    # earlier ones built and each pays for it again.
+    if rebuild_baseline is not None:
+        cfg["rebuild_baseline"] = rebuild_baseline
 
     for key, resolved in (("chease_binary", chease_binary),
                           ("chease_namelist", namelist)):
@@ -320,6 +323,7 @@ def main(argv=None):
     print()
 
     jobs, failed = [], 0
+    baselines_built = set()
     # An explicit single --stem also answers resolve_run's own question about
     # which set the run was solved with, which it raises on when it cannot tell.
     forced = None
@@ -428,9 +432,18 @@ def main(argv=None):
             baseline = (os.path.join(spec["root"], "baseline")
                         if args.reuse_baseline
                         else os.path.join(outroot, f"{spec['name']}_baseline"))
+            # First solve to claim this baseline directory builds it; the
+            # rest reuse. --reuse-baseline points at the hatch run's own, which
+            # already exists, so nothing is rebuilt at all.
+            if args.reuse_baseline:
+                rebuild = False
+            else:
+                rebuild = baseline not in baselines_built
+                baselines_built.add(baseline)
             try:
                 cfg, diff = build_config(spec, stems, stem, out_dir, baseline,
-                                         run_overrides, tped)
+                                         run_overrides, tped,
+                                         rebuild_baseline=rebuild)
             except ValueError as exc:
                 print(f"  SKIPPED {spec['name']}/{label}: {exc}", file=sys.stderr)
                 failed += 1
@@ -442,8 +455,11 @@ def main(argv=None):
                      os.path.basename(stems[""]["e"]) if "" in stems
                      else "(absent)"))
             print(f"  output_dir   : {out_dir}")
-            print(f"  baseline_dir : {baseline}"
-                  f"{'   (hatch run, reused)' if args.reuse_baseline else '   (rebuilt)'}")
+            print("  baseline_dir : %s   (%s)"
+                  % (baseline,
+                     "hatch run's own, reused" if args.reuse_baseline
+                     else "built by this solve" if rebuild
+                     else "reused from the solve above"))
             print("  config changes vs %s:" % os.path.basename(spec["config_path"]))
             for key, old, new in diff:
                 print(f"    {key}: {old} -> {new}")
