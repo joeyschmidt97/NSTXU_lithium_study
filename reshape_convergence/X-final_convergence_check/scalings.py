@@ -130,16 +130,82 @@ def run(shot: int, kind: str = "mtanh_full", *, te: float = 1.0, ne: float = 1.0
     return phys
 
 
+_OPNAME = {"apply_omt": "omt", "apply_omne": "omne",
+           "apply_mtanh_full": "mtanh_full", "apply_mtanh_ped": "mtanh_ped"}
+
+
+def describe(phys: DischargePhysics) -> str:
+    """Label read off the transform history, so it cannot disagree with the run.
+
+    apply_omt/apply_omne record `alpha`; apply_mtanh_* record `var` and
+    `scale_height`. Empty history is the unscaled base.
+    """
+    parts = []
+    for r in phys.history:
+        op = _OPNAME.get(r.get("transform"), r.get("transform", "?"))
+        if "alpha" in r:
+            parts.append("%s a=%.3g" % (op, r["alpha"]))
+        elif "scale_height" in r:
+            parts.append("%s %s x%.3g" % (op, r.get("var", "?"), r["scale_height"]))
+        else:
+            parts.append(op)
+    return " + ".join(parts) if parts else "base"
+
+
 def compare(*phys, labels=None, vars=("Te", "Ti", "ne", "ni"), xcoord="rhot",
             xlim=None, fig=None):
     """Overlay any number of DischargePhysics on one T/n figure.
 
-    xlim=(0.8, 1.0) zooms the pedestal; a pedestal change is a few percent of a
-    core-scaled axis and is only legible zoomed.
+    Labels default to describe() --- the legend then states the operation and its
+    factor as recorded by the transform itself. xlim=(0.8, 1.0) zooms the
+    pedestal; a height change is a few percent of a core-scaled axis and is only
+    legible zoomed.
     """
-    labels = labels or [None] * len(phys)
+    labels = labels or [describe(p) for p in phys]
     for i, (p, lab) in enumerate(zip(phys, labels)):
         kw = {xcoord: list(xlim)} if xlim else {}
         fig = p.plot_profiles(vars=vars, label=lab, xcoord=xcoord, fig=fig,
                               discharge_idx=i, **kw)
+    return _label_cases(fig, labels)
+
+
+def _label_cases(fig, labels):
+    """Add a colour->case legend. plot_profiles' own legend is species-only, so
+    without this the figure shows which variable a line is but not which run."""
+    import matplotlib.lines as mlines
+
+    first = {}
+    for rec in getattr(fig, "_discharge_artists", []):
+        first.setdefault(rec["discharge_idx"], rec["artist"])
+    handles = [mlines.Line2D([], [], color=first[i].get_color(), linewidth=2.4,
+                             label=lab)
+               for i, lab in enumerate(labels) if i in first]
+    if not handles:
+        return fig
+    for ax in fig.axes:
+        if ax.get_legend():
+            ax.add_artist(ax.get_legend())        # keep the species legend
+        ax.legend(handles=handles, fontsize=8, loc="best")
     return fig
+
+
+def ratios(base: DischargePhysics, *phys, var: str = "Te",
+           radii=(0.5, 0.8, 0.9, 0.95, 0.99)):
+    """Achieved value ratio vs base at each radius --- what the knob really did.
+
+    The requested factor is the knob; this is the profile's answer to it. For
+    mtanh_full they differ because b_sol and the Gaussian core term are held;
+    for omt/omne alpha is an exponent, not a value ratio, so they differ more.
+    """
+    import numpy as np
+
+    def vals(p):
+        da = p.ds[var]
+        return da.pint.magnitude if hasattr(da, "pint") else da.values
+
+    x, y0 = base.rhot.values, vals(base)
+    w = max(len(describe(p)) for p in phys) if phys else 0
+    print("%-*s  %s" % (w, var, "  ".join("%6.2f" % r for r in radii)))
+    for p in phys:
+        r = np.interp(radii, x, vals(p) / y0)
+        print("%-*s  %s" % (w, describe(p), "  ".join("%6.3f" % v for v in r)))
