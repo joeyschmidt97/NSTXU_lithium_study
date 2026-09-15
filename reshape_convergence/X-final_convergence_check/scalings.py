@@ -4,9 +4,12 @@ One discharge -> one DischargePhysics -> one transform per scaling.
 
     python scalings.py --shot 132588
     python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
+    python scalings.py --shot 132588 --scales 1.3 --cheasebs --strict
 
 Plots are on by default (--no-plots to skip): two PNGs per transform family,
-one full-profile and one zoomed on the pedestal.
+one full-profile and one zoomed on the pedestal. --cheasebs additionally hands
+every case to output_gfile with run_cheasebs=True; the reconstruction itself is
+output_gfile's job, this only picks the cases and the destination.
 
 or from a notebook:
 
@@ -17,9 +20,7 @@ or from a notebook:
     q    = scale(phys, "omt", 0.7)              # gradient power law
 
     run(132588, plot_printouts=True)            # PNG per transform family
-
-Nothing here runs cheaseBS and nothing here writes a gfile --- call
-``q.output_gfile(...)`` on a returned object for that.
+    run(132588, ["Te_ped_scale"], (1.3,), cheasebs=True)
 """
 
 from __future__ import annotations
@@ -256,12 +257,21 @@ def plot_family(base, cases, path, vars=PLOT_VARS, xlim=None,
 
 
 def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
-        savedir=None, **kw):
+        cheasebs=False, savedir=None, gfile_kw=None, **kw):
     """Scale one discharge across the grid. Returns {tag: DischargePhysics}.
 
-    plot_printouts writes one PNG per transform family to a temp directory and
-    runs nothing else --- no gfile, no cheaseBS --- so the transforms can be
-    eyeballed before anything expensive is launched on them.
+    plot_printouts writes two PNGs per transform family --- full profile and
+    pedestal zoom --- so the transforms can be eyeballed before anything
+    expensive is launched on them.
+
+    cheasebs hands each scaled case to output_gfile with run_cheasebs=True,
+    writing to savedir/<shot>/<tag>/. Reconstruction itself is entirely
+    output_gfile's: this only decides which cases it gets and where the results
+    land. Plots are written first when both are asked for, so there is
+    something to look at while the solves run.
+
+    gfile_kw is forwarded to output_gfile (cheasebs_strict, cheasebs_config,
+    cheasebs_acceptance, max_iter, istar_mix, ...).
 
     Every print flushes, and the destination is resolved and announced before
     the loading and fitting rather than after: block-buffered stdout under a
@@ -269,11 +279,11 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
     still fitting --- or that died in it --- looks like a run that wrote
     nothing and said nothing about where.
     """
-    if plot_printouts:
+    if plot_printouts or cheasebs:
         savedir = os.path.abspath(savedir or scratch_dir(shot))
         os.makedirs(savedir, exist_ok=True)
         print("=== scaling check: %d ===" % shot, flush=True)
-        print("plot printouts -> %s" % savedir, flush=True)
+        print("output -> %s" % savedir, flush=True)
 
     print("loading %d ..." % shot, flush=True)
     base = load(shot)
@@ -296,6 +306,31 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
                       % (path, len(cases), ", ".join(lab for lab, _ in cases)),
                       flush=True)
         print("=== %d PNG(s) in %s ===" % (n, savedir), flush=True)
+
+    if cheasebs:
+        failed = []
+        print("=== cheaseBS: %d case(s) ===" % len(out), flush=True)
+        for label, q in out.items():
+            case = os.path.join(savedir, str(shot), label)
+            os.makedirs(case, exist_ok=True)
+            print("--- %d %s ---" % (shot, label), flush=True)
+            try:
+                # run_cheasebs=True rather than None: the prompt is unanswerable
+                # in a batch job, and a transform history is always present here.
+                path = q.output_gfile(savedir=case, run_cheasebs=True,
+                                      comment="%d_%s" % (shot, label),
+                                      **(gfile_kw or {}))
+                print("  gfile   %s" % path, flush=True)
+            except Exception:                                    # noqa: BLE001
+                # One rejected or diverged case must not take the rest of the
+                # grid with it; what converged is still on disk.
+                import traceback
+                traceback.print_exc()
+                failed.append(label)
+        print("=== %d/%d ok in %s ==="
+              % (len(out) - len(failed), len(out), savedir), flush=True)
+        if failed:
+            print("FAILED: %s" % ", ".join(failed), flush=True)
     return out
 
 
@@ -313,22 +348,33 @@ def main(argv=None):
     ap.add_argument("--scalings", nargs="+", default=None, choices=sorted(SCALINGS),
                     help="default: every scaling in SCALINGS")
     ap.add_argument("--scales", type=float, nargs="+", default=[0.7, 1.3])
-    # Plots are the point of running this as a script: it writes no gfile and
-    # runs no cheaseBS, so a run without them scales four profiles and throws
-    # them away. On by default; --plot-printouts is kept so the explicit form
-    # still works, and --no-plots is the way to opt out.
+    # Plots are the point of a run without --cheasebs: nothing else is written,
+    # so a bare run would scale the profiles and throw them away. On by default;
+    # --plot-printouts is kept so the explicit form still works, and --no-plots
+    # is the way to opt out --- worth doing alongside --cheasebs on a shot whose
+    # scalings have already been eyeballed.
     ap.add_argument("--plot-printouts", "--plot-output", dest="plot_printouts",
                     action="store_true", default=True,
-                    help="write one PNG per transform family (default)")
+                    help="write full-profile and pedestal-zoom PNGs per "
+                         "transform family (default)")
     ap.add_argument("--no-plots", dest="plot_printouts", action="store_false",
-                    help="scale only, write nothing")
+                    help="skip the check plots")
+    ap.add_argument("--cheasebs", action="store_true",
+                    help="reconstruct each case through output_gfile with "
+                         "run_cheasebs=True, into <savedir>/<shot>/<tag>/")
+    ap.add_argument("--strict", action="store_true",
+                    help="with --cheasebs, raise on a rejected equilibrium "
+                         "instead of returning it; set this when the output "
+                         "feeds GENE runs")
     ap.add_argument("--savedir", default=None,
                     help="default: a fresh temp dir on $SCRATCH, else $PSCRATCH, "
                          "else the platform temp dir")
     args = ap.parse_args(argv)
 
     run(args.shot, args.scalings, tuple(args.scales),
-        plot_printouts=args.plot_printouts, savedir=args.savedir)
+        plot_printouts=args.plot_printouts, cheasebs=args.cheasebs,
+        savedir=args.savedir,
+        gfile_kw={"cheasebs_strict": True} if args.strict else None)
     return 0
 
 
