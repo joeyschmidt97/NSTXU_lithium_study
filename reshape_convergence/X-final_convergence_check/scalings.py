@@ -2,7 +2,8 @@
 
 One discharge -> one DischargePhysics -> one transform per scaling.
 
-    python scalings.py --shot 132588
+    python scalings.py                                    # all four shots
+    python scalings.py --shots 129015 129038 132543
     python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
     python scalings.py --shot 132588 --scales 1.3 --cheasebs --strict
 
@@ -199,9 +200,14 @@ def scratch_root() -> str:
     return tempfile.gettempdir()
 
 
-def scratch_dir(shot: int) -> str:
-    """A fresh temp directory for check plots, under scratch_root()."""
-    return tempfile.mkdtemp(prefix="scaling_check_%d_" % shot,
+def scratch_dir(label) -> str:
+    """A fresh temp directory for check output, under scratch_root().
+
+    `label` names the whole invocation, not one shot: a multi-shot run resolves
+    this once and shares it, so the grid lands in one directory instead of one
+    temp directory per shot.
+    """
+    return tempfile.mkdtemp(prefix="scaling_check_%s_" % label,
                             dir=scratch_root())
 
 
@@ -257,7 +263,7 @@ def plot_family(base, cases, path, vars=PLOT_VARS, xlim=None,
 
 
 def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
-        cheasebs=False, savedir=None, gfile_kw=None, **kw):
+        cheasebs=False, savedir=None, gfile_kw=None, failures=None, **kw):
     """Scale one discharge across the grid. Returns {tag: DischargePhysics}.
 
     plot_printouts writes two PNGs per transform family --- full profile and
@@ -271,7 +277,9 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
     something to look at while the solves run.
 
     gfile_kw is forwarded to output_gfile (cheasebs_strict, cheasebs_config,
-    cheasebs_acceptance, max_iter, istar_mix, ...).
+    cheasebs_acceptance, max_iter, istar_mix, ...). A list passed as `failures`
+    collects "<shot> <tag>" for every case that raised, so a caller looping over
+    shots can exit non-zero without re-reading the log.
 
     Every print flushes, and the destination is resolved and announced before
     the loading and fitting rather than after: block-buffered stdout under a
@@ -280,7 +288,7 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
     nothing and said nothing about where.
     """
     if plot_printouts or cheasebs:
-        savedir = os.path.abspath(savedir or scratch_dir(shot))
+        savedir = os.path.abspath(savedir or scratch_dir(str(shot)))
         os.makedirs(savedir, exist_ok=True)
         print("=== scaling check: %d ===" % shot, flush=True)
         print("output -> %s" % savedir, flush=True)
@@ -309,7 +317,7 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
 
     if cheasebs:
         failed = []
-        print("=== cheaseBS: %d case(s) ===" % len(out), flush=True)
+        print("=== cheaseBS: %d %d case(s) ===" % (shot, len(out)), flush=True)
         for label, q in out.items():
             case = os.path.join(savedir, str(shot), label)
             os.makedirs(case, exist_ok=True)
@@ -327,8 +335,10 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
                 import traceback
                 traceback.print_exc()
                 failed.append(label)
-        print("=== %d/%d ok in %s ==="
-              % (len(out) - len(failed), len(out), savedir), flush=True)
+                if failures is not None:
+                    failures.append("%d %s" % (shot, label))
+        print("=== %d: %d/%d ok in %s ==="
+              % (shot, len(out) - len(failed), len(out), savedir), flush=True)
         if failed:
             print("FAILED: %s" % ", ".join(failed), flush=True)
     return out
@@ -344,7 +354,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Scale one discharge and check the transforms.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--shot", type=int, default=132588, choices=SHOTS)
+    # Plural and variadic, defaulting to the whole campaign: the four shots are
+    # the campaign, so a bare run should cover them, and naming three of them
+    # is an ordinary request rather than an error.
+    ap.add_argument("--shots", "--shot", dest="shots", type=int, nargs="+",
+                    default=list(SHOTS), choices=sorted(SHOTS),
+                    help="default: every shot in SHOTS")
     ap.add_argument("--scalings", nargs="+", default=None, choices=sorted(SCALINGS),
                     help="default: every scaling in SCALINGS")
     ap.add_argument("--scales", type=float, nargs="+", default=[0.7, 1.3])
@@ -371,11 +386,33 @@ def main(argv=None):
                          "else the platform temp dir")
     args = ap.parse_args(argv)
 
-    run(args.shot, args.scalings, tuple(args.scales),
-        plot_printouts=args.plot_printouts, cheasebs=args.cheasebs,
-        savedir=args.savedir,
-        gfile_kw={"cheasebs_strict": True} if args.strict else None)
-    return 0
+    # Resolved once for the whole invocation rather than per shot, so a
+    # multi-shot grid lands in one directory instead of four temp directories
+    # that have to be collected by hand afterwards.
+    savedir = args.savedir or scratch_dir("-".join(str(s) for s in args.shots))
+    failures, broken = [], []
+
+    for shot in args.shots:
+        try:
+            run(shot, args.scalings, tuple(args.scales),
+                plot_printouts=args.plot_printouts, cheasebs=args.cheasebs,
+                savedir=savedir, failures=failures,
+                gfile_kw={"cheasebs_strict": True} if args.strict else None)
+        except Exception:                                        # noqa: BLE001
+            # A shot that cannot even be loaded or fitted must not take the
+            # remaining shots with it.
+            import traceback
+            traceback.print_exc()
+            broken.append(shot)
+
+    print("\n=== %d/%d shot(s) ran, output in %s ==="
+          % (len(args.shots) - len(broken), len(args.shots), savedir),
+          flush=True)
+    if broken:
+        print("SHOTS RAISED: %s" % ", ".join(str(s) for s in broken), flush=True)
+    if failures:
+        print("CASES FAILED: %s" % "; ".join(failures), flush=True)
+    return 1 if (broken or failures) else 0
 
 
 if __name__ == "__main__":
