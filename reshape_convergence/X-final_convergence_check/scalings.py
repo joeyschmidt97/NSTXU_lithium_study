@@ -1,25 +1,26 @@
-"""Single source of truth for the final convergence check.
+"""Bare-bones scaling driver for the final convergence check.
 
-The notebook and any batch script import from here, so a scaling run in a
-terminal and a scaling plotted in the notebook cannot differ.
+One discharge -> one DischargePhysics -> one transform per scaling.
 
-    from scalings import load, scale, run, compare
+    from scalings import load, scale, run, SCALINGS
 
     phys = load(132588)
-    hi   = scale(phys, "mtanh_full", te=1.3)          # Hatch handoff transform
-    lo   = scale(phys, "omt_omne",   te=0.7, ne=0.7)  # gradient transform
-    compare(phys, hi, lo, labels=("base", "mtanh 1.3T", "omt/omne 0.7"))
+    q    = scale(phys, "Te_ped_scale", 1.3)     # mtanh_full step-amplitude
+    q    = scale(phys, "omt", 0.7)              # gradient power law
 
-    run(132588, "mtanh_full", te=1.3, gfile=True, savedir="out/")  # + cheaseBS
+    run(132588, plot_printouts=True)            # every scaling, PNG per case
+
+Nothing here runs cheaseBS and nothing here writes a gfile --- call
+``q.output_gfile(...)`` on a returned object for that.
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
-# Import TPED from this checkout rather than whatever is installed, matching
-# NSTX_verify/run_nstx_omtomn_scan.py.
+# Import TPED from this checkout rather than whatever is installed.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 for _parent in (_HERE, os.path.dirname(_HERE)):
     _root = os.path.dirname(os.path.dirname(_parent))
@@ -30,21 +31,53 @@ from TPED.projects.discharge_tools.src.discharge_data import DischargeData
 from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
 from TPED.projects.discharge_tools.src.transforms.mtanh_transforms import fit_mtanh_full
 
+# ---------------------------------------------------------------------------
+# Discharges
+# ---------------------------------------------------------------------------
+
+# First path that exists wins, so the same code runs on NERSC and on a laptop.
 DISCHARGE_ROOT_CANDIDATES = [
     "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges",
     "C:/Users/joesc/git/ST_research/NSTXU_discharges",
 ]
-PFILES = {129038: "p129038.00400"}
+
 SHOTS = (129015, 129038, 132543, 132588)
 
-# (rhot_topped, rhot_midped) for omt/omne. IFS handoff pair; override per shot.
-RAMP_WINDOWS = {s: (0.8, 1.0) for s in SHOTS}
+# 129038's directory holds five pfiles, so auto-discovery refuses to guess.
+PFILES = {129038: "p129038.00400"}
+
+# ---------------------------------------------------------------------------
+# Scalings
+# ---------------------------------------------------------------------------
 
 # Campaign fit setting for mtanh_full. One value everywhere.
 FIT_KWARGS = dict(pedestal_weight=8.0)
+QZ = 6.0
 
-KINDS = ("omt_omne", "mtanh_full")
+# (rhot_topped, rhot_midped) for the omt/omne gradient transforms.
+RAMP_WINDOW = (0.8, 1.0)
 
+# name -> (apply_X key, transform-specific spec). `apply` selects the function in
+# APPLY; the rest is what that function needs to pin down the single knob.
+#   mtanh_full : (var, kwarg)  -- kwarg is the apply_mtanh_full keyword scaled
+#   om         : (method,)     -- apply_omt and apply_omne are separate methods,
+#                                 unlike apply_mtanh_full which takes var
+SCALINGS = {
+    "Te_ped_scale":   {"apply": "mtanh_full", "var": "Te", "kwarg": "scale_height"},
+    "ne_ped_scale":   {"apply": "mtanh_full", "var": "ne", "kwarg": "scale_height"},
+    "omt":            {"apply": "om", "method": "apply_omt"},
+    "omne":           {"apply": "om", "method": "apply_omne"},
+}
+
+# Plot window. A pedestal height change is a few percent of a core-scaled axis
+# and is only legible zoomed, so the check plots come out zoomed by default.
+PLOT_VARS = ("Te", "Ti", "ne", "ni")
+PLOT_XLIM = (0.6, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Load
+# ---------------------------------------------------------------------------
 
 def discharge_root() -> str:
     for d in DISCHARGE_ROOT_CANDIDATES:
@@ -62,150 +95,130 @@ def load(shot: int) -> DischargePhysics:
     return DischargePhysics(DischargeData(**kw))
 
 
-def _fits(phys, vars):
-    """{var: StefanikovaProfile}, cached on the object so scales share one fit."""
+# ---------------------------------------------------------------------------
+# apply_X transforms
+# ---------------------------------------------------------------------------
+
+def _fit(phys: DischargePhysics, var: str):
+    """Nominal StefanikovaProfile for one variable, cached on the object.
+
+    Fitted once off the unscaled profiles so every scale factor is measured
+    against the same fit rather than a refit of its own output.
+    """
     cache = phys.__dict__.setdefault("_scaling_fits", {})
-    for v in vars:
-        if v not in cache:
-            cache[v] = fit_mtanh_full(phys.ds, v, **FIT_KWARGS)[0]
-    return cache
+    if var not in cache:
+        cache[var] = fit_mtanh_full(phys.ds, var, **FIT_KWARGS)[0]
+    return cache[var]
 
 
-def scale(phys: DischargePhysics, kind: str = "mtanh_full", *,
-          te: float = 1.0, ne: float = 1.0, window=None, qz: float = 6.0,
-          apply_to_tz: bool = True, **kw) -> DischargePhysics:
-    """Apply one scaling. te/ne are the knobs; 1.0 leaves that channel alone.
+def _apply_mtanh_full(phys, spec, s, **kw):
+    """Stefanikova F_full reconstruction with one fit parameter scaled.
 
-    kind="omt_omne"   : gradient power law, re-exponentiated about rhot_midped.
-                        te scales Te/Ti/Tz together, ne scales ne (ni, nz follow).
-    kind="mtanh_full" : Stefanikova F_full reconstruction with b_height scaled.
-                        te scales Te only, ne scales ne (ni, nz follow).
-                        This is the transform the Hatch handoff package used.
-
-    window : (rhot_topped, rhot_midped), omt_omne only. Defaults per shot.
-    **kw   : forwarded to apply_mtanh_full (scale_width, shift_pos, ...).
+    Exactly the transform make_scan_handoff.py hands off: the nominal fit, one
+    scaled keyword, quasineutrality on so ni and nz follow ne.
     """
-    if kind not in KINDS:
-        raise ValueError(f"kind must be one of {KINDS}, got {kind!r}")
-
-    if kind == "omt_omne":
-        top, mid = window or RAMP_WINDOWS.get(phys.ds.attrs.get("shot"), (0.8, 1.0))
-        if te != 1.0:
-            phys = phys.apply_omt(te, rhot_midped=mid, rhot_topped=top,
-                                  apply_to_tz=apply_to_tz)
-        if ne != 1.0:
-            phys = phys.apply_omne(ne, rhot_midped=mid, rhot_topped=top, qz=qz)
-        return phys
-
-    fits = _fits(phys, [v for v, s in (("Te", te), ("ne", ne)) if s != 1.0])
-    for var, s in (("Te", te), ("ne", ne)):
-        if s != 1.0:
-            phys = phys.apply_mtanh_full(var, fit=fits[var], scale_height=s,
-                                         enforce_quasineutrality=True, qz=qz, **kw)
-    return phys
+    var, kwarg = spec["var"], spec["kwarg"]
+    return phys.apply_mtanh_full(
+        var, fit=_fit(phys, var), **{kwarg: s},
+        enforce_quasineutrality=True, qz=QZ, **kw)
 
 
-def tag(kind: str, te: float, ne: float) -> str:
-    return "%s_te%.3f_ne%.3f" % (kind, te, ne)
+def _apply_om(phys, spec, s, *, window=None, **kw):
+    """Gradient power law, re-exponentiated about rhot_midped.
 
-
-def run(shot: int, kind: str = "mtanh_full", *, te: float = 1.0, ne: float = 1.0,
-        gfile: bool = False, savedir: str = ".", window=None, qz: float = 6.0,
-        scale_kw=None, **gfile_kw) -> DischargePhysics:
-    """Load, scale, and optionally write the gfile + run cheaseBS.
-
-    gfile=False returns the scaled DischargePhysics and writes nothing --- the
-    notebook path. gfile=True reconstructs the equilibrium and copies the result
-    to savedir/<tag> --- the batch-script path. Same scaling either way.
-
-    Extra keywords go to output_gfile (cheasebs_config, cheasebs_overrides, ...).
+    apply_omt and apply_omne are separate methods with different signatures
+    (omt carries apply_to_tz, omne carries qz), so the scaling dict names which
+    one to call rather than passing a var like apply_mtanh_full does.
     """
-    phys = scale(load(shot), kind, te=te, ne=ne, window=window, qz=qz,
-                 **(scale_kw or {}))
-    if gfile:
-        out = os.path.join(savedir, str(shot), tag(kind, te, ne))
-        os.makedirs(out, exist_ok=True)
-        phys.output_gfile(savedir=out, run_cheasebs=True,
-                          comment=f"{shot}_{tag(kind, te, ne)}", **gfile_kw)
-    return phys
+    top, mid = window or RAMP_WINDOW
+    if spec["method"] == "apply_omne":
+        kw.setdefault("qz", QZ)
+    return getattr(phys, spec["method"])(
+        s, rhot_midped=mid, rhot_topped=top, **kw)
 
 
-_OPNAME = {"apply_omt": "omt", "apply_omne": "omne",
-           "apply_mtanh_full": "mtanh_full", "apply_mtanh_ped": "mtanh_ped"}
+APPLY = {"mtanh_full": _apply_mtanh_full, "om": _apply_om}
 
 
-def describe(phys: DischargePhysics) -> str:
-    """Label read off the transform history, so it cannot disagree with the run.
+def scale(phys: DischargePhysics, scaling: str, s: float, **kw) -> DischargePhysics:
+    """Apply one scaling at one factor. Returns a new DischargePhysics."""
+    if scaling not in SCALINGS:
+        raise ValueError(f"scaling must be one of {tuple(SCALINGS)}, got {scaling!r}")
+    spec = SCALINGS[scaling]
+    return APPLY[spec["apply"]](phys, spec, s, **kw)
 
-    apply_omt/apply_omne record `alpha`; apply_mtanh_* record `var` and
-    `scale_height`. Empty history is the unscaled base.
+
+def tag(scaling: str, s: float) -> str:
+    return "%s_%.3f" % (scaling, s)
+
+
+def iter_scaled(phys: DischargePhysics, scalings=None, scales=(0.7, 1.3), **kw):
+    """Yield (scaling, factor, scaled_physics) over the requested grid.
+
+    Each case starts from the same unscaled `phys`, so the cases are independent
+    single-knob perturbations rather than a cumulative chain.
     """
-    parts = []
-    for r in phys.history:
-        op = _OPNAME.get(r.get("transform"), r.get("transform", "?"))
-        if "alpha" in r:
-            parts.append("%s a=%.3g" % (op, r["alpha"]))
-        elif "scale_height" in r:
-            parts.append("%s %s x%.3g" % (op, r.get("var", "?"), r["scale_height"]))
-        else:
-            parts.append(op)
-    return " + ".join(parts) if parts else "base"
+    for name in (scalings or SCALINGS):
+        for s in scales:
+            yield name, s, scale(phys, name, s, **kw)
 
 
-def compare(*phys, labels=None, vars=("Te", "Ti", "ne", "ni"), xcoord="rhot",
-            xlim=None, fig=None):
-    """Overlay any number of DischargePhysics on one T/n figure.
+# ---------------------------------------------------------------------------
+# Scaling check printouts
+# ---------------------------------------------------------------------------
 
-    Labels default to describe() --- the legend then states the operation and its
-    factor as recorded by the transform itself. xlim=(0.8, 1.0) zooms the
-    pedestal; a height change is a few percent of a core-scaled axis and is only
-    legible zoomed.
+def scratch_dir(shot: int) -> str:
+    """A fresh temp directory for check plots, on SCRATCH when there is one."""
+    root = os.environ.get("SCRATCH") or os.environ.get("PSCRATCH") or None
+    return tempfile.mkdtemp(prefix="scaling_check_%d_" % shot, dir=root)
+
+
+def plot_case(base, scaled, label, savedir, vars=PLOT_VARS, xlim=PLOT_XLIM,
+              xcoord="rhot"):
+    """Base vs scaled on one figure; returns the PNG path.
+
+    The whole point is to see the perturbation next to what it was applied to,
+    so the base is always drawn --- a scaled profile on its own looks plausible
+    at any scale factor, including one that did nothing.
     """
-    labels = labels or [describe(p) for p in phys]
-    for i, (p, lab) in enumerate(zip(phys, labels)):
-        kw = {xcoord: list(xlim)} if xlim else {}
-        fig = p.plot_profiles(vars=vars, label=lab, xcoord=xcoord, fig=fig,
-                              discharge_idx=i, **kw)
-    return _label_cases(fig, labels)
+    import matplotlib.pyplot as plt
 
-
-def _label_cases(fig, labels):
-    """Add a colour->case legend. plot_profiles' own legend is species-only, so
-    without this the figure shows which variable a line is but not which run."""
-    import matplotlib.lines as mlines
-
-    first = {}
-    for rec in getattr(fig, "_discharge_artists", []):
-        first.setdefault(rec["discharge_idx"], rec["artist"])
-    handles = [mlines.Line2D([], [], color=first[i].get_color(), linewidth=2.4,
-                             label=lab)
-               for i, lab in enumerate(labels) if i in first]
-    if not handles:
-        return fig
+    kw = {xcoord: list(xlim)} if xlim else {}
+    fig = base.plot_profiles(vars=vars, label="base", xcoord=xcoord,
+                             discharge_idx=0, **kw)
+    fig = scaled.plot_profiles(vars=vars, label=label, xcoord=xcoord, fig=fig,
+                               discharge_idx=1, **kw)
     for ax in fig.axes:
-        if ax.get_legend():
-            ax.add_artist(ax.get_legend())        # keep the species legend
-        ax.legend(handles=handles, fontsize=8, loc="best")
-    return fig
+        ax.legend(fontsize=7, loc="best")
+    path = os.path.join(savedir, label.replace(" ", "_") + ".png")
+    fig.savefig(path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    return path
 
 
-def ratios(base: DischargePhysics, *phys, var: str = "Te",
-           radii=(0.5, 0.8, 0.9, 0.95, 0.99)):
-    """Achieved value ratio vs base at each radius --- what the knob really did.
+def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
+        savedir=None, **kw):
+    """Scale one discharge across the grid. Returns {tag: DischargePhysics}.
 
-    The requested factor is the knob; this is the profile's answer to it. For
-    mtanh_full they differ because b_sol and the Gaussian core term are held;
-    for omt/omne alpha is an exponent, not a value ratio, so they differ more.
+    plot_printouts writes a base-vs-scaled PNG per case to a temp directory and
+    runs nothing else --- no gfile, no cheaseBS --- so the transforms can be
+    eyeballed before anything expensive is launched on them.
     """
-    import numpy as np
+    if plot_printouts:
+        os.environ.setdefault("MPLBACKEND", "Agg")
+        savedir = savedir or scratch_dir(shot)
+        os.makedirs(savedir, exist_ok=True)
+        print("plot printouts -> %s" % savedir)
 
-    def vals(p):
-        da = p.ds[var]
-        return da.pint.magnitude if hasattr(da, "pint") else da.values
-
-    x, y0 = base.rhot.values, vals(base)
-    w = max(len(describe(p)) for p in phys) if phys else 0
-    print("%-*s  %s" % (w, var, "  ".join("%6.2f" % r for r in radii)))
-    for p in phys:
-        r = np.interp(radii, x, vals(p) / y0)
-        print("%-*s  %s" % (w, describe(p), "  ".join("%6.3f" % v for v in r)))
+    base = load(shot)
+    out = {}
+    for name, s, q in iter_scaled(base, scalings, scales, **kw):
+        label = tag(name, s)
+        out[label] = q
+        if plot_printouts:
+            print("  %-24s %s" % (label,
+                                  os.path.basename(plot_case(base, q, label,
+                                                             savedir))))
+        else:
+            print("  %s" % label)
+    return out
