@@ -178,10 +178,24 @@ def iter_scaled(phys: DischargePhysics, scalings=None, scales=(0.7, 1.3), **kw):
 # Scaling check printouts
 # ---------------------------------------------------------------------------
 
+def scratch_root() -> str:
+    """Parent directory for check output.
+
+    $SCRATCH, else $PSCRATCH, else the platform temp dir. Both are checked with
+    isdir rather than trusted: an exported-but-absent SCRATCH takes mkdtemp down
+    with a FileNotFoundError that reads as a bug in the transforms.
+    """
+    for var in ("SCRATCH", "PSCRATCH"):
+        root = os.environ.get(var)
+        if root and os.path.isdir(root):
+            return root
+    return tempfile.gettempdir()
+
+
 def scratch_dir(shot: int) -> str:
-    """A fresh temp directory for check plots, on SCRATCH when there is one."""
-    root = os.environ.get("SCRATCH") or os.environ.get("PSCRATCH") or None
-    return tempfile.mkdtemp(prefix="scaling_check_%d_" % shot, dir=root)
+    """A fresh temp directory for check plots, under scratch_root()."""
+    return tempfile.mkdtemp(prefix="scaling_check_%d_" % shot,
+                            dir=scratch_root())
 
 
 def _case_legend(fig, labels):
@@ -242,26 +256,36 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
     plot_printouts writes one PNG per transform family to a temp directory and
     runs nothing else --- no gfile, no cheaseBS --- so the transforms can be
     eyeballed before anything expensive is launched on them.
+
+    Every print flushes, and the destination is resolved and announced before
+    the loading and fitting rather than after: block-buffered stdout under a
+    batch scheduler otherwise holds the whole log until exit, so a run that is
+    still fitting --- or that died in it --- looks like a run that wrote
+    nothing and said nothing about where.
     """
     if plot_printouts:
-        savedir = savedir or scratch_dir(shot)
+        savedir = os.path.abspath(savedir or scratch_dir(shot))
         os.makedirs(savedir, exist_ok=True)
+        print("=== scaling check: %d ===" % shot, flush=True)
+        print("plot printouts -> %s" % savedir, flush=True)
 
+    print("loading %d ..." % shot, flush=True)
     base = load(shot)
     out, families = {}, {}
     for name, s, q in iter_scaled(base, scalings, scales, **kw):
         label = tag(name, s)
         out[label] = q
         families.setdefault(SCALINGS[name]["apply"], []).append((label, q))
-        print("  %s" % label)
+        print("  scaled  %s" % label, flush=True)
 
     if plot_printouts:
-        print("plot printouts -> %s" % savedir)
         for family, cases in families.items():
             path = os.path.join(savedir, "%d_%s.png" % (shot, family))
             plot_family(base, cases, path)
-            print("  %-12s %d case(s)  %s"
-                  % (family, len(cases), os.path.basename(path)))
+            print("  wrote   %s  (%d case(s): %s)"
+                  % (path, len(cases), ", ".join(lab for lab, _ in cases)),
+                  flush=True)
+        print("=== %d PNG(s) in %s ===" % (len(families), savedir), flush=True)
     return out
 
 
