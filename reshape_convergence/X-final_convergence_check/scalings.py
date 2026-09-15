@@ -75,18 +75,22 @@ RAMP_WINDOW = (0.8, 1.0)
 
 # cheaseBS outer-iteration cap, overriding the bundled NSTX template's 25.
 #
-# The template's 25 comes from ~1/istar_mix = 20 iterations to apply one full
-# current update, plus margin (cheasebs_runner.py, "Iteration count"). 50 is
-# NOT a safer 25: the 2026-08-31 truth-table audit found that raising the cap
-# exposes divergence rather than fixing it, and 132588 ne_ped_scale_0.700 reads
-# +181% Ip at 50 where its 25 sibling reads +2.16% -- a truncated diverging run
-# that looked converged. The cap was the only thing bounding the damage.
+# The template's 25 is ~1/istar_mix = 20 iterations to apply one full current
+# update, plus margin (cheasebs_runner.py, "Iteration count"). That is a
+# property of the under-relaxation weight, not of any discharge: the same cap
+# is applied to all four regardless of how far each one's loop has to travel.
 #
-# The combination on record as actually converging that point (+0.47%) is 50
-# together with istar_mix 0.05 -> 0.02 and bootstrap_mix 0.1 -> 0.05. Raising
-# the cap alone is worth doing only to *read the residual trace* and see which
-# way the loop is going; treat the endpoint of any run that hits the cap as
-# unverified either way.
+# The cap does not cause divergence and cannot cure it. A loop that blows up at
+# 50 was already diverging by 20; 25 truncated it before the damage was visible
+# and the endpoint then read as converged -- 132588 ne_ped_scale_0.700 is the
+# case on record, +2.16% Ip at 25 against +181% at 50 (2026-08-31 truth-table
+# audit). So 50 is the more honest setting, not the more dangerous one: it
+# reveals which way the residual is going. Read the trace, not the endpoint.
+#
+# What actually converged that point (+0.47%) was damping -- istar_mix
+# 0.05 -> 0.02 with bootstrap_mix 0.1 -> 0.05 -- which says the iteration gain
+# is too high there, not merely that the initial equilibrium is too far away.
+# Neither mix is changed here; both are reachable through gfile_kw.
 MAX_ITER = 50
 
 # name -> (apply_X key, transform-specific spec). `apply` selects the function in
