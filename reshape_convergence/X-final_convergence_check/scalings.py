@@ -2,8 +2,11 @@
 
 One discharge -> one DischargePhysics -> one transform per scaling.
 
-    python scalings.py --shot 132588 --plot-printouts
+    python scalings.py --shot 132588
     python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
+
+Plots are on by default (--no-plots to skip): two PNGs per transform family,
+one full-profile and one zoomed on the pedestal.
 
 or from a notebook:
 
@@ -80,10 +83,13 @@ SCALINGS = {
     "omne":           {"apply": "om", "method": "apply_omne"},
 }
 
-# Plot window. A pedestal height change is a few percent of a core-scaled axis
-# and is only legible zoomed, so the check plots come out zoomed by default.
 PLOT_VARS = ("Te", "Ti", "ne", "ni")
-PLOT_XLIM = (0.6, 1.0)
+
+# Two views per figure, because each one hides the other's failure. A pedestal
+# height change is a few percent of a core-scaled axis and is illegible on the
+# full profile; the core drift these transforms can drag along with it is
+# invisible in the zoom. None means the whole radius.
+PLOT_VIEWS = {"full": None, "ped": (0.6, 1.0)}
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +228,7 @@ def _case_legend(fig, labels):
     return fig
 
 
-def plot_family(base, cases, path, vars=PLOT_VARS, xlim=PLOT_XLIM,
+def plot_family(base, cases, path, vars=PLOT_VARS, xlim=None,
                 xcoord="rhot"):
     """Every case sharing one transform on one figure. Returns the PNG path.
 
@@ -279,13 +285,17 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
         print("  scaled  %s" % label, flush=True)
 
     if plot_printouts:
+        n = 0
         for family, cases in families.items():
-            path = os.path.join(savedir, "%d_%s.png" % (shot, family))
-            plot_family(base, cases, path)
-            print("  wrote   %s  (%d case(s): %s)"
-                  % (path, len(cases), ", ".join(lab for lab, _ in cases)),
-                  flush=True)
-        print("=== %d PNG(s) in %s ===" % (len(families), savedir), flush=True)
+            for view, xlim in PLOT_VIEWS.items():
+                path = os.path.join(savedir,
+                                    "%d_%s_%s.png" % (shot, family, view))
+                plot_family(base, cases, path, xlim=xlim)
+                n += 1
+                print("  wrote   %s  (%d case(s): %s)"
+                      % (path, len(cases), ", ".join(lab for lab, _ in cases)),
+                      flush=True)
+        print("=== %d PNG(s) in %s ===" % (n, savedir), flush=True)
     return out
 
 
@@ -303,12 +313,18 @@ def main(argv=None):
     ap.add_argument("--scalings", nargs="+", default=None, choices=sorted(SCALINGS),
                     help="default: every scaling in SCALINGS")
     ap.add_argument("--scales", type=float, nargs="+", default=[0.7, 1.3])
+    # Plots are the point of running this as a script: it writes no gfile and
+    # runs no cheaseBS, so a run without them scales four profiles and throws
+    # them away. On by default; --plot-printouts is kept so the explicit form
+    # still works, and --no-plots is the way to opt out.
     ap.add_argument("--plot-printouts", "--plot-output", dest="plot_printouts",
-                    action="store_true",
-                    help="write one PNG per transform family to a temp dir; "
-                         "runs no gfile and no cheaseBS")
+                    action="store_true", default=True,
+                    help="write one PNG per transform family (default)")
+    ap.add_argument("--no-plots", dest="plot_printouts", action="store_false",
+                    help="scale only, write nothing")
     ap.add_argument("--savedir", default=None,
-                    help="default: a fresh temp dir on $SCRATCH")
+                    help="default: a fresh temp dir on $SCRATCH, else $PSCRATCH, "
+                         "else the platform temp dir")
     args = ap.parse_args(argv)
 
     run(args.shot, args.scalings, tuple(args.scales),
