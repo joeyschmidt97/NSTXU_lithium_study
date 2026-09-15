@@ -2,13 +2,18 @@
 
 One discharge -> one DischargePhysics -> one transform per scaling.
 
+    python scalings.py --shot 132588 --plot-printouts
+    python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
+
+or from a notebook:
+
     from scalings import load, scale, run, SCALINGS
 
     phys = load(132588)
     q    = scale(phys, "Te_ped_scale", 1.3)     # mtanh_full step-amplitude
     q    = scale(phys, "omt", 0.7)              # gradient power law
 
-    run(132588, plot_printouts=True)            # every scaling, PNG per case
+    run(132588, plot_printouts=True)            # PNG per transform family
 
 Nothing here runs cheaseBS and nothing here writes a gfile --- call
 ``q.output_gfile(...)`` on a returned object for that.
@@ -19,6 +24,12 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+
+# Headless as a script only: the fit path can reach for pyplot and there is no
+# display on a login node. Left alone on import, so a notebook keeps its own
+# backend and its figures stay interactive.
+if __name__ == "__main__":
+    os.environ.setdefault("MPLBACKEND", "Agg")
 
 # Import TPED from this checkout rather than whatever is installed.
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -173,24 +184,52 @@ def scratch_dir(shot: int) -> str:
     return tempfile.mkdtemp(prefix="scaling_check_%d_" % shot, dir=root)
 
 
-def plot_case(base, scaled, label, savedir, vars=PLOT_VARS, xlim=PLOT_XLIM,
-              xcoord="rhot"):
-    """Base vs scaled on one figure; returns the PNG path.
+def _case_legend(fig, labels):
+    """Add a colour -> case legend naming each scaling.
 
-    The whole point is to see the perturbation next to what it was applied to,
-    so the base is always drawn --- a scaled profile on its own looks plausible
-    at any scale factor, including one that did nothing.
+    plot_profiles' own legend is species-only (black lines, linestyle per
+    species) and never draws the `label` argument, so without this the figure
+    shows which variable a line is but not which scaling produced it.
+    """
+    import matplotlib.lines as mlines
+
+    first = {}
+    for rec in getattr(fig, "_discharge_artists", []):
+        first.setdefault(rec["discharge_idx"], rec["artist"])
+    handles = [mlines.Line2D([], [], color=first[i].get_color(), linewidth=2.4,
+                             label=lab)
+               for i, lab in enumerate(labels) if i in first]
+    if not handles:
+        return fig
+    for ax in fig.axes:
+        if ax.get_legend():
+            ax.add_artist(ax.get_legend())      # keep the species legend
+        ax.legend(handles=handles, fontsize=7, loc="best")
+    return fig
+
+
+def plot_family(base, cases, path, vars=PLOT_VARS, xlim=PLOT_XLIM,
+                xcoord="rhot"):
+    """Every case sharing one transform on one figure. Returns the PNG path.
+
+    Grouped by transform because that is the comparison worth making: the
+    scalings of one family differ only in their knob, so they belong on shared
+    axes, while mtanh_full and the gradient power law reshape the profile in
+    different ways and would only clutter each other.
+
+    The base is always drawn first --- a scaled profile on its own looks
+    plausible at any factor, including one that did nothing.
     """
     import matplotlib.pyplot as plt
 
     kw = {xcoord: list(xlim)} if xlim else {}
-    fig = base.plot_profiles(vars=vars, label="base", xcoord=xcoord,
-                             discharge_idx=0, **kw)
-    fig = scaled.plot_profiles(vars=vars, label=label, xcoord=xcoord, fig=fig,
-                               discharge_idx=1, **kw)
-    for ax in fig.axes:
-        ax.legend(fontsize=7, loc="best")
-    path = os.path.join(savedir, label.replace(" ", "_") + ".png")
+    labels = ["base"] + [lab for lab, _ in cases]
+    fig = base.plot_profiles(vars=vars, xcoord=xcoord, discharge_idx=0, **kw)
+    for q in (q for _, q in cases):
+        # discharge_idx is taken from the figure's own counter once fig is
+        # passed, so each case lands in the next colour family on its own.
+        fig = q.plot_profiles(vars=vars, xcoord=xcoord, fig=fig, **kw)
+    _case_legend(fig, labels)
     fig.savefig(path, dpi=140, bbox_inches="tight")
     plt.close(fig)
     return path
@@ -200,25 +239,58 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
         savedir=None, **kw):
     """Scale one discharge across the grid. Returns {tag: DischargePhysics}.
 
-    plot_printouts writes a base-vs-scaled PNG per case to a temp directory and
+    plot_printouts writes one PNG per transform family to a temp directory and
     runs nothing else --- no gfile, no cheaseBS --- so the transforms can be
     eyeballed before anything expensive is launched on them.
     """
     if plot_printouts:
-        os.environ.setdefault("MPLBACKEND", "Agg")
         savedir = savedir or scratch_dir(shot)
         os.makedirs(savedir, exist_ok=True)
-        print("plot printouts -> %s" % savedir)
 
     base = load(shot)
-    out = {}
+    out, families = {}, {}
     for name, s, q in iter_scaled(base, scalings, scales, **kw):
         label = tag(name, s)
         out[label] = q
-        if plot_printouts:
-            print("  %-24s %s" % (label,
-                                  os.path.basename(plot_case(base, q, label,
-                                                             savedir))))
-        else:
-            print("  %s" % label)
+        families.setdefault(SCALINGS[name]["apply"], []).append((label, q))
+        print("  %s" % label)
+
+    if plot_printouts:
+        print("plot printouts -> %s" % savedir)
+        for family, cases in families.items():
+            path = os.path.join(savedir, "%d_%s.png" % (shot, family))
+            plot_family(base, cases, path)
+            print("  %-12s %d case(s)  %s"
+                  % (family, len(cases), os.path.basename(path)))
     return out
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main(argv=None):
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description="Scale one discharge and check the transforms.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("--shot", type=int, default=132588, choices=SHOTS)
+    ap.add_argument("--scalings", nargs="+", default=None, choices=sorted(SCALINGS),
+                    help="default: every scaling in SCALINGS")
+    ap.add_argument("--scales", type=float, nargs="+", default=[0.7, 1.3])
+    ap.add_argument("--plot-printouts", "--plot-output", dest="plot_printouts",
+                    action="store_true",
+                    help="write one PNG per transform family to a temp dir; "
+                         "runs no gfile and no cheaseBS")
+    ap.add_argument("--savedir", default=None,
+                    help="default: a fresh temp dir on $SCRATCH")
+    args = ap.parse_args(argv)
+
+    run(args.shot, args.scalings, tuple(args.scales),
+        plot_printouts=args.plot_printouts, savedir=args.savedir)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
