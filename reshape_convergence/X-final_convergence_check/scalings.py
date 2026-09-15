@@ -73,6 +73,22 @@ QZ = 6.0
 # (rhot_topped, rhot_midped) for the omt/omne gradient transforms.
 RAMP_WINDOW = (0.8, 1.0)
 
+# cheaseBS outer-iteration cap, overriding the bundled NSTX template's 25.
+#
+# The template's 25 comes from ~1/istar_mix = 20 iterations to apply one full
+# current update, plus margin (cheasebs_runner.py, "Iteration count"). 50 is
+# NOT a safer 25: the 2026-08-31 truth-table audit found that raising the cap
+# exposes divergence rather than fixing it, and 132588 ne_ped_scale_0.700 reads
+# +181% Ip at 50 where its 25 sibling reads +2.16% -- a truncated diverging run
+# that looked converged. The cap was the only thing bounding the damage.
+#
+# The combination on record as actually converging that point (+0.47%) is 50
+# together with istar_mix 0.05 -> 0.02 and bootstrap_mix 0.1 -> 0.05. Raising
+# the cap alone is worth doing only to *read the residual trace* and see which
+# way the loop is going; treat the endpoint of any run that hits the cap as
+# unverified either way.
+MAX_ITER = 50
+
 # name -> (apply_X key, transform-specific spec). `apply` selects the function in
 # APPLY; the rest is what that function needs to pin down the single knob.
 #   mtanh_full : (var, kwarg)  -- kwarg is the apply_mtanh_full keyword scaled
@@ -317,7 +333,15 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
 
     if cheasebs:
         failed = []
-        print("=== cheaseBS: %d %d case(s) ===" % (shot, len(out)), flush=True)
+        # MAX_ITER is a default here, not a floor: an explicit max_iter in
+        # gfile_kw wins, and passing max_iter=None falls back to the template.
+        gfile_kw = dict(gfile_kw or {})
+        gfile_kw.setdefault("max_iter", MAX_ITER)
+        if gfile_kw.get("max_iter") is None:
+            del gfile_kw["max_iter"]
+        print("=== cheaseBS: %d, %d case(s), max_iter=%s ==="
+              % (shot, len(out), gfile_kw.get("max_iter", "template")),
+              flush=True)
         for label, q in out.items():
             case = os.path.join(savedir, str(shot), label)
             os.makedirs(case, exist_ok=True)
@@ -327,7 +351,7 @@ def run(shot: int, scalings=None, scales=(0.7, 1.3), *, plot_printouts=False,
                 # in a batch job, and a transform history is always present here.
                 path = q.output_gfile(savedir=case, run_cheasebs=True,
                                       comment="%d_%s" % (shot, label),
-                                      **(gfile_kw or {}))
+                                      **gfile_kw)
                 print("  gfile   %s" % path, flush=True)
             except Exception:                                    # noqa: BLE001
                 # One rejected or diverged case must not take the rest of the
@@ -381,6 +405,10 @@ def main(argv=None):
                     help="with --cheasebs, raise on a rejected equilibrium "
                          "instead of returning it; set this when the output "
                          "feeds GENE runs")
+    ap.add_argument("--max-iter", type=int, default=MAX_ITER,
+                    help="cheaseBS outer-iteration cap; 0 defers to the "
+                         "bundled template (25). Read the MAX_ITER comment "
+                         "before trusting a run that hits the cap")
     ap.add_argument("--savedir", default=None,
                     help="default: a fresh temp dir on $SCRATCH, else $PSCRATCH, "
                          "else the platform temp dir")
@@ -391,13 +419,15 @@ def main(argv=None):
     # that have to be collected by hand afterwards.
     savedir = args.savedir or scratch_dir("-".join(str(s) for s in args.shots))
     failures, broken = [], []
+    gfile_kw = {"max_iter": args.max_iter or None}
+    if args.strict:
+        gfile_kw["cheasebs_strict"] = True
 
     for shot in args.shots:
         try:
             run(shot, args.scalings, tuple(args.scales),
                 plot_printouts=args.plot_printouts, cheasebs=args.cheasebs,
-                savedir=savedir, failures=failures,
-                gfile_kw={"cheasebs_strict": True} if args.strict else None)
+                savedir=savedir, failures=failures, gfile_kw=gfile_kw)
         except Exception:                                        # noqa: BLE001
             # A shot that cannot even be loaded or fitted must not take the
             # remaining shots with it.
