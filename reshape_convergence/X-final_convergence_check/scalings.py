@@ -6,6 +6,7 @@ One discharge -> one DischargePhysics -> one transform per scaling.
     python scalings.py --shots 129015 129038 132543
     python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
     python scalings.py --shot 132588 --scales 1.3 --cheasebs --strict
+    python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --ncscal 4
 
 Plots are on by default (--no-plots to skip): two PNGs per transform family,
 one full-profile and one zoomed on the pedestal. --cheasebs additionally hands
@@ -27,6 +28,7 @@ or from a notebook:
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 
@@ -231,6 +233,32 @@ def scratch_dir(label) -> str:
                             dir=scratch_root())
 
 
+def namelist_with_ncscal(ncscal: int, dest_dir: str) -> str:
+    """A copy of the NSTX CHEASE namelist with NCSCAL set, written to dest_dir.
+
+    NCSCAL lives in the CHEASE namelist, not in the cheaseBS JSON config -- the
+    config's key list is closed and rejects anything it does not know -- so the
+    only way to vary it per run is to hand cheaseBS an edited template. The copy
+    is written beside the run output, which also records what was used.
+
+    NCSCAL selects how CHEASE normalises the equilibrium it builds; see the
+    CHEASE manual for the meaning of each value. The NSTX template ships with 1.
+    """
+    from TPED.config.config_helper import Config
+
+    src = os.path.join(Config().get_path("CHEASEBS_PATH"), "chease_namelist_nstx")
+    with open(src) as f:
+        text = f.read()
+    new, n = re.subn(r"NCSCAL\s*=\s*-?\d+", "NCSCAL=%d" % ncscal, text, count=1)
+    if not n:
+        raise ValueError("no NCSCAL entry in %s to replace" % src)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, "chease_namelist_nstx_ncscal%d" % ncscal)
+    with open(dest, "w") as f:
+        f.write(new)
+    return dest
+
+
 def _case_legend(fig, labels):
     """Add a colour -> case legend naming each scaling.
 
@@ -413,6 +441,12 @@ def main(argv=None):
                     help="cheaseBS outer-iteration cap; 0 defers to the "
                          "bundled template (25). Read the MAX_ITER comment "
                          "before trusting a run that hits the cap")
+    ap.add_argument("--ncscal", type=int, default=None,
+                    help="CHEASE NCSCAL, applied by writing an edited copy of "
+                         "the namelist template into the output directory. The "
+                         "cheaseBS JSON config cannot carry it -- its key list "
+                         "is closed -- so this is the only per-run route. "
+                         "Default: leave the template's own value (1)")
     ap.add_argument("--savedir", default=None,
                     help="default: a fresh temp dir on $SCRATCH, else $PSCRATCH, "
                          "else the platform temp dir")
@@ -426,6 +460,13 @@ def main(argv=None):
     gfile_kw = {"max_iter": args.max_iter or None}
     if args.strict:
         gfile_kw["cheasebs_strict"] = True
+    if args.ncscal is not None:
+        # Written once for the whole invocation: every case of the grid is then
+        # solved against the same namelist, and the file sits beside the output
+        # as the record of what that run used.
+        gfile_kw["chease_namelist"] = namelist_with_ncscal(args.ncscal, savedir)
+        print("NCSCAL=%d via %s" % (args.ncscal, gfile_kw["chease_namelist"]),
+              flush=True)
 
     for shot in args.shots:
         try:
