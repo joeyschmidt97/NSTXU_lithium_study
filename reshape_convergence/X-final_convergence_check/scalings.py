@@ -7,6 +7,7 @@ One discharge -> one DischargePhysics -> one transform per scaling.
     python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
     python scalings.py --shot 132588 --scales 1.3 --cheasebs --strict
     python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --ncscal 4
+    python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --amplitude-warmup-iters 0
 
 Plots are on by default (--no-plots to skip): two PNGs per transform family,
 one full-profile and one zoomed on the pedestal. --cheasebs additionally hands
@@ -441,6 +442,16 @@ def main(argv=None):
                     help="cheaseBS outer-iteration cap; 0 defers to the "
                          "bundled template (25). Read the MAX_ITER comment "
                          "before trusting a run that hits the cap")
+    ap.add_argument("--amplitude-warmup-iters", type=int, default=None,
+                    metavar="N",
+                    help="cheaseBS amplitude_warmup_iters. The campaign config "
+                         "sets 2, which pins the driven amplitude for the first "
+                         "two iterations AND writes amplitude_change_rel=0.0 "
+                         "while doing so -- the secant is then seeded with two "
+                         "identical amplitudes, never moves again, and the "
+                         "convergence test's amplitude term passes for free. "
+                         "0 is cheaseBS's own default and routes iteration 0 "
+                         "through the proportional branch instead")
     ap.add_argument("--ncscal", type=int, default=None,
                     help="CHEASE NCSCAL, applied by writing an edited copy of "
                          "the namelist template into the output directory. The "
@@ -460,6 +471,10 @@ def main(argv=None):
     gfile_kw = {"max_iter": args.max_iter or None}
     if args.strict:
         gfile_kw["cheasebs_strict"] = True
+    if args.amplitude_warmup_iters is not None:
+        gfile_kw["amplitude_warmup_iters"] = args.amplitude_warmup_iters
+        print("amplitude_warmup_iters=%d" % args.amplitude_warmup_iters,
+              flush=True)
     if args.ncscal is not None:
         # Written once for the whole invocation: every case of the grid is then
         # solved against the same namelist, and the file sits beside the output
