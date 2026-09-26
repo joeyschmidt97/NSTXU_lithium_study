@@ -7,6 +7,7 @@ One discharge -> one DischargePhysics -> one transform per scaling.
     python scalings.py --shot 132588 --scalings omt omne --scales 0.7 0.9 1.3
     python scalings.py --shot 132588 --scales 1.3 --cheasebs --strict
     python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --ncscal 4
+    python scalings.py --shots 129015 --cheasebs --tol-bs 1e-4 --tol-q 1e-4
     python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --amplitude-warmup-iters 0
 
 Plots are on by default (--no-plots to skip): two PNGs per transform family,
@@ -28,6 +29,7 @@ or from a notebook:
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import sys
@@ -442,6 +444,15 @@ def main(argv=None):
                     help="cheaseBS outer-iteration cap; 0 defers to the "
                          "bundled template (25). Read the MAX_ITER comment "
                          "before trusting a run that hits the cap")
+    for flag, description in (
+        ("--tol-bs", "successive bootstrap-profile relative change"),
+        ("--tol-q", "successive q-profile relative change"),
+        ("--tol-ip-rel", "relative plasma-current error"),
+    ):
+        ap.add_argument(flag, type=float, default=None, metavar="TOL",
+                        help="cheaseBS tolerance for " + description +
+                             "; positive fraction, not percent (1e-4 = 0.01%%). "
+                             "Omit to retain the configured tolerance")
     ap.add_argument("--amplitude-warmup-iters", type=int, default=None,
                     metavar="N",
                     help="cheaseBS amplitude_warmup_iters. The campaign config "
@@ -462,6 +473,14 @@ def main(argv=None):
                     help="default: a fresh temp dir on $SCRATCH, else $PSCRATCH, "
                          "else the platform temp dir")
     args = ap.parse_args(argv)
+    tolerance_overrides = {}
+    for key in ("tol_bs", "tol_q", "tol_ip_rel"):
+        value = getattr(args, key)
+        if value is not None:
+            if not math.isfinite(value) or value <= 0:
+                ap.error("--%s must be a finite positive fraction" %
+                         key.replace("_", "-"))
+            tolerance_overrides[key] = value
 
     # Resolved once for the whole invocation rather than per shot, so a
     # multi-shot grid lands in one directory instead of four temp directories
@@ -469,6 +488,9 @@ def main(argv=None):
     savedir = args.savedir or scratch_dir("-".join(str(s) for s in args.shots))
     failures, broken = [], []
     gfile_kw = {"max_iter": args.max_iter or None}
+    gfile_kw.update(tolerance_overrides)
+    for key, value in tolerance_overrides.items():
+        print("%s=%g" % (key, value), flush=True)
     if args.strict:
         gfile_kw["cheasebs_strict"] = True
     if args.amplitude_warmup_iters is not None:
