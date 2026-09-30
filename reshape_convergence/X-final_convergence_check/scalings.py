@@ -9,6 +9,8 @@ One discharge -> one DischargePhysics -> one transform per scaling.
     python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --ncscal 4
     python scalings.py --shots 129015 --cheasebs --tol-bs 1e-4 --tol-q 1e-4
     python scalings.py --shots 129015 --scales 0.95 1.05 --cheasebs --amplitude-warmup-iters 0
+    python scalings.py --cheasebs --strict --ncscal 4 --replay-representation jparallel \
+        --coordinate rhot --tol-bs 1e-3 --tol-q 1e-3 --tol-ip-rel 1e-3 --amplitude-warmup-iters 0
 
 Plots are on by default (--no-plots to skip): two PNGs per transform family,
 one full-profile and one zoomed on the pedestal. --cheasebs additionally hands
@@ -469,6 +471,20 @@ def main(argv=None):
                          "cheaseBS JSON config cannot carry it -- its key list "
                          "is closed -- so this is the only per-run route. "
                          "Default: leave the template's own value (1)")
+    # The bundled TPED template is I-star on rho_pol. These switch a run to the
+    # jparallel / rho_tor replay the Leppin NSTX and DIII-D scans used; both are
+    # plain cheaseBS config keys, so they ride through gfile_kw unchanged.
+    ap.add_argument("--replay-representation", choices=("istar", "jparallel"),
+                    default=None,
+                    help="cheaseBS replay_representation. Default: the "
+                         "template's own value (istar)")
+    ap.add_argument("--coordinate", choices=("rhop", "rhot"), default=None,
+                    help="cheaseBS radial coordinate for the replay. Default: "
+                         "the template's own value (rhop)")
+    ap.add_argument("--bootstrap-mix", type=float, default=None, metavar="MIX",
+                    help="cheaseBS bootstrap_mix under-relaxation weight in "
+                         "(0, 1]. Default: the template's own value (0.1); "
+                         "standalone cheaseBS defaults to 0.35")
     ap.add_argument("--savedir", default=None,
                     help="default: a fresh temp dir on $SCRATCH, else $PSCRATCH, "
                          "else the platform temp dir")
@@ -481,6 +497,9 @@ def main(argv=None):
                 ap.error("--%s must be a finite positive fraction" %
                          key.replace("_", "-"))
             tolerance_overrides[key] = value
+    if args.bootstrap_mix is not None and not (
+            math.isfinite(args.bootstrap_mix) and 0 < args.bootstrap_mix <= 1):
+        ap.error("--bootstrap-mix must be in (0, 1]")
 
     # Resolved once for the whole invocation rather than per shot, so a
     # multi-shot grid lands in one directory instead of four temp directories
@@ -497,6 +516,11 @@ def main(argv=None):
         gfile_kw["amplitude_warmup_iters"] = args.amplitude_warmup_iters
         print("amplitude_warmup_iters=%d" % args.amplitude_warmup_iters,
               flush=True)
+    for key in ("replay_representation", "coordinate", "bootstrap_mix"):
+        value = getattr(args, key)
+        if value is not None:
+            gfile_kw[key] = value
+            print("%s=%s" % (key, value), flush=True)
     if args.ncscal is not None:
         # Written once for the whole invocation: every case of the grid is then
         # solved against the same namelist, and the file sits beside the output
