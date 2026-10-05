@@ -55,10 +55,8 @@ import traceback
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-if HERE not in sys.path:
-    sys.path.insert(0, HERE)
 
-import scalings as S  # noqa: E402 -- load(), scale(), tag(), SCALINGS, MAX_ITER
+import NSTXU_lithium_study.scripts.scalings as S  # noqa: E402 -- load(), scale(), tag(), SCALINGS, MAX_ITER
 
 from TPED.projects.discharge_tools.src.discharge_data import DischargeData  # noqa: E402
 from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics  # noqa: E402

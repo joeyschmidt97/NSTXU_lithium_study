@@ -19,7 +19,7 @@ output_gfile's job, this only picks the cases and the destination.
 
 or from a notebook:
 
-    from scalings import load, scale, run, SCALINGS
+    from NSTXU_lithium_study.scripts.scalings import load, scale, run, SCALINGS
 
     phys = load(132588)
     q    = scale(phys, "Te_ped_scale", 1.3)     # mtanh_full step-amplitude
@@ -43,13 +43,8 @@ import tempfile
 if __name__ == "__main__":
     os.environ.setdefault("MPLBACKEND", "Agg")
 
-# Import TPED from this checkout rather than whatever is installed.
-_HERE = os.path.dirname(os.path.abspath(__file__))
-for _parent in (_HERE, os.path.dirname(_HERE)):
-    _root = os.path.dirname(os.path.dirname(_parent))
-    if _root not in sys.path:
-        sys.path.insert(0, _root)
-
+# TPED and this repo import by absolute path: the directories that contain
+# TPED/ and NSTXU_lithium_study/ must be on PYTHONPATH (see README).
 from TPED.projects.discharge_tools.src.discharge_data import DischargeData
 from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
 from TPED.projects.discharge_tools.src.transforms.mtanh_transforms import fit_mtanh_full

@@ -14,9 +14,7 @@ import sys
 import traceback
 
 os.environ.setdefault("MPLBACKEND", "Agg")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from scalings import KINDS, SHOTS, run, tag  # noqa: E402
+from NSTXU_lithium_study.scripts.scalings import KINDS, SHOTS, run, tag  # noqa: E402
 
 
 def main(argv=None):
