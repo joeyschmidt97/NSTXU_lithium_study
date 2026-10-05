@@ -1,1 +1,14 @@
 __pycache__/
+.ipynb_checkpoints/
+
+# Run outputs: CHEASE-BS / GENE solve directories, logs and scratch. They are
+# reproducible from the scripts and live on NERSC scratch (or
+# cheaseBS_tests/data locally); the repo tracks code, specs and notebooks only.
+runs/
+runs_*/
+tmp_runs/
+x_tmp_runs/
+*.log
+nohup.out
+_asscript.py
+_fig*.png
