@@ -32,11 +32,15 @@ Output goes straight into the cheaseBS_tests checkout, one directory per test:
 Failed cases keep only their copied gfile, as in the box scan; console.log is
 the record of why. After a test the comparison runs on its own, with the
 matching box-scan jparallel runs overlaid as the reference; `compare` reruns
-it alone.
+it alone. `compare all` redraws every test that has a directory, and
+--campaign profile_base_132588 points it at the directory the G/H/I tests
+wrote to before the rename.
 
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests G
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare B
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all --campaign profile_base_132588
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests H --dry-run
 """
 
@@ -145,8 +149,8 @@ def repo_root(explicit=None) -> str:
                             "in %s; pass --repo" % (explicit or REPO_CANDIDATES))
 
 
-def test_dir(repo, test) -> str:
-    return os.path.join(repo, "data", CAMPAIGN, TESTS[test]["dir"])
+def test_dir(repo, test, campaign=CAMPAIGN) -> str:
+    return os.path.join(repo, "data", campaign, TESTS[test]["dir"])
 
 
 def _git_head(path) -> str:
@@ -248,13 +252,13 @@ def run_test(test, repo, dry_run=False):
     return 0 if n_ok == len(results) else 1
 
 
-def compare(test, repo):
+def compare(test, repo, campaign=CAMPAIGN):
     """TPED compare_cheasebs_runs.py over one test, figures into its directory."""
     from TPED.projects.discharge_tools.src import discharge_physics
     script = os.path.join(os.path.dirname(os.path.dirname(discharge_physics.__file__)),
                           "scripts", "compare_cheasebs_runs.py")
     spec = TESTS[test]
-    shot, out = spec["shot"], test_dir(repo, test)
+    shot, out = spec["shot"], test_dir(repo, test, campaign)
     box = os.path.join(repo, "data", "jparallel_box", str(shot), str(shot))
     variations = [os.path.join(out, str(shot))] + [
         os.path.join(box, lab) for lab in spec["ref"]
@@ -276,18 +280,33 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("action", choices=sorted(TESTS) + ["compare"])
-    ap.add_argument("test", nargs="?", choices=sorted(TESTS),
-                    help="with compare: which test's runs to plot")
+    ap.add_argument("test", nargs="?", choices=sorted(TESTS) + ["all"],
+                    help="with compare: which test's runs to plot; all = every "
+                         "test with a directory under --campaign")
     ap.add_argument("--repo", default=None,
                     help="cheaseBS_tests checkout; default: first of %s" % REPO_CANDIDATES)
+    ap.add_argument("--campaign", default=CAMPAIGN,
+                    help="with compare: data/ subdirectory holding the tests "
+                         "(default %(default)s)")
     ap.add_argument("--dry-run", action="store_true",
                     help="build every case's transforms, solve nothing")
     args = ap.parse_args(argv)
     repo = repo_root(args.repo)
     if args.action == "compare":
         if not args.test:
-            ap.error("compare needs a test: one of %s" % ", ".join(sorted(TESTS)))
-        return compare(args.test, repo)
+            ap.error("compare needs a test: all, or one of %s"
+                     % ", ".join(sorted(TESTS)))
+        if args.test != "all":
+            return compare(args.test, repo, args.campaign)
+        tests = [t for t in sorted(TESTS)
+                 if os.path.isdir(test_dir(repo, t, args.campaign))]
+        if not tests:
+            ap.error("no test directories under %s"
+                     % os.path.join(repo, "data", args.campaign))
+        failed = [t for t in tests if compare(t, repo, args.campaign) != 0]
+        print("compare all: %d test(s), failed: %s"
+              % (len(tests), ", ".join(failed) or "none"), flush=True)
+        return 1 if failed else 0
     return run_test(args.action, repo, dry_run=args.dry_run)
 
 
