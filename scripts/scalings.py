@@ -159,9 +159,9 @@ def _apply_mtanh_full(phys, spec, s, **kw):
     scaled keyword, quasineutrality on so ni and nz follow ne.
     """
     var, kwarg = spec["var"], spec["kwarg"]
-    return phys.apply_mtanh_full(
-        var, fit=_fit(phys, var), **{kwarg: s},
-        enforce_quasineutrality=True, qz=QZ, **kw)
+    kw.setdefault("enforce_quasineutrality", True)
+    kw.setdefault("qz", QZ)
+    return phys.apply_mtanh_full(var, fit=_fit(phys, var), **{kwarg: s}, **kw)
 
 
 def _apply_om(phys, spec, s, *, window=None, **kw):
