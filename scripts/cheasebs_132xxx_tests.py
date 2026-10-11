@@ -38,7 +38,9 @@ Output goes straight into the cheaseBS_tests checkout, one directory per test:
 
 Every case gets the scratch run directory's logs copied back (iteration_log.csv,
 convergence_summary.json, profiles, ...), crashed ones included, so a case can
-be diagnosed from the repo; console.log holds the crash itself. After a test the comparison runs on its own, with the
+be diagnosed from the repo; console.log holds the crash itself. CHEASE's own
+chease.log of the first and the last iteration lands in <case>/chease_logs/; for
+a crash the last one is the solve that died. After a test the comparison runs on its own, with the
 matching box-scan jparallel runs overlaid as the reference; `compare` reruns
 it alone. `compare all` redraws every test that has a directory, and
 --campaign profile_base_132588 points it at the directory the G/H/I tests
@@ -279,6 +281,50 @@ def _copy_run_files(run_dir, case):
     return copied
 
 
+# chease.log files above this size are copied as their last CHEASE_LOG_TAIL
+# bytes: the end of the log is where a crash reports.
+CHEASE_LOG_MAX = 5_000_000
+CHEASE_LOG_TAIL = 1_000_000
+
+
+def _copy_chease_logs(run_dir, case):
+    """CHEASE's chease.log of the first and last iteration into <case>/chease_logs/.
+
+    cheaseBS runs CHEASE in iteration_NN/<stage dir>/stage/; a crash message
+    names that log, but it stays on scratch. The first iteration shows the cold
+    start, the last one is the solve that ended the run (the crashing one, for a
+    crash). Each copy is named after its path below the run directory.
+    """
+    import glob
+    import re as _re
+    logs = glob.glob(os.path.join(run_dir, "iteration_*", "**", "chease.log"),
+                     recursive=True)
+    by_iter = {}
+    for path in logs:
+        m = _re.search(r"iteration_(\d+)", os.path.relpath(path, run_dir))
+        if m:
+            by_iter.setdefault(int(m.group(1)), []).append(path)
+    if not by_iter:
+        return []
+    dest = os.path.join(case, "chease_logs")
+    os.makedirs(dest, exist_ok=True)
+    copied = []
+    for it in sorted({min(by_iter), max(by_iter)}):
+        for path in sorted(by_iter[it]):
+            name = os.path.relpath(path, run_dir).replace(os.sep, "__")
+            with open(path, "rb") as f:
+                size = os.fstat(f.fileno()).st_size
+                if size > CHEASE_LOG_MAX:
+                    f.seek(size - CHEASE_LOG_TAIL)
+                    data = b"[... first %d bytes cut ...]\n" % (size - CHEASE_LOG_TAIL) + f.read()
+                else:
+                    data = f.read()
+            with open(os.path.join(dest, name), "wb") as f:
+                f.write(data)
+            copied.append("chease_logs/" + name)
+    return copied
+
+
 def _verdict(case):
     """accepted, or rejected: reasons, from the case's cheasebs_acceptance.json."""
     path = os.path.join(case, "cheasebs_acceptance.json")
@@ -350,7 +396,7 @@ def run_test(test, repo, dry_run=False):
             results[label] = "crashed: %r" % (exc,)
         run_dir = _run_dir(case, shot, label, start)
         if run_dir:
-            copied = _copy_run_files(run_dir, case)
+            copied = _copy_run_files(run_dir, case) + _copy_chease_logs(run_dir, case)
             print("  run dir %s (copied: %s)"
                   % (run_dir, ", ".join(copied) or "nothing new"), flush=True)
         if results[label] is None:
