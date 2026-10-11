@@ -9,6 +9,11 @@ the fit drops axis Te to 0.853 of raw, and raw ni carries a kink):
     G  raw base (omt 1.0) vs fit-Te base (Te_ped_scale 1.0), both under I-star
     H  omt / omne / ne_ped_scale at 1.0, 0.8, 1.2 on the fit-Te base, jparallel
     I  fit-Te base with the core raised to the raw axis value, jparallel
+    Q  H's ne cases with quasineutrality off, jparallel: 132588's pfile has
+       ni/ne ~0.5 and 6nz/ne ~0.005, so the rebuild nz = (ne - ni)/6 raises nz
+       ~100x even at omne 1.0, which crashed in H
+    J  omt, and omne without the rebuild, at 0.8 and 1.2 on the raw base under
+       I-star, the one 132588 base/representation pair that converged in G
 
 132543 -- option ladder (profiles are clean and fit ~ raw within 2%; failures are
 a deterministic CHEASE segfault in the magnetic-axis search, flipping on ~1%
@@ -25,12 +30,15 @@ Output goes straight into the cheaseBS_tests checkout, one directory per test:
 
     <repo>/data/cheasebs_132xxx/<test>_<name>/
         <shot>/<case>/            cheaseBS run, same layout as data/jparallel_box
-        console.log               everything printed, tracebacks included
-        summary.json              ok / failed per case, settings, commit
+        console.log               everything printed, cheaseBS's own output
+                                  and tracebacks included
+        summary.json              accepted / rejected / crashed per case,
+                                  settings, commit
         cheasebs_comparison_*.png TPED compare_cheasebs_runs.py figures
 
-Failed cases keep only their copied gfile, as in the box scan; console.log is
-the record of why. After a test the comparison runs on its own, with the
+Every case gets the scratch run directory's logs copied back (iteration_log.csv,
+convergence_summary.json, profiles, ...), crashed ones included, so a case can
+be diagnosed from the repo; console.log holds the crash itself. After a test the comparison runs on its own, with the
 matching box-scan jparallel runs overlaid as the reference; `compare` reruns
 it alone. `compare all` redraws every test that has a directory, and
 --campaign profile_base_132588 points it at the directory the G/H/I tests
@@ -38,6 +46,7 @@ wrote to before the rename.
 
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests G
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests B
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests Q
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all --campaign profile_base_132588
@@ -52,6 +61,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 if __name__ == "__main__":
     os.environ.setdefault("MPLBACKEND", "Agg")
@@ -84,6 +94,8 @@ RAW_CORE_HEIGHT = 1.17
 # the unscaled discharge, so ("Te_ped_scale", 1.0) first means "on the fit-Te
 # base".
 FIT_TE = ("Te_ped_scale", 1.0, {})
+# ne transforms without the ni/nz rebuild: ni and nz stay raw.
+NO_QN = {"enforce_quasineutrality": False}
 
 
 def _single(name, s):
@@ -123,7 +135,50 @@ TESTS = {
     "T": dict(shot=132543, dir="T_tensbnd", settings=JPARALLEL,
               namelist=dict(NAMELIST, TENSBND=-1.0), cases=PILOT_132543,
               ref=["Te_ped_scale_1.000"]),
+    "Q": dict(shot=132588, dir="Q_noqn", settings=JPARALLEL, namelist=NAMELIST,
+              cases=[("fitTe_" + tag(name, s) + "_noqn",
+                      [FIT_TE, (name, s, NO_QN)])
+                     for name, s in (("omne", 1.0), ("omne", 0.8), ("omne", 1.2),
+                                     ("ne_ped_scale", 1.0))],
+              ref=["Te_ped_scale_1.000"]),
+    "J": dict(shot=132588, dir="J_istar_raw", settings=ISTAR, namelist=NAMELIST,
+              cases=[_single("omt", s) for s in (0.8, 1.2)]
+                    + [(tag("omne", s) + "_noqn", [("omne", s, NO_QN)])
+                       for s in (0.8, 1.2)],
+              ref=["omt_1.000"]),
 }
+
+# Outcome per case. "accepted" needs both a clean exit and cheaseBS's own
+# acceptance verdict; an exit without raising is not enough, because a run that
+# hits max_iter returns its last EQDSK unless cheasebs_strict is set (G's fit-Te
+# case on 2026-10-10: 40 iterations, Ip +17.8%, recorded as "ok").
+ACCEPTED = "accepted"
+
+# Top-level files of the scratch run directory copied into the case directory.
+RUN_DIR_FILES = ("profiles_e", "profiles_i", "profiles_z",
+                 "cheasebs_run_config.json", "convergence_summary.json",
+                 "cheasebs_acceptance.json", "iteration_log.csv",
+                 "iteration_errors.png", "run_summary.png")
+
+
+def _tee_fds(path):
+    """Copy everything written to fd 1 and 2 into `path` as well.
+
+    Done at the descriptor level, not by swapping sys.stdout, because cheaseBS
+    runs as a subprocess that inherits the descriptors and writes to them
+    directly: a Python-level tee never sees its output, which is where the
+    crash reasons are. Needs `tee` on PATH; returns False without it.
+    """
+    import shutil
+    tee = shutil.which("tee")
+    if not tee:
+        return False
+    sys.stdout.flush()
+    sys.stderr.flush()
+    proc = subprocess.Popen([tee, "-a", path], stdin=subprocess.PIPE)
+    os.dup2(proc.stdin.fileno(), 1)
+    os.dup2(proc.stdin.fileno(), 2)
+    return True
 
 
 class _Tee:
@@ -188,6 +243,58 @@ def namelist_with(entries, dest_dir) -> str:
     return dest
 
 
+def _run_dir(case, shot, label, since):
+    """The scratch run directory output_gfile used for this case, or None.
+
+    Read from the copied run config when it made it back; otherwise (a crash
+    skips the copy-back) the newest <OUTPUT_PATH>/cheaseBS_runs/<date>/
+    <stamp>-<shot>_<label> directory modified after `since`.
+    """
+    import glob
+    cfg = os.path.join(case, "cheasebs_run_config.json")
+    if os.path.isfile(cfg):
+        with open(cfg) as f:
+            d = json.load(f).get("output_dir")
+        if d and os.path.isdir(d):
+            return d
+    try:
+        from TPED.config.config_helper import Config
+        root = Config().get_path("OUTPUT_PATH")
+    except Exception:                                            # noqa: BLE001
+        return None
+    hits = [d for d in glob.glob(os.path.join(root, "cheaseBS_runs", "*",
+                                              "*-%d_%s" % (shot, label)))
+            if os.path.getmtime(d) >= since - 5]
+    return max(hits, key=os.path.getmtime) if hits else None
+
+
+def _copy_run_files(run_dir, case):
+    import shutil
+    copied = []
+    for name in RUN_DIR_FILES:
+        src = os.path.join(run_dir, name)
+        if os.path.isfile(src) and not os.path.isfile(os.path.join(case, name)):
+            shutil.copy2(src, os.path.join(case, name))
+            copied.append(name)
+    return copied
+
+
+def _verdict(case):
+    """accepted, or rejected: reasons, from the case's cheasebs_acceptance.json."""
+    path = os.path.join(case, "cheasebs_acceptance.json")
+    if not os.path.isfile(path):
+        return "no acceptance record"
+    with open(path) as f:
+        acc = json.load(f)
+    if acc.get("accepted") and acc.get("cheasebs_converged", True):
+        return ACCEPTED
+    reasons = list(acc.get("reasons") or [])
+    if not acc.get("cheasebs_converged", True):
+        reasons.insert(0, "not converged after %s iterations"
+                       % acc.get("cheasebs_iterations"))
+    return "rejected: " + "; ".join(reasons)
+
+
 def build(shot, steps):
     """Apply each (scaling, factor, kwargs) in order to the unscaled shot."""
     q = load(shot)
@@ -201,8 +308,12 @@ def run_test(test, repo, dry_run=False):
     shot, settings, cases = spec["shot"], spec["settings"], spec["cases"]
     out = test_dir(repo, test)
     os.makedirs(out, exist_ok=True)
-    sys.stdout = _Tee(sys.__stdout__, os.path.join(out, "console.log"))
-    sys.stderr = _Tee(sys.__stderr__, os.path.join(out, "console.log"))
+    log = os.path.join(out, "console.log")
+    if not _tee_fds(log):
+        print("no tee on PATH: console.log will miss cheaseBS's own output",
+              flush=True)
+        sys.stdout = _Tee(sys.__stdout__, log)
+        sys.stderr = _Tee(sys.__stderr__, log)
 
     here = os.path.dirname(os.path.abspath(__file__))
     gfile_kw = dict(settings)
@@ -220,6 +331,7 @@ def run_test(test, repo, dry_run=False):
         print("--- %d %s : %s ---" % (shot, label,
               " -> ".join("%s %.3g %s" % (n, s, kw or "") for n, s, kw in steps)),
               flush=True)
+        start = time.time()
         try:
             q = build(shot, steps)
             if dry_run:
@@ -231,14 +343,23 @@ def run_test(test, repo, dry_run=False):
             path = q.output_gfile(savedir=case, run_cheasebs=True,
                                   comment="%d_%s" % (shot, label), **gfile_kw)
             print("  gfile   %s" % path, flush=True)
-            results[label] = "ok"
+            results[label] = None
         except Exception as exc:                                 # noqa: BLE001
             import traceback
             traceback.print_exc()
-            results[label] = "failed: %r" % (exc,)
+            results[label] = "crashed: %r" % (exc,)
+        run_dir = _run_dir(case, shot, label, start)
+        if run_dir:
+            copied = _copy_run_files(run_dir, case)
+            print("  run dir %s (copied: %s)"
+                  % (run_dir, ", ".join(copied) or "nothing new"), flush=True)
+        if results[label] is None:
+            results[label] = _verdict(case)
+        print("  result  %s" % results[label], flush=True)
 
-    n_ok = sum(v in ("ok", "dry-run") for v in results.values())
-    print("=== test %s: %d/%d ok ===" % (test, n_ok, len(results)), flush=True)
+    n_ok = sum(v in (ACCEPTED, "dry-run") for v in results.values())
+    print("=== test %s: %d/%d accepted ===" % (test, n_ok, len(results)),
+          flush=True)
     if not dry_run:
         with open(os.path.join(out, "summary.json"), "w") as f:
             json.dump({"test": test, "shot": shot, "results": results,
