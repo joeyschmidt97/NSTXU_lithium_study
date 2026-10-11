@@ -14,6 +14,9 @@ the fit drops axis Te to 0.853 of raw, and raw ni carries a kink):
        ~100x even at omne 1.0, which crashed in H
     J  omt, and omne without the rebuild, at 0.8 and 1.2 on the raw base under
        I-star, the one 132588 base/representation pair that converged in G
+    L  campaign mtanh knobs only, jparallel on rho_pol with TENSBND=-1.0 (K's
+       settings): Te_ped_scale 1.0, 1.2, and ne_ped_scale 1.0, 0.8, 1.2 on the
+       fit-Te base without the nz rebuild
 
 132543 -- option ladder (profiles are clean and fit ~ raw within 2%; failures are
 a deterministic CHEASE segfault in the magnetic-axis search, flipping on ~1%
@@ -25,6 +28,8 @@ control plus four box-scan failures inside the 0.8-1.2 campaign box.
     C  NCSCAL=1
     D  jparallel on rho_pol
     T  TENSBND=-1.0 (boundary spline smoothing; template -0.3)
+    K  D and T together: rho_pol and TENSBND=-1.0. D and T crash complementary
+       pilot cases (D: Te 1.1; T: Te 1.2, ne 1.2)
 
 Output goes straight into the cheaseBS_tests checkout, one directory per test:
 
@@ -49,6 +54,7 @@ wrote to before the rename.
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests G
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests Q
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests K
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all --campaign profile_base_132588
@@ -86,6 +92,7 @@ JPARALLEL = dict(replay_representation="jparallel", coordinate="rhot",
 ISTAR = dict(JPARALLEL, replay_representation="istar", coordinate="rhop",
              bootstrap_mix=0.1)
 RHOP = dict(JPARALLEL, coordinate="rhop")
+TENSBND = {"TENSBND": -1.0}
 NAMELIST = {"NCSCAL": 4}
 
 # scale_core_height that puts 132588's fitted axis Te back on the raw value:
@@ -148,6 +155,16 @@ TESTS = {
                     + [(tag("omne", s) + "_noqn", [("omne", s, NO_QN)])
                        for s in (0.8, 1.2)],
               ref=["omt_1.000"]),
+    "K": dict(shot=132543, dir="K_rhop_tensbnd", settings=RHOP,
+              namelist=dict(NAMELIST, **TENSBND), cases=PILOT_132543,
+              ref=["Te_ped_scale_1.000"]),
+    "L": dict(shot=132588, dir="L_rhop_tensbnd", settings=RHOP,
+              namelist=dict(NAMELIST, **TENSBND),
+              cases=[_single("Te_ped_scale", 1.0), _single("Te_ped_scale", 1.2)]
+                    + [("fitTe_" + tag("ne_ped_scale", s) + "_noqn",
+                        [FIT_TE, ("ne_ped_scale", s, NO_QN)])
+                       for s in (1.0, 0.8, 1.2)],
+              ref=["Te_ped_scale_1.000"]),
 }
 
 # Outcome per case. "accepted" needs both a clean exit and cheaseBS's own
