@@ -28,8 +28,8 @@ and records everything in <genedir>/<prefix>_manifest.json.
     python corner_gene_scan.py --submit              # write and sbatch each
     python corner_gene_scan.py --only Teh0.80_Tew0.80_neh0.80_new0.80 --submit
 
-A corner whose cheaseBS case lacks DONE.json, the geometry file or
-profiles.iterdb is skipped and reported. An existing run dir is left alone
+A corner whose cheaseBS case lacks DONE.json, profiles.iterdb or exactly one
+*_CH_COCOS*.geqdsk (the geomfile) is skipped and reported. An existing run dir is left alone
 unless --force.
 
 --test writes a single corner (the first that passes the checks, or the
@@ -40,6 +40,7 @@ collides with the real runs.
 
 from __future__ import annotations
 
+import glob
 import json
 import math
 import os
@@ -69,6 +70,9 @@ TEST_QOS = "debug"
 #: GENE stops itself this many seconds before the SLURM wall time, so it
 #: writes its checkpoint and closes its files instead of being killed.
 TIMELIM_MARGIN = 300
+
+#: cheaseBS reconstruction as TPED names it (discharge_io); GENE reads it as geomfile.
+GEQDSK = "*_CH_COCOS*.geqdsk"
 
 LINKS = ("scanscript", "gene_perlmutter")
 
@@ -127,15 +131,34 @@ def corner_submit(template: str, nodes: int, ntasks: int, walltime: str, qos: st
     return re.sub(r"srun (.*?)-n \d+", lambda m: f"srun {m.group(1)}-n {ntasks}", text)
 
 
-def check_case(case_dir: str, geomfile: str) -> list[str]:
-    missing = [f for f in (DONE, geomfile, "profiles.iterdb")
+def find_geqdsk(case_dir: str):
+    """(file name, problem) for the corner's cheaseBS reconstruction.
+
+    The TPED name, <gfile>_CH_COCOS02[_<transform>].geqdsk (discharge_io;
+    cheasebs_runner._find_output_eqdsk globs the same pattern), e.g.
+    g129038.00110_CH_COCOS02_mtanh_full_Te-sw1.2-sh1.2_ne-sw1.2-sh1.2.geqdsk.
+    Exactly one is required: two would mean the case dir holds runs of
+    different transforms and the choice is not this script's to make.
+    """
+    found = sorted(os.path.basename(p) for p in glob.glob(os.path.join(case_dir, GEQDSK))
+                   if os.path.isfile(p))
+    if len(found) == 1:
+        return found[0], None
+    return None, f"{len(found)} files matching {GEQDSK}" + (f": {found}" if found else "")
+
+
+def check_case(case_dir: str) -> tuple[str | None, list[str]]:
+    geomfile, problem = find_geqdsk(case_dir)
+    missing = [f for f in (DONE, "profiles.iterdb")
                if not os.path.isfile(os.path.join(case_dir, f))]
+    if problem:
+        missing.append(problem)
     acc = os.path.join(case_dir, "cheasebs_acceptance.json")
     if os.path.isfile(acc):
         with open(acc) as fh:
             if not json.load(fh).get("accepted", True):
                 missing.append("cheasebs_acceptance: not accepted")
-    return missing
+    return geomfile, missing
 
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
@@ -154,7 +177,6 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         par_template = fh.read()
     with open(os.path.join(template, "submit.cmd")) as fh:
         sub_template = fh.read()
-    geomfile = read_param(par_template, "geomfile")
     n_procs_sim = int(read_param(par_template, "n_procs_sim"))
     ppn = int(re.search(r"--ntasks-per-node=(\d+)", sub_template).group(1))
     n_parallel = len(KYMIN) * len(X0)
@@ -171,7 +193,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         if only and label not in only:
             continue
         case_dir = os.path.join(ped_root, label)
-        missing = check_case(case_dir, geomfile)
+        geomfile, missing = check_case(case_dir)
         if missing:
             skipped.append((label, missing))
             print(f"--- {label}: SKIP, missing {missing}", flush=True)
@@ -206,7 +228,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
             else:
                 shutil.copy2(src, dst)
         record = {**p, "case_dir": case_dir, "run_dir": run_dir, "diagdir": diagdir,
-                  "job_id": None}
+                  "geomfile": geomfile, "job_id": None}
         if submit:
             out = subprocess.run(["sbatch", "submit.cmd"], cwd=run_dir, check=True,
                                  capture_output=True, text=True).stdout
