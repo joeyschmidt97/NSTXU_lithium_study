@@ -17,6 +17,9 @@ the fit drops axis Te to 0.853 of raw, and raw ni carries a kink):
     L  campaign mtanh knobs only, jparallel on rho_pol with TENSBND=-1.0 (K's
        settings): Te_ped_scale 1.0, 1.2, and ne_ped_scale 1.0, 0.8, 1.2 on the
        fit-Te base without the nz rebuild
+    N  campaign outer bounds under L's settings: Te_ped_scale 0.8, 1.2, and
+       ne_ped_scale 0.8, 1.2 on the fit-Te base without the nz rebuild, plus
+       the fit-Te base itself as the 1.0 reference
 
 132543 -- option ladder (profiles are clean and fit ~ raw within 2%; failures are
 a deterministic CHEASE segfault in the magnetic-axis search, flipping on ~1%
@@ -30,6 +33,8 @@ control plus four box-scan failures inside the 0.8-1.2 campaign box.
     T  TENSBND=-1.0 (boundary spline smoothing; template -0.3)
     K  D and T together: rho_pol and TENSBND=-1.0. D and T crash complementary
        pilot cases (D: Te 1.1; T: Te 1.2, ne 1.2)
+    M  campaign outer bounds under K's settings: Te_ped_scale and ne_ped_scale
+       at 0.8 and 1.2, plus Te_ped_scale 1.0 as the reference
 
 Output goes straight into the cheaseBS_tests checkout, one directory per test:
 
@@ -55,6 +60,7 @@ wrote to before the rename.
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests Q
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests K
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests M
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all --campaign profile_base_132588
@@ -164,6 +170,19 @@ TESTS = {
                     + [("fitTe_" + tag("ne_ped_scale", s) + "_noqn",
                         [FIT_TE, ("ne_ped_scale", s, NO_QN)])
                        for s in (1.0, 0.8, 1.2)],
+              ref=["Te_ped_scale_1.000"]),
+    "M": dict(shot=132543, dir="M_bounds", settings=RHOP,
+              namelist=dict(NAMELIST, **TENSBND),
+              cases=[_single("Te_ped_scale", 1.0)]
+                    + [_single(name, s) for name in ("Te_ped_scale", "ne_ped_scale")
+                       for s in (0.8, 1.2)],
+              ref=["Te_ped_scale_1.000"]),
+    "N": dict(shot=132588, dir="N_bounds", settings=RHOP,
+              namelist=dict(NAMELIST, **TENSBND),
+              cases=[_single("Te_ped_scale", s) for s in (1.0, 0.8, 1.2)]
+                    + [("fitTe_" + tag("ne_ped_scale", s) + "_noqn",
+                        [FIT_TE, ("ne_ped_scale", s, NO_QN)])
+                       for s in (0.8, 1.2)],
               ref=["Te_ped_scale_1.000"]),
 }
 
