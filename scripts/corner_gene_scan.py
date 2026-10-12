@@ -15,7 +15,7 @@ are fitted to the baseline, so every variant is sliced at the same radius
 
 Per corner this writes <genedir>/<prefix>_<tag>/ with
     parameters   template parameters, corner paths, scanlists, n_parallel_sims,
-                 diagdir <diagroot>/<tag>; the template's &scan namelist (what
+                 diagdir <diagroot>/x0_<x0>/<tag>; the template's &scan namelist (what
                  scanscript wrote into it last time) is dropped
     submit.cmd   template submit.cmd, regular queue, wall time, node count and
                  --np / srun -n sized to n_parallel_sims * n_procs_sim
@@ -79,6 +79,11 @@ LINKS = ("scanscript", "gene_perlmutter")
 
 def corners():
     return design(list(CORNER_GRID), parts=("corners",))
+
+
+def x0_label() -> str:
+    """Output subfolder for the radius scanned, e.g. x0_0.6737 (x0_a-b-c for a scanlist)."""
+    return "x0_" + "-".join(f"{v:g}" for v in X0)
 
 
 def walltime_seconds(hms: str) -> int:
@@ -199,7 +204,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
             print(f"--- {label}: SKIP, missing {missing}", flush=True)
             continue
         run_dir = os.path.join(genedir, f"{prefix}_{label}")
-        diagdir = os.path.join(diag_root, label)
+        diagdir = os.path.join(diag_root, x0_label(), label)
         parameters = corner_parameters(par_template, case_dir, geomfile, diagdir,
                                        n_parallel, timelim)
         submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos)
