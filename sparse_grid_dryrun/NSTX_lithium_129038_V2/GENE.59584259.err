@@ -1,0 +1,7 @@
+Lmod has detected the following error: These module(s) or extension(s) exist
+but cannot be loaded as requested: "cray-libsci"
+   Try: "module spider cray-libsci" to see how to load the module(s).
+
+
+
+[2026-10-09T03:39:51.012] error: *** JOB 59584259 ON nid004168 CANCELLED AT 2026-10-09T03:39:51 DUE TO TIME LIMIT ***
