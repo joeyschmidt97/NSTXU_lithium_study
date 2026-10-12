@@ -174,15 +174,17 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
 
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
-          only=None, force=False, submit=False, test=False, dry_run=False, x0=X0):
+          only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
+          walltime=None):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
+    walltime SLURM -t (HH:MM:SS); timelim follows it
     x0       radius (rho_tor) or radii to scan; more than one is a scanlist
     test     one corner, debug queue, TEST_WALLTIME, *_test dirs and manifest
     dry_run  print the first eligible corner's parameters and submit.cmd;
              write, create and submit nothing
     """
-    walltime, qos = (TEST_WALLTIME, TEST_QOS) if test else (WALLTIME, QOS)
+    walltime, qos = (walltime or TEST_WALLTIME, TEST_QOS) if test else (walltime or WALLTIME, QOS)
     if test:
         prefix, diag_root = f"{prefix}_test", f"{diag_root.rstrip('/')}_test"
     genedir = os.path.dirname(os.path.normpath(template))
@@ -225,7 +227,9 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
                   "nothing written")
             return manifest, skipped
         if os.path.exists(run_dir) and not force:
-            print(f"--- {label}: {run_dir} exists, leaving it (--force to rewrite)", flush=True)
+            print(f"--- {label}: {run_dir} exists, NOT rewritten or submitted "
+                  "(--force to rewrite with these settings)", flush=True)
+            skipped.append((label, ["run dir exists"]))
             continue
         os.makedirs(run_dir, exist_ok=True)
         os.makedirs(diagdir, exist_ok=True)
@@ -279,6 +283,8 @@ if __name__ == "__main__":
     ap.add_argument("--x0", type=float, nargs="+", default=list(X0),
                     help=f"radius (rho_tor) to scan; Chapman points {CHAPMAN}")
     ap.add_argument("--prefix", default=PREFIX, help="run dir name prefix, beside the template")
+    ap.add_argument("--walltime", default=None,
+                    help=f"SLURM wall time HH:MM:SS [{WALLTIME}; {TEST_WALLTIME} with --test]")
     ap.add_argument("--only", nargs="+", default=None, help="corner tags to write")
     ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
     ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
@@ -288,5 +294,6 @@ if __name__ == "__main__":
                     help="print one corner's parameters and submit.cmd, write nothing")
     args = ap.parse_args()
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
-                       args.only, args.force, args.submit, args.test, args.dry_run, args.x0)
+                       args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
+                       args.walltime)
     sys.exit(1 if skipped else 0)
