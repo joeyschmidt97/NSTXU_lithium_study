@@ -1,0 +1,37 @@
+
+### scanscript with GENE on 0384 processors ###
+
+   using PROBDIR = /global/u1/j/joeschm/simulators/GENE3/NSTX_lithium_129038_V2
+   creating new scandir.
+   using SCANDIR = /pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/scanfiles0000
+   using PARINDIR = /pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/scanfiles0000/in_par
+
+### parallel efficiency and performance optimization
+   count number of scans.....done (nscans= 3)
+   reading parameters (setting first scan values):
+   kymin 1 = 0.2
+
+   ATTENTION:  set max. n_parallel_sims to 3
+
+   n_procs_sim=0128,  n_parallel_sims=0003
+   taken from parameters file.
+
+   performance will be tested for n_procs_sim = 128
+   check if autopar settings can be taken from efficiency test runs...
+   -perf_vec is given in the parameters file: use it in autoparallelization for every run
+
+   ...skip efficiency test (n_procs_sim is fixed and perf_opt is not needed)
+
+### writing parameters to in_par/ directory
+   kymin 1 = 0.2
+   ...run number 0001 
+   kymin 1 = 0.5
+   ...run number 0002 
+   kymin 1 = 1
+   ...run number 0003 
+
+
+### preparations done: starting simulation
+
+   GENE CALL, n_procs = 0384         
+
