@@ -3,6 +3,7 @@
 Reads every corner corner_gene_scan.py launched,
 
     GENE output   <diag-root>/x0_<x0>/<tag>/scanfilesNNNN/{parameters,omega}_000K
+                  (every scanfiles dir, merged by ky)
     profiles      <ped-root>/<tag>/profiles.iterdb   (what GENE read, prof_type -2)
 
 into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
@@ -132,16 +133,14 @@ def point_of(ds, corner) -> dict:
 # ----------------------------------------------------------------------------- GENE output
 
 def gene_runs(corner_dir: str) -> list[str]:
-    """parameters_NNNN of the newest scanfiles dir under corner_dir (GeneFileFinder), or []."""
+    """parameters_NNNN of every scanfiles dir under corner_dir (GeneFileFinder), oldest
+    dir first, or []. A later scan (e.g. extra ky) lands in the next scanfilesNNNN."""
     try:
         found = GeneFileFinder(corner_dir).find_files("parameters")
     except FileNotFoundError:
         return []
     found = [f for f in found if re.search(r"parameters_\d{4}$", f)]
-    dirs = sorted({os.path.dirname(f) for f in found})
-    if len(dirs) > 1:
-        print(f"    {len(dirs)} scanfiles dirs in {corner_dir}; reading {dirs[-1]}")
-    return sorted(f for f in found if dirs and os.path.dirname(f) == dirs[-1])
+    return sorted(found)
 
 
 def read_run(par_path: str) -> dict:
@@ -191,7 +190,11 @@ def gene_corner(corner_dir: str):
         except Exception as exc:                # one bad member never sinks the corner
             print(f"    unreadable {path}: {type(exc).__name__}: {exc}")
             continue
-        by_ky[round(rec["kymin"], 6)] = (rec["gamma"], rec["omega"], rec["status"])
+        # The same ky in a later scanfiles dir replaces the earlier one, unless
+        # the earlier converged and the later did not.
+        k = round(rec["kymin"], 6)
+        if k not in by_ky or rec["status"] == "ok" or by_ky[k][2] != "ok":
+            by_ky[k] = (rec["gamma"], rec["omega"], rec["status"])
         for k, v in rec["params"].items():
             params.setdefault(k, []).append(v)
     local = {}
