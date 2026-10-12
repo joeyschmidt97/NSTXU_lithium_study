@@ -10,8 +10,10 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_growth.png          gamma and omega vs ky, all corners
     corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
-    corners_s_alpha.png         shat vs alpha_MHD at x0, coloured by max_ky gamma
-    corners_local_params.png    the local parameters that vary most, % from the corner mean
+    corners_s_alpha.png         shat vs alpha_MHD at x0, coloured by max_ky gamma,
+                                points numbered with a key beside the plot
+    corners_local_params.png    the local parameters that vary most: % from the corner
+                                mean, or the absolute difference for those that change sign
     corners_local_table.png     their values per corner, as a table
     corners_local_params.csv    every local parameter per corner (+ gamma_max)
 
@@ -23,10 +25,13 @@ corner is told apart by colour alone.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --out ./corner_plots
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --spread 0.02 --max-params 16
+    python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737
 
-An empty omega file (GENE stopped before the growth rate converged) reads as
-NaN and is drawn as an x on the zero line; a missing omega or parameters file
-is NaN and left out. A corner with neither GENE output nor profiles is
+An empty omega file, or one holding gamma = omega = 0 exactly (GENE's
+placeholder when a run ends without a converged growth rate: time limit, or
+a decaying mode), reads as NaN and is drawn as an x on the zero line; a
+missing omega or parameters file is NaN and left out. The ky axis is every
+kymin found across the corners, so scans with different ky lists combine. A corner with neither GENE output nor profiles is
 reported and skipped. Nothing here raises on a partial scan.
 
 alpha_MHD = q0^2 * major_R * dpdx_pm, all in GENE units (major_R = R0/Lref,
@@ -49,7 +54,7 @@ if __name__ == "__main__":
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm, to_rgb
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.lines import Line2D
 
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
@@ -58,7 +63,10 @@ from TPED.projects.utils.read_iterdb import read_iterdb
 from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, X0,
                                                          corners, tag, x0_label)
 
-OUT = os.path.join(DIAG_ROOT, x0_label(), "plots")
+
+def default_out(x0=X0) -> str:
+    return os.path.join(DIAG_ROOT, x0_label(x0), "plots")
+
 
 #: Legend order of the knobs; the corner tag (ped_grid.tag) uses Teh, Tew, neh, new.
 ORDER = ("Tew", "new", "Teh", "neh")
@@ -67,7 +75,9 @@ LEGEND_TITLE = "(" + ", ".join(ORDER) + ")"
 #: Pedestal window of the zoomed profile figure (rho_tor).
 PED_ZOOM = (0.6, 1.0)
 
-#: A local parameter is "varying" when (max - min) / |mean| over the corners exceeds this.
+#: A local parameter is "varying" when (max - min) / max|value| over the corners
+#: exceeds this. max|value|, not |mean|: gradients like omn_e cross zero, and a
+#: mean near zero would inflate their spread.
 SPREAD = 0.05
 MAX_PARAMS = 12
 
@@ -85,7 +95,7 @@ ITERDB_VARS = {"NE": ("ne", 1e-19, "10$^{19}$ m$^{-3}$"), "TE": ("Te", 1e-3, "ke
 # Hues for the (Tew, new) width pair -- categorical slots 1, 2, 3, 7 of the
 # validated palette; shades step the (Teh, neh) height pair dark to light.
 WIDTH_HUES = {(0.8, 0.8): "#2a78d6", (0.8, 1.2): "#eb6834",
-              (1.2, 0.8): "#1baf7a", (1.2, 1.2): "#4a3aa7"}
+              (1.2, 0.8): "#1baf7a", (1.2, 1.2): "#c4338a"}
 HEIGHT_SHADE = {(0.8, 0.8): -0.35, (0.8, 1.2): -0.12, (1.2, 0.8): 0.15, (1.2, 1.2): 0.38}
 TEH_LS = {0.8: "-", 1.2: "--"}
 NEH_MARKER = {0.8: "o", 1.2: "s"}
@@ -146,6 +156,9 @@ def read_run(par_path: str) -> dict:
         rec["status"] = "ok" if "gamma" in om else "empty"
         if "gamma" in om:
             rec["gamma"], rec["omega"] = float(om["gamma"]), float(om["omega"])
+            if rec["gamma"] == 0 and rec["omega"] == 0:   # GENE's "not converged" placeholder
+                rec["gamma"] = rec["omega"] = np.nan
+                rec["status"] = "zero"
     rec["params"] = {k: float(par[k]) for k in par.data_vars
                      if (k in PARAM_KEYS or SPECIES_PARAM.match(k))
                      and np.issubdtype(par[k].dtype, np.number)}
@@ -166,13 +179,11 @@ def alpha_mhd(pr: dict) -> float:
 
 
 def gene_corner(corner_dir: str):
-    """(gamma, omega, status) on KYMIN and the corner's local parameters, or None."""
+    """({kymin: (gamma, omega, status)}, local parameters) of one corner, or None."""
     runs = gene_runs(corner_dir)
     if not runs:
         return None
-    ky = np.array(KYMIN)
-    gamma, omega = np.full(ky.size, np.nan), np.full(ky.size, np.nan)
-    status = np.array(["missing"] * ky.size, dtype=object)
+    by_ky: dict[float, tuple] = {}
     params: dict[str, list[float]] = {}
     for path in runs:
         try:
@@ -180,11 +191,7 @@ def gene_corner(corner_dir: str):
         except Exception as exc:                # one bad member never sinks the corner
             print(f"    unreadable {path}: {type(exc).__name__}: {exc}")
             continue
-        i = int(np.argmin(abs(ky - rec["kymin"])))
-        if not np.isclose(ky[i], rec["kymin"], rtol=1e-3):
-            print(f"    {path}: kymin {rec['kymin']} not in KYMIN, skipped")
-            continue
-        gamma[i], omega[i], status[i] = rec["gamma"], rec["omega"], rec["status"]
+        by_ky[round(rec["kymin"], 6)] = (rec["gamma"], rec["omega"], rec["status"])
         for k, v in rec["params"].items():
             params.setdefault(k, []).append(v)
     local = {}
@@ -196,7 +203,7 @@ def gene_corner(corner_dir: str):
         local[k] = float(np.median(vals))
     if local:
         local["alpha_MHD"] = alpha_mhd(local)
-    return gamma, omega, status, local
+    return by_ky, local
 
 
 # ----------------------------------------------------------------------------- profiles
@@ -214,7 +221,7 @@ def iterdb_profiles(case_dir: str):
 
 # ----------------------------------------------------------------------------- dataset
 
-def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT) -> xr.Dataset:
+def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0) -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
@@ -224,7 +231,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT) -> xr.Dat
     gene, prof, pts = {}, {}, []
     for p in ordered(corners()):
         name = tag(p)
-        g = gene_corner(os.path.join(diag_root, x0_label(), name))
+        g = gene_corner(os.path.join(diag_root, x0_label(x0), name))
         pr = iterdb_profiles(os.path.join(ped_root, name))
         if g is None and pr is None:
             print(f"--- {name}: SKIP, no GENE output and no profiles.iterdb")
@@ -234,9 +241,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT) -> xr.Dat
         if pr is None:
             print(f"--- {name}: no profiles.iterdb (GENE only)")
         if g is not None:
-            n_ok = int(sum(s == "ok" for s in g[2]))
-            print(f"--- {name}: {n_ok}/{len(KYMIN)} ky converged"
-                  + "".join(f"; ky={k:g} {s}" for k, s in zip(KYMIN, g[2]) if s != "ok"))
+            st = {k: v[2] for k, v in sorted(g[0].items())}
+            print(f"--- {name}: {sum(s == 'ok' for s in st.values())}/{len(st)} ky converged"
+                  + "".join(f"; ky={k:g} {s}" for k, s in st.items() if s != "ok"))
             gene[name] = g
         if pr is not None:
             prof[name] = pr
@@ -245,20 +252,21 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT) -> xr.Dat
         raise SystemExit(f"no corner found under {diag_root} or {ped_root}")
 
     names = [tag(p) for p in pts]
-    ky = np.array(KYMIN)
-    nan_ky = np.full(ky.size, np.nan)
+    ky = np.array(sorted({k for g in gene.values() for k in g[0]}) or KYMIN, dtype=float)
+
+    def on_ky(n, j, fill):
+        row = gene.get(n, ({}, {}))[0]
+        return [row[k][j] if k in row else fill for k in ky]
+
     ds = xr.Dataset(coords={"corner": names, "ky": ("ky", ky, {"long_name": "kymin rho_ref"}),
                             **{k: ("corner", [p[k] for p in pts]) for k in ORDER},
                             "label": ("corner", [label(p) for p in pts])})
-    ds["gamma"] = (("corner", "ky"), [gene[n][0] if n in gene else nan_ky for n in names],
-                   {"units": "c_ref/L_ref"})
-    ds["omega"] = (("corner", "ky"), [gene[n][1] if n in gene else nan_ky for n in names],
-                   {"units": "c_ref/L_ref"})
-    ds["status"] = (("corner", "ky"), [list(gene[n][2]) if n in gene else ["missing"] * ky.size
-                                       for n in names])
-    keys = sorted({k for g in gene.values() for k in g[3]})
+    ds["gamma"] = (("corner", "ky"), [on_ky(n, 0, np.nan) for n in names], {"units": "c_ref/L_ref"})
+    ds["omega"] = (("corner", "ky"), [on_ky(n, 1, np.nan) for n in names], {"units": "c_ref/L_ref"})
+    ds["status"] = (("corner", "ky"), [on_ky(n, 2, "missing") for n in names])
+    keys = sorted({k for g in gene.values() for k in g[1]})
     for k in keys:
-        ds[k] = ("corner", [gene[n][3].get(k, np.nan) if n in gene else np.nan for n in names])
+        ds[k] = ("corner", [gene[n][1].get(k, np.nan) if n in gene else np.nan for n in names])
     if "alpha_MHD" in ds:
         ds["alpha_MHD"].attrs["formula"] = "q0^2 * major_R * dpdx_pm (GENE units)"
     finite = ds["gamma"].notnull().any("ky")
@@ -283,7 +291,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT) -> xr.Dat
                 ds[f"omg_{var}"] = (("corner", "rho_tor"),
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
-    ds.attrs.update(x0=X0[0], diag_root=diag_root, ped_root=ped_root)
+    ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root)
     return ds
 
 
@@ -319,7 +327,7 @@ def plot_growth(ds, out, written):
         st = style(point_of(ds, c))
         for ax, var in zip(axes, ("gamma", "omega")):
             ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.6, ms=5, mfc="none", **st)
-            bad = ds.ky.values[ds.status.sel(corner=c).values == "empty"]
+            bad = ds.ky.values[np.isin(ds.status.sel(corner=c).values, ("empty", "zero"))]
             if bad.size:
                 unconv = True
                 ax.plot(bad, np.zeros(bad.size), "x", color=st["color"], ms=9, mew=2)
@@ -331,7 +339,7 @@ def plot_growth(ds, out, written):
     axes[0].set_title("growth rate", loc="left", fontsize=10, color=INK)
     axes[1].set_title("real frequency", loc="left", fontsize=10, color=INK)
     extra = [Line2D([], [], ls="none", marker="x", color=INK, ms=8, mew=2,
-                    label="unconverged (empty omega)")] if unconv else []
+                    label="unconverged (empty or 0/0 omega)")] if unconv else []
     legend_right(fig, corner_handles(ds), extra)
     fig.suptitle(f"NSTX 129038 corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
                  fontsize=12, color=INK)
@@ -398,35 +406,32 @@ def plot_s_alpha(ds, out, written):
         return
     gfin = g[ok & np.isfinite(g)]
     span = max(np.abs(gfin).max(), 1e-6) if gfin.size else 1.0
-    norm = TwoSlopeNorm(vcenter=0.0, vmin=min(gfin.min(), -0.05 * span) if gfin.size else -1,
-                        vmax=max(gfin.max(), 0.05 * span) if gfin.size else 1)
-    fig, ax = plt.subplots(figsize=(9, 7))
+    norm = Normalize(-span, span)                # symmetric: the grey middle is gamma = 0
+    fig, (ax, key) = plt.subplots(1, 2, figsize=(12.5, 7), width_ratios=(3, 1.2))
     has = ok & np.isfinite(g)
-    sc = ax.scatter(a[has], s[has], c=g[has], cmap=GAMMA_CMAP, norm=norm, s=110,
+    sc = ax.scatter(a[has], s[has], c=g[has], cmap=GAMMA_CMAP, norm=norm, s=190,
                     edgecolors=INK, linewidths=0.8, zorder=5)
     if (ok & ~np.isfinite(g)).any():
-        ax.scatter(a[ok & ~np.isfinite(g)], s[ok & ~np.isfinite(g)], s=110, facecolors="none",
+        ax.scatter(a[ok & ~np.isfinite(g)], s[ok & ~np.isfinite(g)], s=190, facecolors="none",
                    edgecolors=MUTED, linewidths=1.2, zorder=5, label="no converged ky")
         ax.legend(frameon=False, fontsize=8, loc="best")
-    # Labels of points that sit close together (in axis fractions) stack downward.
-    ax_ = (a - np.nanmin(a[ok])) / (np.ptp(a[ok]) or 1.0)
-    sx_ = (s - np.nanmin(s[ok])) / (np.ptp(s[ok]) or 1.0)
-    placed = []
-    for i in np.flatnonzero(ok):
-        near = sum(abs(ax_[i] - ax_[j]) < 0.15 and abs(sx_[i] - sx_[j]) < 0.04 for j in placed)
-        ax.annotate(str(ds.label.values[i]), (a[i], s[i]), xytext=(8, 3 - 10 * near),
-                    textcoords="offset points", fontsize=7, color=INK, va="center", zorder=4,
-                    bbox=dict(boxstyle="square,pad=0.1", fc=SURFACE, ec="none", alpha=0.75))
-        placed.append(i)
+    # Points carry a number; the key beside the plot maps it to the corner, so
+    # points that sit close together never stack their labels.
+    lines = []
+    for n, i in enumerate(np.flatnonzero(ok), start=1):
+        ax.annotate(str(n), (a[i], s[i]), ha="center", va="center", fontsize=7,
+                    fontweight="bold", color=INK, zorder=6)
+        gi = f"{g[i]:.3f}" if np.isfinite(g[i]) else "-"
+        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {gi:>6}")
+    key.axis("off")
+    key.text(0, 1, f"{'#':>2}  {LEGEND_TITLE:<21} {'max g':>6}\n" + "\n".join(lines),
+             family="monospace", fontsize=8, va="top", color=INK, transform=key.transAxes)
     cb = fig.colorbar(sc, ax=ax, pad=0.02)
-    cb.set_ticks(np.unique(np.r_[np.linspace(norm.vmin, 0, 3), np.linspace(0, norm.vmax, 4)]))
-    cb.ax.yaxis.set_major_formatter("{x:.2g}")
     cb.set_label(r"$\max_{k_y}\gamma$ [$c_{ref}/L_{ref}$]")
     ax.set_xlabel(r"$\alpha_{MHD} = q_0^2\,(R_0/L_{ref})\,(-d\beta/dx)$")
     ax.set_ylabel(r"$\hat{s}$")
-    ax.margins(x=0.22, y=0.06)                  # room for the right-hand labels
-    ax.set_title(f"s-alpha at x0 = {ds.x0:g}; labels {LEGEND_TITLE}", loc="left",
-                 fontsize=10, color=INK)
+    ax.margins(x=0.08, y=0.08)
+    ax.set_title(f"s-alpha at x0 = {ds.x0:g}", loc="left", fontsize=10, color=INK)
     tidy(ax)
     fig.tight_layout()
     save(fig, out, "corners_s_alpha.png", written)
@@ -439,13 +444,13 @@ def local_params(ds) -> list[str]:
 
 
 def varying(ds, spread=SPREAD, max_params=MAX_PARAMS) -> list[tuple[str, float]]:
-    """(name, (max-min)/|mean|) of the local parameters above *spread*, largest first."""
+    """(name, (max-min)/max|value|) of the local parameters above *spread*, largest first."""
     out = []
     for k in local_params(ds):
         v = ds[k].values[np.isfinite(ds[k].values)]
         if v.size < 2:
             continue
-        rel = np.ptp(v) / max(abs(v.mean()), 1e-12 * max(abs(v).max(), 1e-300))
+        rel = np.ptp(v) / max(abs(v).max(), 1e-300)
         if rel > spread:
             out.append((k, float(rel)))
     return sorted(out, key=lambda t: -t[1])[:max_params]
@@ -469,23 +474,38 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     if not picked:
         print(f"no local parameter varies by more than {spread:g} across corners")
         return
-    print("varying local parameters, (max-min)/|mean|: "
+    print("varying local parameters, (max-min)/max|value|: "
           + ", ".join(f"{k} {r:.3f}" for k, r in picked))
     names = [k for k, _ in picked]
+    # % from the mean means nothing when the mean sits near zero, so parameters
+    # that change sign across the corners get their own panel in absolute units.
+    crosses = [k for k in names if np.nanmin(ds[k].values) < 0 < np.nanmax(ds[k].values)]
+    groups = [(r"% from the corner mean", [k for k in names if k not in crosses], True),
+              ("value - corner mean", crosses, False)]
+    groups = [grp for grp in groups if grp[1]]
+    spread_of = dict(picked)
     n = ds.sizes["corner"]
     width = 0.84 / n
-    fig, ax = plt.subplots(figsize=(max(10, 1.25 * len(names) + 4), 5.8))
-    for i, c in enumerate(ds.corner.values):
-        dev = [100 * (ds[k].values[i] / np.nanmean(ds[k].values) - 1) for k in names]
-        ax.bar(np.arange(len(names)) - 0.42 + (i + 0.5) * width, dev, width * 0.9,
-               color=style(point_of(ds, c))["color"], label=str(ds.label.values[i]))
-    ax.axhline(0, color=MUTED, lw=0.8)
-    ax.set_xticks(np.arange(len(names)),
-                  [f"{k}\n{100 * r:.0f}%" for k, r in picked], fontsize=8)
-    ax.set_ylabel("% from the corner mean")
-    ax.set_title(f"local parameters at x0 = {ds.x0:g} with (max-min)/|mean| > {spread:g} "
-                 "(spread under each name)", loc="left", fontsize=10, color=INK)
-    tidy(ax)
+    fig, axes = plt.subplots(1, len(groups), figsize=(max(10, 1.25 * len(names) + 4), 5.8),
+                             width_ratios=[len(grp[1]) + 0.6 for grp in groups], squeeze=False)
+    for ax, (ylabel, keys_, pct) in zip(axes[0], groups):
+        mean = [np.nanmean(ds[k].values) for k in keys_]
+        for i, c in enumerate(ds.corner.values):
+            dev = [100 * (ds[k].values[i] / m - 1) if pct else ds[k].values[i] - m
+                   for k, m in zip(keys_, mean)]
+            ax.bar(np.arange(len(keys_)) - 0.42 + (i + 0.5) * width, dev, width * 0.9,
+                   color=style(point_of(ds, c))["color"],
+                   label=str(ds.label.values[i]) if ax is axes[0, 0] else None)
+        ax.axhline(0, color=MUTED, lw=0.8)
+        ax.set_xticks(np.arange(len(keys_)),
+                      [f"{k}\n{100 * spread_of[k]:.0f}%" for k in keys_], fontsize=8)
+        ax.set_ylabel(ylabel)
+        tidy(ax)
+    axes[0, 0].set_title(f"local parameters at x0 = {ds.x0:g} with (max-min)/max|value| > "
+                         f"{spread:g} (spread under each name)", loc="left", fontsize=10,
+                         color=INK)
+    if crosses:
+        axes[0, -1].set_title("sign-changing, absolute", loc="left", fontsize=10, color=INK)
     fig.legend(title=LEGEND_TITLE, loc="center right", frameon=False, fontsize=8,
                title_fontsize=9)
     fig.tight_layout(rect=(0, 0, 0.82, 1))
@@ -507,8 +527,11 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     save(fig, out, "corners_local_table.png", written)
 
 
-def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=OUT, spread=SPREAD, max_params=MAX_PARAMS):
-    ds = load_dataset(diag_root, ped_root)
+def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
+        x0=X0):
+    x0 = tuple(x0)
+    out = out or default_out(x0)
+    ds = load_dataset(diag_root, ped_root, x0)
     os.makedirs(out, exist_ok=True)
     written: list[str] = []
     with warnings.catch_warnings():
@@ -530,10 +553,13 @@ if __name__ == "__main__":
     ap.add_argument("--diag-root", default=DIAG_ROOT,
                     help="GENE output root; corners are under <diag-root>/x0_<x0>/<tag>/")
     ap.add_argument("--ped-root", default=PED_ROOT, help="ped_grid cheaseBS cases <tag>/")
-    ap.add_argument("--out", default=OUT, help="directory for the PNGs and CSV")
+    ap.add_argument("--x0", type=float, nargs="+", default=list(X0),
+                    help="radius of the scan to plot (reads its x0_<x0>/ folder)")
+    ap.add_argument("--out", default=None,
+                    help="directory for the PNGs and CSV [<diag-root>/x0_<x0>/plots]")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
                     help="most varying parameters to chart and tabulate")
     args = ap.parse_args()
-    run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params)
+    run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params, args.x0)
