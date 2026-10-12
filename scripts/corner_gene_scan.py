@@ -68,7 +68,9 @@ CHAPMAN = {"ne_top": 0.6737, "Te_top": 0.8447, "steep": 0.8535}
 #: Scanned radius; ne top (0.6737) was the first scan, Te top is the second.
 X0 = (CHAPMAN["Te_top"],)
 
-WALLTIME = "01:30:00"
+#: 1:30 timed out 22 of 80 x0 = 0.6737 points (all ky <= 0.7, t = timelim);
+#: converged ones took up to 4800 s.
+WALLTIME = "03:00:00"
 QOS = "regular"
 TEST_WALLTIME = "00:30:00"
 TEST_QOS = "debug"
