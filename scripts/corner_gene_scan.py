@@ -5,14 +5,13 @@ pedestal height and width (Teh, Tew, neh, new). Each corner is one GENE problem
 directory, copied from a template run, whose parameters point geomdir and
 iterdb_file at that corner's cheaseBS output and scan
 
-    kymin  0.1, 0.3, 0.5, 0.7, 1.0
-    x0     the 129038 baseline Chapman radii (ne top, Te top, steep)
+    kymin  0.1, 0.3, 0.5, 0.7, 1.0     (a scanlist: 5 parallel sims, one job)
+    x0     the 129038 baseline Chapman ne-top radius, fixed
 
-as two scanlists: GENE's scanscript runs their 5 x 3 product as 15 parallel
-sims in one job. The equilibrium cannot be a scanlist (geomdir and
-iterdb_file are paths), hence one job per corner. x0 is the same at every
-corner: the Chapman radii are fitted to the baseline, so every variant is
-sliced at the same three radii (TPED chapman_points).
+The equilibrium cannot be a scanlist (geomdir and iterdb_file are paths),
+hence one job per corner. x0 is the same at every corner: the Chapman radii
+are fitted to the baseline, so every variant is sliced at the same radius
+(TPED chapman_points). Give X0 more values and it becomes a second scanlist.
 
 Per corner this writes <genedir>/<prefix>_<tag>/ with
     parameters   template parameters, corner paths, scanlists, n_parallel_sims,
@@ -23,6 +22,8 @@ Per corner this writes <genedir>/<prefix>_<tag>/ with
     scanscript, gene_perlmutter   the template's symlinks, re-made
 and records everything in <genedir>/<prefix>_manifest.json.
 
+    python corner_gene_scan.py --dry-run             # print one corner's files, write nothing
+    python corner_gene_scan.py --test --submit       # one corner, debug queue, *_test dirs
     python corner_gene_scan.py                       # write the 16 run dirs, no sbatch
     python corner_gene_scan.py --submit              # write and sbatch each
     python corner_gene_scan.py --only Teh0.80_Tew0.80_neh0.80_new0.80 --submit
@@ -30,6 +31,11 @@ and records everything in <genedir>/<prefix>_manifest.json.
 A corner whose cheaseBS case lacks DONE.json, the geometry file or
 profiles.iterdb is skipped and reported. An existing run dir is left alone
 unless --force.
+
+--test writes a single corner (the first that passes the checks, or the
+first --only) to <prefix>_test_<tag>/ with output under <diag-root>_test/,
+on the debug queue for TEST_WALLTIME: quick through the queue, and never
+collides with the real runs.
 """
 
 from __future__ import annotations
@@ -51,13 +57,15 @@ PREFIX = "NSTX_129038_corner"
 
 CORNER_GRID = (0.8, 1.2)
 KYMIN = (0.1, 0.3, 0.5, 0.7, 1.0)
-#: 129038 baseline Chapman radii (rho_tor): ne top, Te top, steep. From
+#: 129038 baseline Chapman ne-top radius (rho_tor). From
 #: chapman_dataset_from_profile on the box scan's REF_profiles_e, as
-#: baseline_x0_plots.py draws them.
-X0 = (0.6737, 0.8447, 0.8535)
+#: baseline_x0_plots.py draws them; Te top is 0.8447, steep 0.8535.
+X0 = (0.6737,)
 
 WALLTIME = "01:30:00"
 QOS = "regular"
+TEST_WALLTIME = "00:30:00"
+TEST_QOS = "debug"
 #: GENE stops itself this many seconds before the SLURM wall time, so it
 #: writes its checkpoint and closes its files instead of being killed.
 TIMELIM_MARGIN = 300
@@ -94,7 +102,8 @@ def corner_parameters(template: str, case_dir: str, geomfile: str, diagdir: str,
                       n_parallel: int, timelim: int) -> str:
     text = drop_namelist(template, "scan")
     text = set_param(text, "kymin", f"{KYMIN[0]:g}  !scanlist: {scanlist(KYMIN)}")
-    text = set_param(text, "x0", f"{X0[0]:g}  !scanlist: {scanlist(X0)}")
+    text = set_param(text, "x0", f"{X0[0]:g}" + (f"  !scanlist: {scanlist(X0)}"
+                                                  if len(X0) > 1 else ""))
     text = set_param(text, "n_parallel_sims", str(n_parallel))
     text = set_param(text, "diagdir", f"'{diagdir}'")
     text = set_param(text, "iterdb_file", f"'{os.path.join(case_dir, 'profiles.iterdb')}'")
@@ -110,9 +119,9 @@ def read_param(text: str, key: str) -> str:
     return m.group(1).strip().strip("'\"")
 
 
-def corner_submit(template: str, nodes: int, ntasks: int) -> str:
-    text = re.sub(r"^#SBATCH -t .*$", f"#SBATCH -t {WALLTIME}", template, flags=re.M)
-    text = re.sub(r"^#SBATCH -q .*$", f"#SBATCH -q {QOS}", text, flags=re.M)
+def corner_submit(template: str, nodes: int, ntasks: int, walltime: str, qos: str) -> str:
+    text = re.sub(r"^#SBATCH -t .*$", f"#SBATCH -t {walltime}", template, flags=re.M)
+    text = re.sub(r"^#SBATCH -q .*$", f"#SBATCH -q {qos}", text, flags=re.M)
     text = re.sub(r"^#SBATCH -N .*$", f"#SBATCH -N {nodes}", text, flags=re.M)
     text = re.sub(r"--np \d+", f"--np {ntasks}", text)
     return re.sub(r"srun (.*?)-n \d+", lambda m: f"srun {m.group(1)}-n {ntasks}", text)
@@ -130,7 +139,16 @@ def check_case(case_dir: str, geomfile: str) -> list[str]:
 
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
-          only=None, force=False, submit=False):
+          only=None, force=False, submit=False, test=False, dry_run=False):
+    """Write (and with *submit*, sbatch) the corner run dirs.
+
+    test     one corner, debug queue, TEST_WALLTIME, *_test dirs and manifest
+    dry_run  print the first eligible corner's parameters and submit.cmd;
+             write, create and submit nothing
+    """
+    walltime, qos = (TEST_WALLTIME, TEST_QOS) if test else (WALLTIME, QOS)
+    if test:
+        prefix, diag_root = f"{prefix}_test", f"{diag_root.rstrip('/')}_test"
     genedir = os.path.dirname(os.path.normpath(template))
     with open(os.path.join(template, "parameters")) as fh:
         par_template = fh.read()
@@ -142,10 +160,10 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     n_parallel = len(KYMIN) * len(X0)
     ntasks = n_parallel * n_procs_sim
     nodes = math.ceil(ntasks / ppn)
-    timelim = walltime_seconds(WALLTIME) - TIMELIM_MARGIN
+    timelim = walltime_seconds(walltime) - TIMELIM_MARGIN
 
     manifest = {"template": template, "ped_root": ped_root, "kymin": KYMIN, "x0": X0,
-                "walltime": WALLTIME, "qos": QOS, "timelim": timelim, "nodes": nodes,
+                "walltime": walltime, "qos": qos, "test": test, "timelim": timelim, "nodes": nodes,
                 "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
     skipped = []
     for p in corners():
@@ -160,16 +178,24 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
             continue
         run_dir = os.path.join(genedir, f"{prefix}_{label}")
         diagdir = os.path.join(diag_root, label)
+        parameters = corner_parameters(par_template, case_dir, geomfile, diagdir,
+                                       n_parallel, timelim)
+        submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos)
+        if dry_run:
+            print(f"--- {label}: would write {run_dir}\n    output to {diagdir}\n")
+            print("=== parameters\n" + parameters + "\n=== submit.cmd\n" + submit_cmd)
+            print(f"{nodes} nodes x {walltime} on {qos} ({ntasks} ranks, {n_parallel} sims); "
+                  "nothing written")
+            return manifest, skipped
         if os.path.exists(run_dir) and not force:
             print(f"--- {label}: {run_dir} exists, leaving it (--force to rewrite)", flush=True)
             continue
         os.makedirs(run_dir, exist_ok=True)
         os.makedirs(diagdir, exist_ok=True)
         with open(os.path.join(run_dir, "parameters"), "w") as fh:
-            fh.write(corner_parameters(par_template, case_dir, geomfile, diagdir,
-                                       n_parallel, timelim))
+            fh.write(parameters)
         with open(os.path.join(run_dir, "submit.cmd"), "w") as fh:
-            fh.write(corner_submit(sub_template, nodes, ntasks))
+            fh.write(submit_cmd)
         os.chmod(os.path.join(run_dir, "submit.cmd"), 0o755)
         for link in LINKS:
             src, dst = os.path.join(template, link), os.path.join(run_dir, link)
@@ -188,6 +214,8 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         manifest["runs"][label] = record
         print(f"--- {label}: {run_dir}" + (f"  job {record['job_id']}" if submit else ""),
               flush=True)
+        if test:
+            break
 
     path = os.path.join(genedir, f"{prefix}_manifest.json")
     if os.path.isfile(path):                    # keep corners written by earlier calls
@@ -196,7 +224,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     with open(path, "w") as fh:
         json.dump(manifest, fh, indent=1)
     print(f"\n{len(manifest['runs'])} corner run(s) in {path}; "
-          f"{nodes} nodes x {WALLTIME} each ({ntasks} ranks, {n_parallel} sims)")
+          f"{nodes} nodes x {walltime} on {qos} each ({ntasks} ranks, {n_parallel} sims)")
     if skipped:
         print(f"{len(skipped)} skipped: " + ", ".join(l for l, _ in skipped))
     return manifest, skipped
@@ -214,7 +242,11 @@ if __name__ == "__main__":
     ap.add_argument("--only", nargs="+", default=None, help="corner tags to write")
     ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
     ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
+    ap.add_argument("--test", action="store_true",
+                    help=f"one corner, {TEST_QOS} queue, {TEST_WALLTIME}, *_test dirs")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print one corner's parameters and submit.cmd, write nothing")
     args = ap.parse_args()
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
-                       args.only, args.force, args.submit)
+                       args.only, args.force, args.submit, args.test, args.dry_run)
     sys.exit(1 if skipped else 0)
