@@ -28,6 +28,8 @@ corner is told apart by colour alone.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --spread 0.02 --max-params 16
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737
 
+A ky whose omega file carries a TPED field estimate below GENE's 0/0 line
+(field_omega.py --write) plots as a diamond with ±1 std error bars.
 An empty omega file, or one holding gamma = omega = 0 exactly (GENE's
 placeholder when a run ends without a converged growth rate: time limit, or
 a decaying mode), reads as NaN and is drawn as an x on the zero line; a
@@ -103,6 +105,8 @@ NEH_MARKER = {0.8: "o", 1.2: "s"}
 GAMMA_CMAP = LinearSegmentedColormap.from_list("gamma", ["#008300", "#f0efec", "#e34948"])
 INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 DPI = 150
+#: Which reading of a ky wins when two scanfiles dirs hold it.
+RANK = {"ok": 2, "field": 1}
 
 
 # ----------------------------------------------------------------------------- labels, style
@@ -149,13 +153,18 @@ def read_run(par_path: str) -> dict:
     # No omega file at all: skip the load, TPED would log a traceback for the None path.
     tree = sim.return_sim_xarray(["omega"] if sim.omega_filepath else [])
     par = tree["parameters"].ds
-    rec = {"kymin": float(par["kymin"]), "gamma": np.nan, "omega": np.nan, "status": "missing"}
+    rec = {"kymin": float(par["kymin"]), "gamma": np.nan, "omega": np.nan, "status": "missing",
+           "gamma_std": np.nan, "omega_std": np.nan}
     if "omega" in tree.children:
         om = tree["omega"].ds
         rec["status"] = "ok" if "gamma" in om else "empty"
         if "gamma" in om:
             rec["gamma"], rec["omega"] = float(om["gamma"]), float(om["omega"])
-            if rec["gamma"] == 0 and rec["omega"] == 0:   # GENE's "not converged" placeholder
+            if om.attrs.get("source") == "field":     # TPED field estimate under GENE's 0/0 line
+                rec["status"] = "field"
+                rec["gamma_std"] = float(om["gamma_std"]) if "gamma_std" in om else np.nan
+                rec["omega_std"] = float(om["omega_std"]) if "omega_std" in om else np.nan
+            elif rec["gamma"] == 0 and rec["omega"] == 0:   # GENE's "not converged" placeholder
                 rec["gamma"] = rec["omega"] = np.nan
                 rec["status"] = "zero"
     rec["params"] = {k: float(par[k]) for k in par.data_vars
@@ -190,11 +199,12 @@ def gene_corner(corner_dir: str):
         except Exception as exc:                # one bad member never sinks the corner
             print(f"    unreadable {path}: {type(exc).__name__}: {exc}")
             continue
-        # The same ky in a later scanfiles dir replaces the earlier one, unless
-        # the earlier converged and the later did not.
+        # The same ky in a later scanfiles dir replaces the earlier one unless the
+        # earlier is better: GENE converged > TPED field estimate > neither.
         k = round(rec["kymin"], 6)
-        if k not in by_ky or rec["status"] == "ok" or by_ky[k][2] != "ok":
-            by_ky[k] = (rec["gamma"], rec["omega"], rec["status"])
+        if k not in by_ky or RANK.get(rec["status"], 0) >= RANK.get(by_ky[k][2], 0):
+            by_ky[k] = (rec["gamma"], rec["omega"], rec["status"], rec["gamma_std"],
+                        rec["omega_std"])
         for k, v in rec["params"].items():
             params.setdefault(k, []).append(v)
     local = {}
@@ -267,6 +277,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0) ->
     ds["gamma"] = (("corner", "ky"), [on_ky(n, 0, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["omega"] = (("corner", "ky"), [on_ky(n, 1, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["status"] = (("corner", "ky"), [on_ky(n, 2, "missing") for n in names])
+    ds["gamma_std"] = (("corner", "ky"), [on_ky(n, 3, np.nan) for n in names],
+                       {"long_name": "std of the TPED field estimate (status 'field' only)"})
+    ds["omega_std"] = (("corner", "ky"), [on_ky(n, 4, np.nan) for n in names])
     keys = sorted({k for g in gene.values() for k in g[1]})
     for k in keys:
         ds[k] = ("corner", [gene[n][1].get(k, np.nan) if n in gene else np.nan for n in names])
@@ -325,15 +338,22 @@ def save(fig, out, name, written):
 
 def plot_growth(ds, out, written):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
-    unconv = False
+    unconv = fielded = False
     for c in ds.corner.values:
         st = style(point_of(ds, c))
+        status = ds.status.sel(corner=c).values
         for ax, var in zip(axes, ("gamma", "omega")):
             ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.6, ms=5, mfc="none", **st)
-            bad = ds.ky.values[np.isin(ds.status.sel(corner=c).values, ("empty", "zero"))]
+            bad = ds.ky.values[np.isin(status, ("empty", "zero"))]
             if bad.size:
                 unconv = True
                 ax.plot(bad, np.zeros(bad.size), "x", color=st["color"], ms=9, mew=2)
+            est = status == "field"
+            if est.any():
+                fielded = True
+                ax.errorbar(ds.ky.values[est], ds[var].sel(corner=c).values[est],
+                            yerr=ds[f"{var}_std"].sel(corner=c).values[est], fmt="D",
+                            color=st["color"], ms=6, mec=INK, mew=0.6, capsize=3, lw=1, zorder=5)
     for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
         ax.axhline(0, color=MUTED, lw=0.8)
         ax.set_xlabel(r"$k_y\rho_{ref}$")
@@ -343,6 +363,9 @@ def plot_growth(ds, out, written):
     axes[1].set_title("real frequency", loc="left", fontsize=10, color=INK)
     extra = [Line2D([], [], ls="none", marker="x", color=INK, ms=8, mew=2,
                     label="unconverged (empty or 0/0 omega)")] if unconv else []
+    if fielded:
+        extra.append(Line2D([], [], ls="none", marker="D", color=MUTED, mec=INK, ms=6,
+                            label="TPED field estimate ±1σ (GENE 0/0)"))
     legend_right(fig, corner_handles(ds), extra)
     fig.suptitle(f"NSTX 129038 corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
                  fontsize=12, color=INK)
