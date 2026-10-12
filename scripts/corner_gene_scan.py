@@ -30,6 +30,10 @@ and records everything in <genedir>/<prefix>_x0_<x0>_manifest.json.
     python corner_gene_scan.py --submit              # write and sbatch each
     python corner_gene_scan.py --only Teh0.80_Tew0.80_neh0.80_new0.80 --submit
     python corner_gene_scan.py --x0 0.6737 --submit  # the ne-top radius instead
+    python corner_gene_scan.py --x0 0.6737 --kymin 1.5 2 3 --walltime 01:30:00         --prefix NSTX_129038_corner_kyhi --submit     # extra ky into the same diagdirs
+
+A second scan into an existing diagdir lands in the next scanfilesNNNN;
+plot_corners.py merges every scanfiles dir by ky.
 
 A corner whose cheaseBS case lacks DONE.json, profiles.iterdb or exactly one
 *_CH_COCOS*.geqdsk (the geomfile) is skipped and reported. An existing run dir is left alone
@@ -115,9 +119,11 @@ def drop_namelist(text: str, name: str) -> str:
 
 
 def corner_parameters(template: str, case_dir: str, geomfile: str, diagdir: str,
-                      n_parallel: int, timelim: int, x0=X0) -> str:
+                      n_parallel: int, timelim: int, x0=X0,
+                      kymin=KYMIN) -> str:
     text = drop_namelist(template, "scan")
-    text = set_param(text, "kymin", f"{KYMIN[0]:g}  !scanlist: {scanlist(KYMIN)}")
+    text = set_param(text, "kymin", f"{kymin[0]:g}" + (f"  !scanlist: {scanlist(kymin)}"
+                                                        if len(kymin) > 1 else ""))
     text = set_param(text, "x0", f"{x0[0]:g}" + (f"  !scanlist: {scanlist(x0)}"
                                                   if len(x0) > 1 else ""))
     text = set_param(text, "n_parallel_sims", str(n_parallel))
@@ -175,9 +181,10 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
           only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
-          walltime=None):
+          walltime=None, kymin=None):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
+    kymin    ky values to scan [KYMIN]
     walltime SLURM -t (HH:MM:SS); timelim follows it
     x0       radius (rho_tor) or radii to scan; more than one is a scanlist
     test     one corner, debug queue, TEST_WALLTIME, *_test dirs and manifest
@@ -195,13 +202,14 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     n_procs_sim = int(read_param(par_template, "n_procs_sim"))
     ppn = int(re.search(r"--ntasks-per-node=(\d+)", sub_template).group(1))
     x0 = tuple(x0)
-    n_parallel = len(KYMIN) * len(x0)
+    kymin = tuple(kymin or KYMIN)
+    n_parallel = len(kymin) * len(x0)
     ntasks = n_parallel * n_procs_sim
     nodes = math.ceil(ntasks / ppn)
     timelim = walltime_seconds(walltime) - TIMELIM_MARGIN
     prefix = f"{prefix}_{x0_label(x0)}"
 
-    manifest = {"template": template, "ped_root": ped_root, "kymin": KYMIN, "x0": x0,
+    manifest = {"template": template, "ped_root": ped_root, "kymin": kymin, "x0": x0,
                 "walltime": walltime, "qos": qos, "test": test, "timelim": timelim, "nodes": nodes,
                 "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
     skipped = []
@@ -218,7 +226,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         run_dir = os.path.join(genedir, f"{prefix}_{label}")
         diagdir = os.path.join(diag_root, x0_label(x0), label)
         parameters = corner_parameters(par_template, case_dir, geomfile, diagdir,
-                                       n_parallel, timelim, x0)
+                                       n_parallel, timelim, x0, kymin)
         submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos)
         if dry_run:
             print(f"--- {label}: would write {run_dir}\n    output to {diagdir}\n")
@@ -283,6 +291,8 @@ if __name__ == "__main__":
     ap.add_argument("--x0", type=float, nargs="+", default=list(X0),
                     help=f"radius (rho_tor) to scan; Chapman points {CHAPMAN}")
     ap.add_argument("--prefix", default=PREFIX, help="run dir name prefix, beside the template")
+    ap.add_argument("--kymin", type=float, nargs="+", default=None,
+                    help=f"ky values to scan [{scanlist(KYMIN)}]")
     ap.add_argument("--walltime", default=None,
                     help=f"SLURM wall time HH:MM:SS [{WALLTIME}; {TEST_WALLTIME} with --test]")
     ap.add_argument("--only", nargs="+", default=None, help="corner tags to write")
@@ -295,5 +305,5 @@ if __name__ == "__main__":
     args = ap.parse_args()
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
-                       args.walltime)
+                       args.walltime, args.kymin)
     sys.exit(1 if skipped else 0)
