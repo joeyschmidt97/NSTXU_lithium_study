@@ -1,0 +1,220 @@
+"""Linear GENE scans at the 16 corners of the ped_grid 4D box, one job per corner.
+
+The corners are ped_grid.py's: every combination of 0.8 and 1.2 on Te and ne
+pedestal height and width (Teh, Tew, neh, new). Each corner is one GENE problem
+directory, copied from a template run, whose parameters point geomdir and
+iterdb_file at that corner's cheaseBS output and scan
+
+    kymin  0.1, 0.3, 0.5, 0.7, 1.0
+    x0     the 129038 baseline Chapman radii (ne top, Te top, steep)
+
+as two scanlists: GENE's scanscript runs their 5 x 3 product as 15 parallel
+sims in one job. The equilibrium cannot be a scanlist (geomdir and
+iterdb_file are paths), hence one job per corner. x0 is the same at every
+corner: the Chapman radii are fitted to the baseline, so every variant is
+sliced at the same three radii (TPED chapman_points).
+
+Per corner this writes <genedir>/<prefix>_<tag>/ with
+    parameters   template parameters, corner paths, scanlists, n_parallel_sims,
+                 diagdir <diagroot>/<tag>; the template's &scan namelist (what
+                 scanscript wrote into it last time) is dropped
+    submit.cmd   template submit.cmd, regular queue, wall time, node count and
+                 --np / srun -n sized to n_parallel_sims * n_procs_sim
+    scanscript, gene_perlmutter   the template's symlinks, re-made
+and records everything in <genedir>/<prefix>_manifest.json.
+
+    python corner_gene_scan.py                       # write the 16 run dirs, no sbatch
+    python corner_gene_scan.py --submit              # write and sbatch each
+    python corner_gene_scan.py --only Teh0.80_Tew0.80_neh0.80_new0.80 --submit
+
+A corner whose cheaseBS case lacks DONE.json, the geometry file or
+profiles.iterdb is skipped and reported. An existing run dir is left alone
+unless --force.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+from NSTXU_lithium_study.scripts.ped_grid import DONE, design, tag
+
+TEMPLATE = "/global/u1/j/joeschm/simulators/GENE3/NSTX_lithium_129038_V2"
+PED_ROOT = "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038/129038"
+DIAG_ROOT = "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/corners"
+PREFIX = "NSTX_129038_corner"
+
+CORNER_GRID = (0.8, 1.2)
+KYMIN = (0.1, 0.3, 0.5, 0.7, 1.0)
+#: 129038 baseline Chapman radii (rho_tor): ne top, Te top, steep. From
+#: chapman_dataset_from_profile on the box scan's REF_profiles_e, as
+#: baseline_x0_plots.py draws them.
+X0 = (0.6737, 0.8447, 0.8535)
+
+WALLTIME = "01:30:00"
+QOS = "regular"
+#: GENE stops itself this many seconds before the SLURM wall time, so it
+#: writes its checkpoint and closes its files instead of being killed.
+TIMELIM_MARGIN = 300
+
+LINKS = ("scanscript", "gene_perlmutter")
+
+
+def corners():
+    return design(list(CORNER_GRID), parts=("corners",))
+
+
+def walltime_seconds(hms: str) -> int:
+    h, m, s = (int(x) for x in hms.split(":"))
+    return 3600 * h + 60 * m + s
+
+
+def scanlist(values) -> str:
+    return ", ".join(f"{v:g}" for v in values)
+
+
+def set_param(text: str, key: str, value: str) -> str:
+    """Replace the whole `key = ...` line (comments included); key must exist once."""
+    pat = re.compile(rf"^([ \t]*){re.escape(key)}[ \t]*=.*$", re.M)
+    if len(pat.findall(text)) != 1:
+        raise ValueError(f"expected one '{key} =' line in the template parameters")
+    return pat.sub(lambda m: f"{m.group(1)}{key} = {value}", text)
+
+
+def drop_namelist(text: str, name: str) -> str:
+    return re.sub(rf"^&{name}\b.*?^/[ \t]*\n?", "", text, flags=re.M | re.S | re.I)
+
+
+def corner_parameters(template: str, case_dir: str, geomfile: str, diagdir: str,
+                      n_parallel: int, timelim: int) -> str:
+    text = drop_namelist(template, "scan")
+    text = set_param(text, "kymin", f"{KYMIN[0]:g}  !scanlist: {scanlist(KYMIN)}")
+    text = set_param(text, "x0", f"{X0[0]:g}  !scanlist: {scanlist(X0)}")
+    text = set_param(text, "n_parallel_sims", str(n_parallel))
+    text = set_param(text, "diagdir", f"'{diagdir}'")
+    text = set_param(text, "iterdb_file", f"'{os.path.join(case_dir, 'profiles.iterdb')}'")
+    text = set_param(text, "geomdir", f"'{case_dir.rstrip('/')}/'")
+    text = set_param(text, "geomfile", f"'{geomfile}'")
+    return set_param(text, "timelim", str(timelim))
+
+
+def read_param(text: str, key: str) -> str:
+    m = re.search(rf"^[ \t]*{re.escape(key)}[ \t]*=[ \t]*([^!\n]*)", text, re.M)
+    if not m:
+        raise ValueError(f"no '{key}' in the template parameters")
+    return m.group(1).strip().strip("'\"")
+
+
+def corner_submit(template: str, nodes: int, ntasks: int) -> str:
+    text = re.sub(r"^#SBATCH -t .*$", f"#SBATCH -t {WALLTIME}", template, flags=re.M)
+    text = re.sub(r"^#SBATCH -q .*$", f"#SBATCH -q {QOS}", text, flags=re.M)
+    text = re.sub(r"^#SBATCH -N .*$", f"#SBATCH -N {nodes}", text, flags=re.M)
+    text = re.sub(r"--np \d+", f"--np {ntasks}", text)
+    return re.sub(r"srun (.*?)-n \d+", lambda m: f"srun {m.group(1)}-n {ntasks}", text)
+
+
+def check_case(case_dir: str, geomfile: str) -> list[str]:
+    missing = [f for f in (DONE, geomfile, "profiles.iterdb")
+               if not os.path.isfile(os.path.join(case_dir, f))]
+    acc = os.path.join(case_dir, "cheasebs_acceptance.json")
+    if os.path.isfile(acc):
+        with open(acc) as fh:
+            if not json.load(fh).get("accepted", True):
+                missing.append("cheasebs_acceptance: not accepted")
+    return missing
+
+
+def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
+          only=None, force=False, submit=False):
+    genedir = os.path.dirname(os.path.normpath(template))
+    with open(os.path.join(template, "parameters")) as fh:
+        par_template = fh.read()
+    with open(os.path.join(template, "submit.cmd")) as fh:
+        sub_template = fh.read()
+    geomfile = read_param(par_template, "geomfile")
+    n_procs_sim = int(read_param(par_template, "n_procs_sim"))
+    ppn = int(re.search(r"--ntasks-per-node=(\d+)", sub_template).group(1))
+    n_parallel = len(KYMIN) * len(X0)
+    ntasks = n_parallel * n_procs_sim
+    nodes = math.ceil(ntasks / ppn)
+    timelim = walltime_seconds(WALLTIME) - TIMELIM_MARGIN
+
+    manifest = {"template": template, "ped_root": ped_root, "kymin": KYMIN, "x0": X0,
+                "walltime": WALLTIME, "qos": QOS, "timelim": timelim, "nodes": nodes,
+                "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
+    skipped = []
+    for p in corners():
+        label = tag(p)
+        if only and label not in only:
+            continue
+        case_dir = os.path.join(ped_root, label)
+        missing = check_case(case_dir, geomfile)
+        if missing:
+            skipped.append((label, missing))
+            print(f"--- {label}: SKIP, missing {missing}", flush=True)
+            continue
+        run_dir = os.path.join(genedir, f"{prefix}_{label}")
+        diagdir = os.path.join(diag_root, label)
+        if os.path.exists(run_dir) and not force:
+            print(f"--- {label}: {run_dir} exists, leaving it (--force to rewrite)", flush=True)
+            continue
+        os.makedirs(run_dir, exist_ok=True)
+        os.makedirs(diagdir, exist_ok=True)
+        with open(os.path.join(run_dir, "parameters"), "w") as fh:
+            fh.write(corner_parameters(par_template, case_dir, geomfile, diagdir,
+                                       n_parallel, timelim))
+        with open(os.path.join(run_dir, "submit.cmd"), "w") as fh:
+            fh.write(corner_submit(sub_template, nodes, ntasks))
+        os.chmod(os.path.join(run_dir, "submit.cmd"), 0o755)
+        for link in LINKS:
+            src, dst = os.path.join(template, link), os.path.join(run_dir, link)
+            if os.path.lexists(dst):
+                os.remove(dst)
+            if os.path.islink(src):
+                os.symlink(os.readlink(src), dst)
+            else:
+                shutil.copy2(src, dst)
+        record = {**p, "case_dir": case_dir, "run_dir": run_dir, "diagdir": diagdir,
+                  "job_id": None}
+        if submit:
+            out = subprocess.run(["sbatch", "submit.cmd"], cwd=run_dir, check=True,
+                                 capture_output=True, text=True).stdout
+            record["job_id"] = out.strip().split()[-1]
+        manifest["runs"][label] = record
+        print(f"--- {label}: {run_dir}" + (f"  job {record['job_id']}" if submit else ""),
+              flush=True)
+
+    path = os.path.join(genedir, f"{prefix}_manifest.json")
+    if os.path.isfile(path):                    # keep corners written by earlier calls
+        with open(path) as fh:
+            manifest["runs"] = {**json.load(fh).get("runs", {}), **manifest["runs"]}
+    with open(path, "w") as fh:
+        json.dump(manifest, fh, indent=1)
+    print(f"\n{len(manifest['runs'])} corner run(s) in {path}; "
+          f"{nodes} nodes x {WALLTIME} each ({ntasks} ranks, {n_parallel} sims)")
+    if skipped:
+        print(f"{len(skipped)} skipped: " + ", ".join(l for l, _ in skipped))
+    return manifest, skipped
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("--template", default=TEMPLATE, help="GENE problem dir to copy")
+    ap.add_argument("--ped-root", default=PED_ROOT, help="ped_grid cheaseBS cases <tag>/")
+    ap.add_argument("--diag-root", default=DIAG_ROOT, help="GENE output, one <tag>/ per corner")
+    ap.add_argument("--prefix", default=PREFIX, help="run dir name prefix, beside the template")
+    ap.add_argument("--only", nargs="+", default=None, help="corner tags to write")
+    ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
+    ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
+    args = ap.parse_args()
+    _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
+                       args.only, args.force, args.submit)
+    sys.exit(1 if skipped else 0)
