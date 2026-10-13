@@ -11,10 +11,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_growth.png          gamma and omega vs ky, all corners
     corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
-    corners_s_alpha.png         shat vs alpha_MHD at x0, coloured by max_ky gamma,
-                                points numbered with a key beside the plot; with
-                                --modes the marker is the mode at max gamma and
-                                the key lists each corner's modes over ky
+    corners_s_alpha.png         shat vs alpha_MHD at x0: each corner a small ring of
+                                its ky, each coloured by that ky's gamma (marker = its
+                                mode under --modes), numbered, with a key beside
     corners_local_params.png    the local parameters that vary most: % from the corner
                                 mean, or the absolute difference for those that change sign
     corners_local_table.png     their values per corner, as a table
@@ -22,8 +21,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
 
 Every legend lists a corner as its knob factors in the order (Tew, new, Teh, neh),
 e.g. (0.8, 1.2, 0.8, 0.8). Colour hue is the width pair (Tew, new), shade
-the height pair (Teh, neh); line style repeats Teh and marker neh, so no
-corner is told apart by colour alone.
+the height pair (Teh, neh); line style is the height pair too (solid,
+dashed, dotted, dash-dot) and the marker neh, so the four corners sharing a
+hue never share a line style and no corner is told apart by colour alone.
 
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --out ./corner_plots
@@ -112,7 +112,9 @@ ITERDB_VARS = {"NE": ("ne", 1e-19, "10$^{19}$ m$^{-3}$"), "TE": ("Te", 1e-3, "ke
 WIDTH_HUES = {(0.8, 0.8): "#2a78d6", (0.8, 1.2): "#eb6834",
               (1.2, 0.8): "#1baf7a", (1.2, 1.2): "#c4338a"}
 HEIGHT_SHADE = {(0.8, 0.8): -0.35, (0.8, 1.2): -0.12, (1.2, 0.8): 0.15, (1.2, 1.2): 0.38}
-TEH_LS = {0.8: "-", 1.2: "--"}
+#: Line style per height pair (Teh, neh): solid, dashed, dotted, dash-dot.
+HEIGHT_LS = {(0.8, 0.8): (0, ()), (0.8, 1.2): (0, (6, 2.5)), (1.2, 0.8): (0, (1.2, 1.8)),
+             (1.2, 1.2): (0, (7, 2, 1.5, 2))}
 NEH_MARKER = {0.8: "o", 1.2: "s"}
 GAMMA_CMAP = LinearSegmentedColormap.from_list("gamma", ["#008300", "#f0efec", "#e34948"])
 INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
@@ -147,7 +149,7 @@ def shade(hex_color: str, amount: float):
 
 def style(p) -> dict:
     return {"color": shade(WIDTH_HUES[(p["Tew"], p["new"])], HEIGHT_SHADE[(p["Teh"], p["neh"])]),
-            "ls": TEH_LS[p["Teh"]], "marker": NEH_MARKER[p["neh"]]}
+            "ls": HEIGHT_LS[(p["Teh"], p["neh"])], "marker": NEH_MARKER[p["neh"]]}
 
 
 def point_of(ds, corner) -> dict:
@@ -547,64 +549,78 @@ def corner_modes(ds):
     return np.array(at_max, dtype=object), seq
 
 
+def ky_ring(ax_span, s_span, n, radius=0.02, aspect=1.35):
+    """Data offsets placing n ky points on a small ring, lowest ky at 12 o'clock, clockwise."""
+    ang = np.pi / 2 - 2 * np.pi * np.arange(n) / n
+    return radius * ax_span * np.cos(ang), radius * aspect * s_span * np.sin(ang)
+
+
 def plot_s_alpha(ds, out, written):
+    """shat vs alpha_MHD, one ring of points per corner, one point per ky coloured by its gamma."""
     if "shat" not in ds or "alpha_MHD" not in ds:
         print("no shat/alpha_MHD (no GENE parameters read); s-alpha plot skipped")
         return
-    a, s, g = ds.alpha_MHD.values, ds.shat.values, ds.gamma_max.values
+    a, s = ds.alpha_MHD.values, ds.shat.values
     ok = np.isfinite(a) & np.isfinite(s)
     if not ok.any():
         print("shat/alpha_MHD all NaN; s-alpha plot skipped")
         return
-    gfin = g[ok & np.isfinite(g)]
+    gam, status, ky = ds.gamma.values, ds.status.values, ds.ky.values
+    modes = ds["mode"].values if "mode" in ds else np.full(gam.shape, "", dtype=object)
+    gfin = gam[ok][np.isfinite(gam[ok])]
     span = max(np.abs(gfin).max(), 1e-6) if gfin.size else 1.0
     norm = Normalize(-span, span)                # symmetric: the grey middle is gamma = 0
     wide = "mode" in ds
-    fig, (ax, key) = plt.subplots(1, 2, figsize=(14.5 if wide else 12.5, 7),
-                                  width_ratios=(3, 1.8 if wide else 1.2))
-    has = ok & np.isfinite(g)
-    # --modes: marker = the mode at the ky of max gamma; the key also lists the
-    # mode sequence over ky, so a corner that switches modes shows it.
-    at_max, seq = corner_modes(ds)
-    markers = np.array([MODE_MARKER.get(m, "o") if m else "o" for m in at_max])
-    for mk in dict.fromkeys(markers[has]):
-        sel = has & (markers == mk)
-        sc = ax.scatter(a[sel], s[sel], c=g[sel], cmap=GAMMA_CMAP, norm=norm,
-                        s=230 if mk != "o" else 190, marker=mk, edgecolors=INK,
-                        linewidths=0.8, zorder=5)
-    if "mode" in ds:
-        found = [m for m in MODE_MARKER if m in set(at_max[has])]
-        ax.legend(handles=[Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, mec=INK,
-                                  ms=8, label=f"{m} at max gamma") for m in found],
-                  frameon=False, fontsize=8, loc="upper right")
-    if (ok & ~np.isfinite(g)).any():
-        ax.scatter(a[ok & ~np.isfinite(g)], s[ok & ~np.isfinite(g)], s=190, facecolors="none",
-                   edgecolors=MUTED, linewidths=1.2, zorder=5, label="no converged ky")
-        if "mode" not in ds:
-            ax.legend(frameon=False, fontsize=8, loc="best")
-    # Points carry a number; the key beside the plot maps it to the corner, so
-    # points that sit close together never stack their labels.
-    lines = []
+    fig, (ax, key) = plt.subplots(1, 2, figsize=(15 if wide else 13.5, 7.5),
+                                  width_ratios=(3, 1.8 if wide else 1.3))
+    dx, dy = ky_ring(np.ptp(a[ok]) or 1.0, np.ptp(s[ok]) or 1.0, ky.size)
+    sc, lines = None, []
     for n, i in enumerate(np.flatnonzero(ok), start=1):
-        ax.annotate(str(n), (a[i], s[i]), ha="center", va="center", fontsize=7,
-                    fontweight="bold", color=INK, zorder=6)
-        gi = f"{g[i]:.3f}" if np.isfinite(g[i]) else "-"
-        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {gi:>6}"
-                     + (f"  {seq[i]}" if "mode" in ds else ""))
+        x, y = a[i] + dx, s[i] + dy
+        ax.plot(np.r_[x, x[:1]], np.r_[y, y[:1]], color=GRID, lw=0.8, zorder=2)
+        for j in range(ky.size):
+            if not np.isfinite(gam[i, j]):       # unconverged or missing: small hollow grey
+                ax.scatter(x[j], y[j], s=14, facecolors="none", edgecolors=MUTED,
+                           linewidths=0.8, zorder=3)
+                continue
+            field = status[i, j] == "field"
+            sc = ax.scatter(x[j], y[j], c=[gam[i, j]], cmap=GAMMA_CMAP, norm=norm, s=42,
+                            marker=MODE_MARKER.get(modes[i, j], "o") if modes[i, j] else "o",
+                            edgecolors=INK, linewidths=1.5 if field else 0.5, zorder=4)
+        ax.annotate(str(n), (a[i], s[i]), ha="center", va="center", fontsize=6.5,
+                    fontweight="bold", color=INK, zorder=6,
+                    bbox=dict(boxstyle="round,pad=0.12", fc=SURFACE, ec="none", alpha=0.8))
+        g = gam[i][np.isfinite(gam[i])]
+        rng = f"{g.min():.2f}-{g.max():.2f}" if g.size else "-"
+        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {rng:>9}"
+                     + (f"  {corner_modes(ds)[1][i]}" if wide else ""))
+    handles = [Line2D([], [], ls="none", marker="o", mfc="none", mec=MUTED, ms=5,
+                      label="ky unconverged / missing"),
+               Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.8, ms=7,
+                      label="TPED field estimate (thick edge)")]
+    if wide:
+        handles += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, mec=INK, ms=7,
+                           label=m) for m in MODE_MARKER if (modes == m).any()]
+    ax.legend(handles=handles, frameon=False, fontsize=8, loc="upper right")
     key.axis("off")
-    head = f"{'#':>2}  {LEGEND_TITLE:<21} {'max g':>6}" + ("  modes over ky" if "mode" in ds else "")
+    head = f"{'#':>2}  {LEGEND_TITLE:<21} {'gamma':>9}" + ("  modes over ky" if wide else "")
     key.text(0, 1, head + "\n" + "\n".join(lines), family="monospace", fontsize=8, va="top",
              color=INK, transform=key.transAxes)
-    if "mode" in ds:
-        key.text(0, 0, "modes over ky, low to high ky:\n" + "\n".join(
-            f"  {v} = {k}" for k, v in MODE_SHORT.items()), family="monospace", fontsize=7,
-            va="bottom", color=MUTED, transform=key.transAxes)
-    cb = fig.colorbar(sc, ax=ax, pad=0.02)
-    cb.set_label(r"$\max_{k_y}\gamma$ [$c_{ref}/L_{ref}$]")
+    foot = (f"each corner: a ring of its ky, {ky[0]:g} at 12 o'clock then clockwise\n"
+            "(" + ", ".join(f"{k:g}" for k in ky) + "); number at the corner's own\n"
+            "(alpha, shat), the ring offset is for display only")
+    if wide:
+        foot += "\n\nmodes over ky, low to high:\n" + "\n".join(
+            f"  {v} = {k}" for k, v in MODE_SHORT.items())
+    key.text(0, 0, foot, family="monospace", fontsize=7, va="bottom", color=MUTED,
+             transform=key.transAxes)
+    if sc is not None:
+        cb = fig.colorbar(sc, ax=ax, pad=0.02)
+        cb.set_label(r"$\gamma$ at each $k_y$ [$c_{ref}/L_{ref}$]")
     ax.set_xlabel(r"$\alpha_{MHD} = q_0^2\,(R_0/L_{ref})\,(-d\beta/dx)$")
     ax.set_ylabel(r"$\hat{s}$")
-    ax.margins(x=0.08, y=0.08)
-    ax.set_title(f"s-alpha at x0 = {ds.x0:g}", loc="left", fontsize=10, color=INK)
+    ax.margins(x=0.1, y=0.1)
+    ax.set_title(f"s-alpha at x0 = {ds.x0:g}, every ky", loc="left", fontsize=10, color=INK)
     tidy(ax)
     fig.tight_layout()
     save(fig, out, "corners_s_alpha.png", written)
