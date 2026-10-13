@@ -27,6 +27,15 @@ corner is told apart by colour alone.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --out ./corner_plots
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --spread 0.02 --max-params 16
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737
+    python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --modes
+
+With --modes each ky GENE converged (or the field estimate filled) is
+classified by TPED's mode_identifier (GENE_sim_analysis: fingerprint transport
+ratios from nrg, Epar and parities from field + geometry, omega/omega_star),
+drawn with that mode's marker in corners_growth.png, and listed with the
+inputs behind each label in corners_modes.csv. The fingerprint diffusivity is
+Gamma / omn: where omn ~ 0 (the ne top) the D ratios, and so the ETG, KBM and
+ITG/TEM checks, are unreliable; read the inputs before the label.
 
 A ky whose omega file carries a TPED field estimate below GENE's 0/0 line
 (field_omega.py --write) plots as a diamond with ±1 std error bars.
@@ -47,6 +56,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
 import os
 import re
 import warnings
@@ -107,6 +117,13 @@ INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 DPI = 150
 #: Which reading of a ky wins when two scanfiles dirs hold it.
 RANK = {"ok": 2, "field": 1}
+
+#: --modes: TPED mode_identifier label -> marker, and the inputs it decided on,
+#: (TPED node, variable) -> column name.
+MODE_MARKER = {"ITG_TEM": "o", "ETG": "^", "KBM": "s", "MTM": "v", "unidentified": "*"}
+MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-Chi_e"): "Xi_Xe",
+               ("fingerprints", "Q_EM_e-|Q_ES|_tot"): "QEM_e", ("epar", "Epar_norm"): "Epar_norm",
+               ("epar", "parity_apar"): "parity_apar", ("epar", "parity_phi"): "parity_phi"}
 
 
 # ----------------------------------------------------------------------------- labels, style
@@ -187,7 +204,8 @@ def alpha_mhd(pr: dict) -> float:
 
 
 def gene_corner(corner_dir: str):
-    """({kymin: (gamma, omega, status)}, local parameters) of one corner, or None."""
+    """({kymin: (gamma, omega, status, gamma_std, omega_std, parameters path)},
+    local parameters) of one corner, or None."""
     runs = gene_runs(corner_dir)
     if not runs:
         return None
@@ -204,7 +222,7 @@ def gene_corner(corner_dir: str):
         k = round(rec["kymin"], 6)
         if k not in by_ky or RANK.get(rec["status"], 0) >= RANK.get(by_ky[k][2], 0):
             by_ky[k] = (rec["gamma"], rec["omega"], rec["status"], rec["gamma_std"],
-                        rec["omega_std"])
+                        rec["omega_std"], path)
         for k, v in rec["params"].items():
             params.setdefault(k, []).append(v)
     local = {}
@@ -217,6 +235,67 @@ def gene_corner(corner_dir: str):
     if local:
         local["alpha_MHD"] = alpha_mhd(local)
     return by_ky, local
+
+
+def classify(par_path: str) -> dict:
+    """TPED mode_identifier on one scan member: {'mode', inputs..., 'w_wstar'}."""
+    from TPED.projects.GENE_sim_analysis.src.sim_assembler import GeneSimulationPlus
+    tped_log = logging.getLogger("TPED")
+    level = tped_log.level
+    tped_log.setLevel(logging.CRITICAL)             # a missing file is reported once, below
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim = GeneSimulationPlus(par_path)
+            node = sim.analysis.mode_identifier()
+    finally:
+        tped_log.setLevel(level)
+    out = {"mode": str(node.ds["mode_ID"].values)}
+    for (src, var), col in MODE_INPUTS.items():
+        ds_ = sim.tree[src].ds
+        out[col] = float(np.asarray(ds_[var].values).squeeze()) if var in ds_ else np.nan
+    wstar = float(node.ds["omega_star"].values)
+    out["w_wstar"] = float(sim.tree["omega"].ds["omega"].values) / wstar if wstar else np.nan
+    return out
+
+
+def add_modes(ds: xr.Dataset) -> xr.Dataset:
+    """mode (corner, ky) and its inputs, for every ky with a growth rate (GENE or field)."""
+    cols = ["mode", *MODE_INPUTS.values(), "w_wstar"]
+    vals = {c: np.full(ds.gamma.shape, "" if c == "mode" else np.nan, dtype=object if c == "mode"
+                       else float) for c in cols}
+    for i, c in enumerate(ds.corner.values):
+        for j, ky in enumerate(ds.ky.values):
+            if ds.status.values[i, j] not in ("ok", "field"):
+                continue
+            try:
+                res = classify(str(ds.path.values[i, j]))
+            except Exception as exc:              # missing field/geometry: no label, no crash
+                msg = str(exc).split(" load_errors")[0].splitlines()[0][:160]
+                print(f"    {c} ky={ky:g}: no mode ({type(exc).__name__}: {msg})")
+                continue
+            for col in cols:
+                vals[col][i, j] = res[col]
+        labels = [f"{ky:g} {m}" for ky, m in zip(ds.ky.values, vals["mode"][i]) if m]
+        print(f"--- {c}: " + ", ".join(labels))
+    for col in cols:
+        ds[f"mode_{col}" if col != "mode" else "mode"] = (("corner", "ky"), vals[col])
+    ds["mode"] = ds["mode"].astype(str)
+    return ds
+
+
+def write_modes_csv(ds, out, written):
+    path = os.path.join(out, "corners_modes.csv")
+    cols = ["status", "gamma", "omega", "mode", *(f"mode_{c}" for c in MODE_INPUTS.values()),
+            "mode_w_wstar"]
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky"] + cols) + "\n")
+        for i, c in enumerate(ds.corner.values):
+            for j, ky in enumerate(ds.ky.values):
+                row = [str(ds[k].values[i, j]) if ds[k].dtype.kind in "OUS"
+                       else f"{ds[k].values[i, j]:.6g}" for k in cols]
+                fh.write(",".join([c, *(f"{ds[k].values[i]:g}" for k in ORDER), f"{ky:g}"] + row)
+                         + "\n")
+    written.append(path)
 
 
 # ----------------------------------------------------------------------------- profiles
@@ -234,7 +313,8 @@ def iterdb_profiles(case_dir: str):
 
 # ----------------------------------------------------------------------------- dataset
 
-def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0) -> xr.Dataset:
+def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
+                 modes=False) -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
@@ -280,6 +360,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0) ->
     ds["gamma_std"] = (("corner", "ky"), [on_ky(n, 3, np.nan) for n in names],
                        {"long_name": "std of the TPED field estimate (status 'field' only)"})
     ds["omega_std"] = (("corner", "ky"), [on_ky(n, 4, np.nan) for n in names])
+    ds["path"] = (("corner", "ky"), [on_ky(n, 5, "") for n in names])
     keys = sorted({k for g in gene.values() for k in g[1]})
     for k in keys:
         ds[k] = ("corner", [gene[n][1].get(k, np.nan) if n in gene else np.nan for n in names])
@@ -308,6 +389,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0) ->
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
     ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root)
+    if modes and gene:
+        print("\nmode_identifier (TPED) per ky:")
+        ds = add_modes(ds)
     return ds
 
 
@@ -339,11 +423,22 @@ def save(fig, out, name, written):
 def plot_growth(ds, out, written):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
     unconv = fielded = False
+    modes = "mode" in ds
     for c in ds.corner.values:
         st = style(point_of(ds, c))
         status = ds.status.sel(corner=c).values
         for ax, var in zip(axes, ("gamma", "omega")):
-            ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.6, ms=5, mfc="none", **st)
+            if modes:                   # line only; each point gets its mode's marker below
+                ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.4, color=st["color"], ls=st["ls"])
+                y = ds[var].sel(corner=c).values
+                for j, m in enumerate(ds["mode"].sel(corner=c).values):
+                    if m and np.isfinite(y[j]):
+                        filled = status[j] == "ok"
+                        ax.plot(ds.ky.values[j], y[j], MODE_MARKER.get(m, "*"), ms=7,
+                                color=st["color"], mec=st["color"] if filled else INK,
+                                mfc=st["color"] if filled else "none", mew=1.2, zorder=6)
+            else:
+                ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.6, ms=5, mfc="none", **st)
             bad = ds.ky.values[np.isin(status, ("empty", "zero"))]
             if bad.size:
                 unconv = True
@@ -352,7 +447,8 @@ def plot_growth(ds, out, written):
             if est.any():
                 fielded = True
                 ax.errorbar(ds.ky.values[est], ds[var].sel(corner=c).values[est],
-                            yerr=ds[f"{var}_std"].sel(corner=c).values[est], fmt="D",
+                            yerr=ds[f"{var}_std"].sel(corner=c).values[est],
+                            fmt="none" if modes else "D",
                             color=st["color"], ms=6, mec=INK, mew=0.6, capsize=3, lw=1, zorder=5)
     for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
         ax.axhline(0, color=MUTED, lw=0.8)
@@ -364,9 +460,19 @@ def plot_growth(ds, out, written):
     extra = [Line2D([], [], ls="none", marker="x", color=INK, ms=8, mew=2,
                     label="unconverged (empty or 0/0 omega)")] if unconv else []
     if fielded:
-        extra.append(Line2D([], [], ls="none", marker="D", color=MUTED, mec=INK, ms=6,
-                            label="TPED field estimate ±1σ (GENE 0/0)"))
-    legend_right(fig, corner_handles(ds), extra)
+        extra.append(Line2D([], [], ls="none", marker="o" if modes else "D", color=MUTED,
+                            mec=INK, mfc="none" if modes else MUTED, ms=6,
+                            label="TPED field estimate ±1σ" + (" (hollow)" if modes else "")))
+    if modes:
+        found = [m for m in MODE_MARKER if (ds["mode"].values == m).any()]
+        extra += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, ms=7,
+                         label=f"mode: {m}") for m in found]
+        handles = [Line2D([], [], lw=1.8, color=style(point_of(ds, c))["color"],
+                          ls=style(point_of(ds, c))["ls"], label=str(l))
+                   for c, l in zip(ds.corner.values, ds.label.values)]
+    else:
+        handles = corner_handles(ds)
+    legend_right(fig, handles, extra)
     fig.suptitle(f"NSTX 129038 corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
@@ -554,10 +660,10 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0):
+        x0=X0, modes=False):
     x0 = tuple(x0)
     out = out or default_out(x0)
-    ds = load_dataset(diag_root, ped_root, x0)
+    ds = load_dataset(diag_root, ped_root, x0, modes)
     os.makedirs(out, exist_ok=True)
     written: list[str] = []
     with warnings.catch_warnings():
@@ -567,6 +673,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
         plot_s_alpha(ds, out, written)
         plot_local(ds, out, written, spread, max_params)
+        if "mode" in ds:
+            write_modes_csv(ds, out, written)
     print("\nwrote\n  " + "\n  ".join(written))
     return ds
 
@@ -583,9 +691,13 @@ if __name__ == "__main__":
                     help="radius of the scan to plot (reads its x0_<x0>/ folder)")
     ap.add_argument("--out", default=None,
                     help="directory for the PNGs and CSV [<diag-root>/x0_<x0>/plots]")
+    ap.add_argument("--modes", action="store_true",
+                    help="classify each ky with TPED mode_identifier (reads nrg, field, "
+                         "geometry; slower) and mark the growth plot by mode")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
                     help="most varying parameters to chart and tabulate")
     args = ap.parse_args()
-    run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params, args.x0)
+    run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params, args.x0,
+        args.modes)
