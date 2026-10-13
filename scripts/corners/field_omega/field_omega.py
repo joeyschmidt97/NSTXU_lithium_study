@@ -11,14 +11,19 @@ line below GENE's own line, which is never touched. TPED's GeneOmega (and so
 plot_corners.py and the dashboard) then read the estimate, with its std,
 wherever GENE's line is 0/0 or missing, and keep GENE's value everywhere else.
 
-An estimate is written only when both stds pass
+Every estimate is written (--passing-only for just the passing ones), with
+a verdict on the line:
 
-    std <= max(REL_TOL * |value|, ABS_TOL)
+    pass       both stds <= max(REL_TOL * |value|, ABS_TOL); TPED reads it as the
+               point's gamma/omega (so a growth rate of 0.03 needs std < 0.005)
+    decaying   fails that, but gamma + 2 std < 0: no growing mode in the window
+    ambiguous  fails, and a slow-growing mode cannot be told from beating damped
+               modes (two modes competing at low ky is the usual reason it timed out)
 
-so a growth rate of 0.03 needs std below 0.005, not the estimator's absolute
-default of 0.1. A run whose last stretch is not one clean exponential (two
-modes competing at low ky is the usual reason it timed out) fails, and stays
-unconverged: that point needs a longer or restarted run, not a fit.
+Only 'pass' becomes the point's gamma; 'decaying' and 'ambiguous' stay
+unconverged in plots but carry gamma_field +- gamma_field_std and
+field_verdict in TPED's GeneOmega, for samplers (VURS) that weigh a point by
+its uncertainty.
 
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega               # report only
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --write
@@ -90,10 +95,20 @@ def passes(value: float, std: float, rel_tol=REL_TOL, abs_tol=ABS_TOL) -> bool:
     return bool(np.isfinite(value) and np.isfinite(std) and std <= max(rel_tol * abs(value), abs_tol))
 
 
+def verdict(g, gs, w, ws, rel_tol=REL_TOL, abs_tol=ABS_TOL) -> str:
+    """'pass' (both stds within tolerance), 'decaying' (fails, but gamma + 2 std < 0:
+    no growing mode in the window) or 'ambiguous' (a slow-growing mode and beating
+    damped modes cannot be told apart)."""
+    if passes(g, gs, rel_tol, abs_tol) and passes(w, ws, rel_tol, abs_tol):
+        return "pass"
+    return "decaying" if np.isfinite(g) and np.isfinite(gs) and g + 2 * gs < 0 else "ambiguous"
+
+
 def run(diag_root=DIAG_ROOT, x0=X0, write=False, validate=False, window=WINDOW,
-        rel_tol=REL_TOL, abs_tol=ABS_TOL):
+        rel_tol=REL_TOL, abs_tol=ABS_TOL, passing_only=False):
     root = os.path.join(diag_root, x0_label(x0))
-    counts = {"written": 0, "passed": 0, "failed": 0, "no field": 0}
+    counts = {"written": 0, "pass": 0, "decaying": 0, "ambiguous": 0, "fit failed": 0,
+              "no field": 0}
     print(f"{root}\nfit window {window[0]:g}-{window[1]:g} of the field output, {FIELDS}, "
           f"{TRACE_MODE}; pass: std <= max({rel_tol:g}*|value|, {abs_tol:g})"
           + ("" if write else "; REPORT ONLY (--write to append)") + "\n")
@@ -115,26 +130,26 @@ def run(diag_root=DIAG_ROOT, x0=X0, write=False, validate=False, window=WINDOW,
             try:
                 est, stats = fit(field_path, window)
             except Exception as exc:
-                counts["failed"] += 1
+                counts["fit failed"] += 1
                 print(f"{tag(p):34} {ky:5.2f} {gene:>11}  fit failed: {type(exc).__name__}: {exc}")
                 continue
             s = stats[FIELDS]
             g, w = s["gamma_avg"], s["omega_avg"]
             gs, ws = np.sqrt(s["gamma_variance"]), np.sqrt(s["omega_variance"])
-            ok = passes(g, gs, rel_tol, abs_tol) and passes(w, ws, rel_tol, abs_tol)
+            v = verdict(g, gs, w, ws, rel_tol, abs_tol)
             if state == "converged":                # --validate: compare, never write
                 result = (f"check: d_gamma {g - values['gamma_gene']:+.4f}, "
                           f"d_omega {w - values['omega_gene']:+.4f}")
-            elif ok:
-                counts["passed"] += 1
-                if write:
-                    with contextlib.redirect_stdout(io.StringIO()):
-                        est._write_to_omega_file(stats)
-                    counts["written"] += 1
-                result = "PASS" + (", appended" if write else "")
             else:
-                counts["failed"] += 1
-                result = "FAIL (std too large), left unconverged"
+                counts[v] += 1
+                result = {"pass": "PASS, used as gamma",
+                          "decaying": "DECAYING (gamma+2std<0), recorded only",
+                          "ambiguous": "AMBIGUOUS (std too large), recorded only"}[v]
+                if write and (v == "pass" or not passing_only):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        est._write_to_omega_file(stats, v)
+                    counts["written"] += 1
+                    result += ", appended"
             print(f"{tag(p):34} {ky:5.2f} {gene:>11} {g:9.4f} ±{gs:7.1e} {w:9.4f} ±{ws:7.1e}  {result}")
     print("\n" + ", ".join(f"{v} {k}" for k, v in counts.items()))
     return counts
@@ -147,7 +162,10 @@ if __name__ == "__main__":
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--diag-root", default=DIAG_ROOT, help="corners are under <diag-root>/x0_<x0>/<tag>/")
     ap.add_argument("--x0", type=float, nargs="+", default=list(X0), help="which x0_<x0>/ scan")
-    ap.add_argument("--write", action="store_true", help="append passing estimates to the omega files")
+    ap.add_argument("--write", action="store_true",
+                    help="append every estimate, with its verdict, to the omega files")
+    ap.add_argument("--passing-only", action="store_true",
+                    help="with --write, append only estimates that pass")
     ap.add_argument("--validate", action="store_true",
                     help="also fit ky GENE converged and print the difference (never written)")
     ap.add_argument("--window", type=float, nargs=2, default=list(WINDOW),
@@ -156,4 +174,4 @@ if __name__ == "__main__":
     ap.add_argument("--abs-tol", type=float, default=ABS_TOL)
     args = ap.parse_args()
     run(args.diag_root, tuple(args.x0), args.write, args.validate, tuple(args.window),
-        args.rel_tol, args.abs_tol)
+        args.rel_tol, args.abs_tol, args.passing_only)
