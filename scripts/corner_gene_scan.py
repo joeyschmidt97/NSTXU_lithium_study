@@ -31,6 +31,7 @@ and records everything in <genedir>/<prefix>_x0_<x0>_manifest.json.
     python corner_gene_scan.py --only Teh0.80_Tew0.80_neh0.80_new0.80 --submit
     python corner_gene_scan.py --x0 0.6737 --submit  # the ne-top radius instead
     python corner_gene_scan.py --x0 0.6737 --kymin 1.5 2 3 --walltime 01:30:00         --prefix NSTX_129038_corner_kyhi --submit     # extra ky into the same diagdirs
+    python corner_gene_scan.py --x0 0.6737 --only Teh0.80_Tew0.80_neh0.80_new0.80         --kymin 0.3 1 --set nx0=7 nz0=128 --prefix NSTX_129038_res2         --diag-root .../corners_res2 --test --submit  # resolution check, debug queue
 
 A second scan into an existing diagdir lands in the next scanfilesNNNN;
 plot_corners.py merges every scanfiles dir by ky.
@@ -181,10 +182,12 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
           only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
-          walltime=None, kymin=None):
+          walltime=None, kymin=None, overrides=None):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
     kymin    ky values to scan [KYMIN]
+    overrides  {parameter: value} set after everything else (e.g. a resolution
+             check: {'nx0': '7', 'nz0': '128'}); each must exist once in the template
     walltime SLURM -t (HH:MM:SS); timelim follows it
     x0       radius (rho_tor) or radii to scan; more than one is a scanlist
     test     one corner, debug queue, TEST_WALLTIME, *_test dirs and manifest
@@ -209,7 +212,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     timelim = walltime_seconds(walltime) - TIMELIM_MARGIN
     prefix = f"{prefix}_{x0_label(x0)}"
 
-    manifest = {"template": template, "ped_root": ped_root, "kymin": kymin, "x0": x0,
+    manifest = {"template": template, "ped_root": ped_root, "kymin": kymin, "x0": x0, "overrides": overrides or {},
                 "walltime": walltime, "qos": qos, "test": test, "timelim": timelim, "nodes": nodes,
                 "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
     skipped = []
@@ -227,6 +230,8 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         diagdir = os.path.join(diag_root, x0_label(x0), label)
         parameters = corner_parameters(par_template, case_dir, geomfile, diagdir,
                                        n_parallel, timelim, x0, kymin)
+        for key, value in (overrides or {}).items():
+            parameters = set_param(parameters, key, value)
         submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos)
         if dry_run:
             print(f"--- {label}: would write {run_dir}\n    output to {diagdir}\n")
@@ -293,6 +298,8 @@ if __name__ == "__main__":
     ap.add_argument("--prefix", default=PREFIX, help="run dir name prefix, beside the template")
     ap.add_argument("--kymin", type=float, nargs="+", default=None,
                     help=f"ky values to scan [{scanlist(KYMIN)}]")
+    ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
+                    help="override template parameters, e.g. --set nx0=7 nz0=128")
     ap.add_argument("--walltime", default=None,
                     help=f"SLURM wall time HH:MM:SS [{WALLTIME}; {TEST_WALLTIME} with --test]")
     ap.add_argument("--only", nargs="+", default=None, help="corner tags to write")
@@ -305,5 +312,6 @@ if __name__ == "__main__":
     args = ap.parse_args()
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
-                       args.walltime, args.kymin)
+                       args.walltime, args.kymin,
+                       dict(kv.split("=", 1) for kv in args.set))
     sys.exit(1 if skipped else 0)
