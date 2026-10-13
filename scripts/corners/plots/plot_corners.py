@@ -11,6 +11,8 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_growth.png          gamma and omega vs ky, all corners
     corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
+    corners_mode_scaling.png    (--modes) mode per corner and ky as a table, and the
+                                mode mix at each knob level; + corners_mode_scaling.csv
     corners_s_alpha.png         shat vs alpha_MHD at x0: each corner a small ring of
                                 its ky, each coloured by that ky's gamma (marker = its
                                 mode under --modes), numbered, with a key beside
@@ -125,6 +127,13 @@ RANK = {"ok": 2, "field": 1}
 #: --modes: TPED mode_identifier label -> marker, and the inputs it decided on,
 #: (TPED node, variable) -> column name.
 MODE_MARKER = {"ITG_TEM": "o", "ETG": "^", "KBM": "s", "MTM": "v", "unidentified": "*"}
+#: Mode colours: validated categorical slots 7, 4, 1, 2 (violet, yellow, blue, orange)
+#: of the reference palette; yellow is under 3:1 on the surface, so every mode
+#: panel also carries its label (legend, table text).
+MODE_COLOR = {"ITG_TEM": "#6250d6", "ETG": "#eda100", "KBM": "#2a78d6", "MTM": "#eb6834",
+              "unidentified": "#9b9a92"}
+#: Gaussian width (in ky) of the smoothed mode fraction under the growth plot.
+MODE_KDE_BW = 0.12
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
 MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-Chi_e"): "Xi_Xe",
                ("fingerprints", "Q_EM_e-|Q_ES|_tot"): "QEM_e", ("epar", "Epar_norm"): "Epar_norm",
@@ -426,9 +435,14 @@ def save(fig, out, name, written):
 
 
 def plot_growth(ds, out, written):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
-    unconv = fielded = False
     modes = "mode" in ds
+    if modes:
+        fig, grid = plt.subplots(2, 2, figsize=(13, 8.2), sharex=True,
+                                 height_ratios=(3, 1.5))
+        axes, mode_axes = grid[0], grid[1]
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
+    unconv = fielded = False
     for c in ds.corner.values:
         st = style(point_of(ds, c))
         status = ds.status.sel(corner=c).values
@@ -455,9 +469,13 @@ def plot_growth(ds, out, written):
                             yerr=ds[f"{var}_std"].sel(corner=c).values[est],
                             fmt="none" if modes else "D",
                             color=st["color"], ms=6, mec=INK, mew=0.6, capsize=3, lw=1, zorder=5)
+    if modes:
+        mode_strip(mode_axes[0], ds, weighted=False)
+        mode_strip(mode_axes[1], ds, weighted=True)
     for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
         ax.axhline(0, color=MUTED, lw=0.8)
-        ax.set_xlabel(r"$k_y\rho_{ref}$")
+        if not modes:
+            ax.set_xlabel(r"$k_y\rho_{ref}$")
         ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
         tidy(ax)
     axes[0].set_title("growth rate", loc="left", fontsize=10, color=INK)
@@ -482,6 +500,116 @@ def plot_growth(ds, out, written):
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
     save(fig, out, "corners_growth.png", written)
+
+
+def mode_strip(ax, ds, weighted):
+    """Mode make-up at each ky as stacked bars: the fraction of corners in each
+    mode (with a kernel-smoothed fraction over ky as lines), or with *weighted*
+    each mode's share of the positive growth summed over corners."""
+    ky, m, g = ds.ky.values, ds["mode"].values, ds.gamma.values
+    found = [x for x in MODE_COLOR if (m == x).any()]
+    width = 0.6 * (np.diff(ky).min() if ky.size > 1 else 0.2)
+    bottom = np.zeros(ky.size)
+    gpos = np.where(np.isfinite(g) & (m != ""), np.clip(np.nan_to_num(g), 0, None), 0.0)
+    total = gpos.sum(axis=0)
+    for mode in found:
+        if weighted:
+            h = np.divide((gpos * (m == mode)).sum(axis=0), total,
+                          out=np.zeros(ky.size), where=total > 0)
+        else:
+            h = (m == mode).sum(axis=0) / m.shape[0]
+        ax.bar(ky, h, width, bottom=bottom, color=MODE_COLOR[mode], edgecolor=SURFACE, lw=1,
+               label=mode, zorder=3)
+        bottom += h
+    if not weighted and found:
+        x = np.linspace(ky.min() - 2 * MODE_KDE_BW, ky.max() + 2 * MODE_KDE_BW, 400)
+        # Kernel-weighted average of each ky's fraction (Nadaraya-Watson): stays in
+        # 0-1 however closely the ky are spaced, unlike a summed KDE.
+        w = np.exp(-0.5 * ((x[None] - ky[:, None]) / MODE_KDE_BW) ** 2)
+        for mode in found:
+            frac = (m == mode).sum(axis=0) / m.shape[0]
+            ax.plot(x, (w * frac[:, None]).sum(axis=0) / w.sum(axis=0), color=MODE_COLOR[mode],
+                    lw=2, zorder=4)
+        ax.set_ylim(0, 1.02)
+        ax.set_ylabel("fraction of corners")
+        ax.set_title(f"mode fraction per ky (bars), kernel-smoothed over ky (lines, bw "
+                     f"{MODE_KDE_BW:g})", loc="left", fontsize=9, color=INK)
+        ax.legend(frameon=False, fontsize=7.5, ncols=len(found), loc="upper left",
+                  bbox_to_anchor=(0, -0.28))
+    else:
+        ax.set_ylim(0, 1.02)
+        ax.set_ylabel(r"share of $\Sigma\gamma_{>0}$")
+        ax.set_title("each mode's share of the growth at each ky", loc="left", fontsize=9,
+                     color=INK)
+    ax.set_xlabel(r"$k_y\rho_{ref}$")
+    tidy(ax)
+
+
+def plot_mode_scaling(ds, out, written):
+    """Mode at every (corner, ky) as a coloured table, and per knob level the mode
+    make-up of all labelled ky: how each profile scaling moves the mode mix."""
+    m, ky = ds["mode"].values, ds.ky.values
+    status = ds.status.values
+    n = ds.sizes["corner"]
+    found = [x for x in MODE_COLOR if (m == x).any()]
+    fig, (tab, bars) = plt.subplots(1, 2, figsize=(16, max(5.5, 0.34 * n + 2.2)),
+                                    width_ratios=(1.15, 1))
+    for i in range(n):
+        for j in range(ky.size):
+            mode = m[i, j]
+            fc = MODE_COLOR.get(mode, SURFACE) if mode else SURFACE
+            tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=SURFACE, lw=2))
+            text = MODE_SHORT.get(mode, mode) if mode else (
+                "x" if status[i, j] in ("zero", "empty") else "-")
+            dark = mode and np.mean(to_rgb(fc)) < 0.55
+            tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=7.5,
+                     color="white" if dark else INK)
+    tab.set_xlim(0, ky.size)
+    tab.set_ylim(0, n)
+    tab.set_xticks(np.arange(ky.size) + 0.5, [f"{k:g}" for k in ky], fontsize=8)
+    tab.set_yticks(np.arange(n) + 0.5, [str(l) for l in ds.label.values[::-1]], fontsize=8)
+    tab.set_xlabel(r"$k_y\rho_{ref}$")
+    tab.tick_params(length=0)
+    for sp in tab.spines.values():
+        sp.set_visible(False)
+    tab.set_title(f"mode per corner and ky, rows {LEGEND_TITLE}  (x unconverged, - none)",
+                  loc="left", fontsize=10, color=INK)
+
+    groups = [(k, v) for k in ORDER for v in (0.8, 1.2)]
+    xs = np.array([i + 0.6 * (i // 2) for i in range(len(groups))])
+    bottom = np.zeros(len(groups))
+    labelled = [(m[ds[k].values == v] != "").sum() for k, v in groups]
+    rows = []
+    for mode in found:
+        frac = np.array([(m[ds[k].values == v] == mode).sum() / max(t, 1)
+                         for (k, v), t in zip(groups, labelled)])
+        bars.bar(xs, frac, 0.8, bottom=bottom, color=MODE_COLOR[mode], edgecolor=SURFACE,
+                 lw=1, label=mode, zorder=3)
+        for x, f, b in zip(xs, frac, bottom):
+            if f >= 0.08:
+                bars.text(x, b + f / 2, f"{100 * f:.0f}%", ha="center", va="center", fontsize=7,
+                          zorder=4,
+                          color="white" if np.mean(to_rgb(MODE_COLOR[mode])) < 0.55 else INK)
+        bottom += frac
+        rows.append((mode, frac))
+    bars.set_xticks(xs, [f"{k}\n{v:g}" for k, v in groups], fontsize=8)
+    bars.set_ylim(0, 1.02)
+    bars.set_ylabel("share of labelled ky")
+    bars.set_title("mode mix at each knob level (all other knobs pooled)", loc="left",
+                   fontsize=10, color=INK)
+    bars.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    tidy(bars)
+    fig.suptitle(f"NSTX 129038 corners at x0 = {ds.x0:g}: profile scaling vs mode",
+                 x=0.02, ha="left", fontsize=12, color=INK)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    save(fig, out, "corners_mode_scaling.png", written)
+
+    path = os.path.join(out, "corners_mode_scaling.csv")
+    with open(path, "w") as fh:
+        fh.write("knob,level,labelled_ky," + ",".join(found) + "\n")
+        for g_i, ((k, v), t) in enumerate(zip(groups, labelled)):
+            fh.write(f"{k},{v:g},{t}," + ",".join(f"{fr[g_i]:.3f}" for _, fr in rows) + "\n")
+    written.append(path)
 
 
 def fit_ylim(ax, x, ys, xlim, pad=0.05):
@@ -732,6 +860,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_local(ds, out, written, spread, max_params)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
+            plot_mode_scaling(ds, out, written)
     print("\nwrote\n  " + "\n  ".join(written))
     return ds
 
