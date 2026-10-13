@@ -12,7 +12,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
     corners_s_alpha.png         shat vs alpha_MHD at x0, coloured by max_ky gamma,
-                                points numbered with a key beside the plot
+                                points numbered with a key beside the plot; with
+                                --modes the marker is the mode at max gamma and
+                                the key lists each corner's modes over ky
     corners_local_params.png    the local parameters that vary most: % from the corner
                                 mean, or the absolute difference for those that change sign
     corners_local_table.png     their values per corner, as a table
@@ -121,6 +123,7 @@ RANK = {"ok": 2, "field": 1}
 #: --modes: TPED mode_identifier label -> marker, and the inputs it decided on,
 #: (TPED node, variable) -> column name.
 MODE_MARKER = {"ITG_TEM": "o", "ETG": "^", "KBM": "s", "MTM": "v", "unidentified": "*"}
+MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
 MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-Chi_e"): "Xi_Xe",
                ("fingerprints", "Q_EM_e-|Q_ES|_tot"): "QEM_e", ("epar", "Epar_norm"): "Epar_norm",
                ("epar", "parity_apar"): "parity_apar", ("epar", "parity_phi"): "parity_phi"}
@@ -527,6 +530,23 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
     save(fig, out, name, written)
 
 
+def corner_modes(ds):
+    """(mode at each corner's max-gamma ky, mode sequence over ky e.g. 'IT>KBM'), or blanks."""
+    n = ds.sizes["corner"]
+    if "mode" not in ds:
+        return np.array([""] * n, dtype=object), [""] * n
+    at_max, seq = [], []
+    for i in range(n):
+        modes = ds["mode"].values[i]
+        gam = ds["gamma"].values[i]
+        has = np.isfinite(gam) & (modes != "")
+        at_max.append(modes[np.flatnonzero(has)[np.argmax(gam[has])]] if has.any() else "")
+        runs = [m for j, m in enumerate(modes) if m and (j == 0 or m != modes[j - 1])]
+        runs = [m for j, m in enumerate(runs) if j == 0 or m != runs[j - 1]]
+        seq.append(">".join(MODE_SHORT.get(m, m) for m in runs) or "-")
+    return np.array(at_max, dtype=object), seq
+
+
 def plot_s_alpha(ds, out, written):
     if "shat" not in ds or "alpha_MHD" not in ds:
         print("no shat/alpha_MHD (no GENE parameters read); s-alpha plot skipped")
@@ -539,14 +559,29 @@ def plot_s_alpha(ds, out, written):
     gfin = g[ok & np.isfinite(g)]
     span = max(np.abs(gfin).max(), 1e-6) if gfin.size else 1.0
     norm = Normalize(-span, span)                # symmetric: the grey middle is gamma = 0
-    fig, (ax, key) = plt.subplots(1, 2, figsize=(12.5, 7), width_ratios=(3, 1.2))
+    wide = "mode" in ds
+    fig, (ax, key) = plt.subplots(1, 2, figsize=(14.5 if wide else 12.5, 7),
+                                  width_ratios=(3, 1.8 if wide else 1.2))
     has = ok & np.isfinite(g)
-    sc = ax.scatter(a[has], s[has], c=g[has], cmap=GAMMA_CMAP, norm=norm, s=190,
-                    edgecolors=INK, linewidths=0.8, zorder=5)
+    # --modes: marker = the mode at the ky of max gamma; the key also lists the
+    # mode sequence over ky, so a corner that switches modes shows it.
+    at_max, seq = corner_modes(ds)
+    markers = np.array([MODE_MARKER.get(m, "o") if m else "o" for m in at_max])
+    for mk in dict.fromkeys(markers[has]):
+        sel = has & (markers == mk)
+        sc = ax.scatter(a[sel], s[sel], c=g[sel], cmap=GAMMA_CMAP, norm=norm,
+                        s=230 if mk != "o" else 190, marker=mk, edgecolors=INK,
+                        linewidths=0.8, zorder=5)
+    if "mode" in ds:
+        found = [m for m in MODE_MARKER if m in set(at_max[has])]
+        ax.legend(handles=[Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, mec=INK,
+                                  ms=8, label=f"{m} at max gamma") for m in found],
+                  frameon=False, fontsize=8, loc="upper right")
     if (ok & ~np.isfinite(g)).any():
         ax.scatter(a[ok & ~np.isfinite(g)], s[ok & ~np.isfinite(g)], s=190, facecolors="none",
                    edgecolors=MUTED, linewidths=1.2, zorder=5, label="no converged ky")
-        ax.legend(frameon=False, fontsize=8, loc="best")
+        if "mode" not in ds:
+            ax.legend(frameon=False, fontsize=8, loc="best")
     # Points carry a number; the key beside the plot maps it to the corner, so
     # points that sit close together never stack their labels.
     lines = []
@@ -554,10 +589,16 @@ def plot_s_alpha(ds, out, written):
         ax.annotate(str(n), (a[i], s[i]), ha="center", va="center", fontsize=7,
                     fontweight="bold", color=INK, zorder=6)
         gi = f"{g[i]:.3f}" if np.isfinite(g[i]) else "-"
-        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {gi:>6}")
+        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {gi:>6}"
+                     + (f"  {seq[i]}" if "mode" in ds else ""))
     key.axis("off")
-    key.text(0, 1, f"{'#':>2}  {LEGEND_TITLE:<21} {'max g':>6}\n" + "\n".join(lines),
-             family="monospace", fontsize=8, va="top", color=INK, transform=key.transAxes)
+    head = f"{'#':>2}  {LEGEND_TITLE:<21} {'max g':>6}" + ("  modes over ky" if "mode" in ds else "")
+    key.text(0, 1, head + "\n" + "\n".join(lines), family="monospace", fontsize=8, va="top",
+             color=INK, transform=key.transAxes)
+    if "mode" in ds:
+        key.text(0, 0, "modes over ky, low to high ky:\n" + "\n".join(
+            f"  {v} = {k}" for k, v in MODE_SHORT.items()), family="monospace", fontsize=7,
+            va="bottom", color=MUTED, transform=key.transAxes)
     cb = fig.colorbar(sc, ax=ax, pad=0.02)
     cb.set_label(r"$\max_{k_y}\gamma$ [$c_{ref}/L_{ref}$]")
     ax.set_xlabel(r"$\alpha_{MHD} = q_0^2\,(R_0/L_{ref})\,(-d\beta/dx)$")
