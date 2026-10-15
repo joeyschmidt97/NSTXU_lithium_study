@@ -14,8 +14,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_mode_scaling.png    (--modes) mode per corner and ky as a table, and the
                                 mode mix at each knob level; + corners_mode_scaling.csv
     corners_s_alpha.png         shat vs alpha_MHD at x0: each corner a small ring of
-                                its ky, each coloured by that ky's gamma (marker = its
-                                mode under --modes), numbered, with a key beside
+                                its converged ky (unconverged ones left out), each
+                                coloured by that ky's gamma (marker = its mode under
+                                --modes), numbered, with a key beside
     corners_local_params.png    the local parameters that vary most: % from the corner
                                 mean, or the absolute difference for those that change sign
     corners_local_table.png     their values per corner, as a table
@@ -734,7 +735,10 @@ def plot_s_alpha(ds, out, written):
     if not ok.any():
         print("shat/alpha_MHD all NaN; s-alpha plot skipped")
         return
-    gam, status, ky = ds.gamma.values, ds.status.values, ds.ky.values
+    status, ky = ds.status.values, ds.ky.values
+    # converged ky only: GENE's own value or a passing field estimate; unconverged,
+    # missing and --field-fits decaying/ambiguous fits are left off the rings
+    gam = np.where(np.isin(status, list(FIT_STYLE)), np.nan, ds.gamma.values)
     modes = ds["mode"].values if "mode" in ds else np.full(gam.shape, "", dtype=object)
     gfin = gam[ok][np.isfinite(gam[ok])]
     span = max(np.abs(gfin).max(), 1e-6) if gfin.size else 1.0
@@ -748,14 +752,7 @@ def plot_s_alpha(ds, out, written):
         x, y = a[i] + dx, s[i] + dy
         ax.plot(np.r_[x, x[:1]], np.r_[y, y[:1]], color=GRID, lw=0.8, zorder=2)
         for j in range(ky.size):
-            if not np.isfinite(gam[i, j]):       # unconverged or missing: small hollow grey
-                ax.scatter(x[j], y[j], s=14, facecolors="none", edgecolors=MUTED,
-                           linewidths=0.8, zorder=3)
-                continue
-            if status[i, j] in FIT_STYLE:
-                fs = FIT_STYLE[status[i, j]]
-                ax.scatter(x[j], y[j], c=[gam[i, j]], cmap=GAMMA_CMAP, norm=norm, s=30,
-                           edgecolors=fs["mec"], linewidths=1.3, alpha=fs["alpha"], zorder=3.5)
+            if not np.isfinite(gam[i, j]):       # unconverged or missing: gap in the ring
                 continue
             field = status[i, j] == "field"
             sc = ax.scatter(x[j], y[j], c=[gam[i, j]], cmap=GAMMA_CMAP, norm=norm, s=42,
@@ -768,13 +765,8 @@ def plot_s_alpha(ds, out, written):
         rng = f"{g.min():.2f}-{g.max():.2f}" if g.size else "-"
         lines.append(f"{n:>2}  {ds.label.values[i]:<21} {rng:>9}"
                      + (f"  {corner_modes(ds)[1][i]}" if wide else ""))
-    handles = [Line2D([], [], ls="none", marker="o", mfc="none", mec=MUTED, ms=5,
-                      label="ky unconverged / missing"),
-               Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.8, ms=7,
+    handles = [Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.8, ms=7,
                       label="TPED field estimate (thick edge)")]
-    handles += [Line2D([], [], ls="none", marker="o", color=MUTED, mec=FIT_STYLE[v]["mec"],
-                       mew=1.3, ms=6, alpha=FIT_STYLE[v]["alpha"], label=FIT_STYLE[v]["label"])
-                for v in FIT_STYLE if (status == v).any()]
     if wide:
         handles += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, mec=INK, ms=7,
                            label=m) for m in MODE_MARKER if (modes == m).any()]
@@ -785,7 +777,8 @@ def plot_s_alpha(ds, out, written):
              color=INK, transform=key.transAxes)
     foot = (f"each corner: a ring of its ky, {ky[0]:g} at 12 o'clock then clockwise\n"
             "(" + ", ".join(f"{k:g}" for k in ky) + "); number at the corner's own\n"
-            "(alpha, shat), the ring offset is for display only")
+            "(alpha, shat), the ring offset is for display only;\n"
+            "unconverged ky are left out (gaps in the ring)")
     if wide:
         foot += "\n\nmodes over ky, low to high:\n" + "\n".join(
             f"  {v} = {k}" for k, v in MODE_SHORT.items())
