@@ -33,6 +33,20 @@ and records everything in <genedir>/<prefix>_x0_<x0>_manifest.json.
     python corner_gene_scan.py --x0 0.6737 --kymin 1.5 2 3 --walltime 01:30:00         --prefix NSTX_129038_corner_kyhi --submit     # extra ky into the same diagdirs
     python corner_gene_scan.py --x0 0.6737 --only Teh0.80_Tew0.80_neh0.80_new0.80         --kymin 0.3 1 --set nx0=7 nz0=128 --prefix NSTX_129038_res2         --diag-root .../corners_res2 --test --submit  # resolution check, debug queue
 
+    python corner_gene_scan.py --x0 0.6737 --only Teh1.20_Tew0.80_neh0.80_new1.20         --kymin 0.5 1 --res-scale 2 --walltime 08:00:00 --submit   # 2x grid, *_res2 dirs
+    python corner_gene_scan.py --case Teh1.00_Tew1.00_neh1.00_new1.00 --kymin 0.3 --submit  # any ped_grid case
+
+--res-scale N multiplies nz0, nv0, nw0 by N, and nx0 too (kept odd: 3 -> 7),
+and n_procs_z, n_procs_v, n_procs_w with them, so each rank holds the same
+slice of z, v and mu and n_procs_sim grows by N^3 (128 -> 1024 for N = 2).
+nky0 stays 1 (a linear run is one ky). The box (lv, lw, lx) is unchanged.
+Run dirs and output get a _res<N> suffix on the prefix and diag root, so they
+never mix with the 1x scan. --set is applied after it and wins.
+
+--case runs ped_grid cases by their profile-scaling name (the case dir under
+--ped-root, e.g. the centre Teh1.00_Tew1.00_neh1.00_new1.00 or an axis
+point) instead of the 16 corners; --only filters the corners.
+
 A second scan into an existing diagdir lands in the next scanfilesNNNN;
 plot_corners.py merges every scanfiles dir by ky.
 
@@ -88,9 +102,39 @@ GEQDSK = "*_CH_COCOS*.geqdsk"
 
 LINKS = ("scanscript", "gene_perlmutter")
 
+#: --res-scale: velocity/parallel grid -> the n_procs that splits it, scaled together.
+RES_PROCS = {"nz0": "n_procs_z", "nv0": "n_procs_v", "nw0": "n_procs_w"}
+PROC_KEYS = ("n_procs_s", "n_procs_v", "n_procs_w", "n_procs_x", "n_procs_y", "n_procs_z")
+
 
 def corners():
     return design(list(CORNER_GRID), parts=("corners",))
+
+
+def parse_tag(label: str) -> dict:
+    """ped_grid.tag inverted: 'Teh1.20_Tew0.80_neh1.00_new1.00' -> {'Teh': 1.2, ...}."""
+    p = {k: float(v) for k, v in re.findall(r"([A-Za-z]+)(\d+(?:\.\d+)?)", label)}
+    if set(p) != set(corners()[0]) or tag(p) != label:
+        raise ValueError(f"'{label}' is not a ped_grid case name like {tag(corners()[0])}")
+    return p
+
+
+def resolution_overrides(template: str, scale: int) -> dict:
+    """Parameter overrides for a scale-x grid: nz0, nv0, nw0 x scale with their
+    n_procs, nx0 x scale (+1 to stay odd), n_procs_sim the new product."""
+    if scale == 1:
+        return {}
+    out = {}
+    nx0 = int(read_param(template, "nx0"))
+    out["nx0"] = str(scale * nx0 + (1 if nx0 % 2 and (scale * nx0) % 2 == 0 else 0))
+    for grid, procs in RES_PROCS.items():
+        n, np_ = scale * int(read_param(template, grid)), scale * int(read_param(template, procs))
+        if n % np_:
+            raise ValueError(f"{grid} = {n} does not split over {procs} = {np_}")
+        out[grid], out[procs] = str(n), str(np_)
+    out["n_procs_sim"] = str(math.prod(int(out.get(k, read_param(template, k)))
+                                       for k in PROC_KEYS))
+    return out
 
 
 def x0_label(x0=X0) -> str:
@@ -182,12 +226,15 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
           only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
-          walltime=None, kymin=None, overrides=None):
+          walltime=None, kymin=None, overrides=None, res_scale=1, cases=None):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
     kymin    ky values to scan [KYMIN]
     overrides  {parameter: value} set after everything else (e.g. a resolution
              check: {'nx0': '7', 'nz0': '128'}); each must exist once in the template
+    res_scale  grid refinement factor (resolution_overrides); prefix and diag
+             root get _res<N>
+    cases    ped_grid case names to run instead of the 16 corners
     walltime SLURM -t (HH:MM:SS); timelim follows it
     x0       radius (rho_tor) or radii to scan; more than one is a scanlist
     test     one corner, debug queue, TEST_WALLTIME, *_test dirs and manifest
@@ -195,6 +242,8 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
              write, create and submit nothing
     """
     walltime, qos = (walltime or TEST_WALLTIME, TEST_QOS) if test else (walltime or WALLTIME, QOS)
+    if res_scale != 1:
+        prefix, diag_root = f"{prefix}_res{res_scale}", f"{diag_root.rstrip('/')}_res{res_scale}"
     if test:
         prefix, diag_root = f"{prefix}_test", f"{diag_root.rstrip('/')}_test"
     genedir = os.path.dirname(os.path.normpath(template))
@@ -202,7 +251,12 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         par_template = fh.read()
     with open(os.path.join(template, "submit.cmd")) as fh:
         sub_template = fh.read()
+    overrides = {**resolution_overrides(par_template, res_scale), **(overrides or {})}
+    for key, value in overrides.items():          # before n_procs_sim is read for the node count
+        par_template = set_param(par_template, key, value)
     n_procs_sim = int(read_param(par_template, "n_procs_sim"))
+    if n_procs_sim != math.prod(int(read_param(par_template, k)) for k in PROC_KEYS):
+        raise ValueError(f"n_procs_sim = {n_procs_sim} is not the product of {PROC_KEYS}")
     ppn = int(re.search(r"--ntasks-per-node=(\d+)", sub_template).group(1))
     x0 = tuple(x0)
     kymin = tuple(kymin or KYMIN)
@@ -212,11 +266,12 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     timelim = walltime_seconds(walltime) - TIMELIM_MARGIN
     prefix = f"{prefix}_{x0_label(x0)}"
 
-    manifest = {"template": template, "ped_root": ped_root, "kymin": kymin, "x0": x0, "overrides": overrides or {},
+    manifest = {"template": template, "ped_root": ped_root, "kymin": kymin, "x0": x0,
+                "overrides": overrides, "res_scale": res_scale,
                 "walltime": walltime, "qos": qos, "test": test, "timelim": timelim, "nodes": nodes,
                 "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
     skipped = []
-    for p in corners():
+    for p in ([parse_tag(c) for c in cases] if cases else corners()):
         label = tag(p)
         if only and label not in only:
             continue
@@ -230,7 +285,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         diagdir = os.path.join(diag_root, x0_label(x0), label)
         parameters = corner_parameters(par_template, case_dir, geomfile, diagdir,
                                        n_parallel, timelim, x0, kymin)
-        for key, value in (overrides or {}).items():
+        for key, value in overrides.items():
             parameters = set_param(parameters, key, value)
         submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos)
         if dry_run:
@@ -303,6 +358,12 @@ if __name__ == "__main__":
     ap.add_argument("--walltime", default=None,
                     help=f"SLURM wall time HH:MM:SS [{WALLTIME}; {TEST_WALLTIME} with --test]")
     ap.add_argument("--only", nargs="+", default=None, help="corner tags to write")
+    ap.add_argument("--case", nargs="+", default=None, metavar="NAME",
+                    help="ped_grid case names (profile scalings under --ped-root) to run "
+                         "instead of the 16 corners")
+    ap.add_argument("--res-scale", type=int, default=1,
+                    help="multiply nx0 (kept odd), nz0, nv0, nw0 and n_procs_z/v/w by this; "
+                         "*_res<N> run dirs and diag root")
     ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
     ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
     ap.add_argument("--test", action="store_true",
@@ -313,5 +374,5 @@ if __name__ == "__main__":
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
                        args.walltime, args.kymin,
-                       dict(kv.split("=", 1) for kv in args.set))
+                       dict(kv.split("=", 1) for kv in args.set), args.res_scale, args.case)
     sys.exit(1 if skipped else 0)
