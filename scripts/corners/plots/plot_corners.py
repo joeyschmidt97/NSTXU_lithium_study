@@ -13,7 +13,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 or not, gamma and omega +-1 std vs ky, GENE's value beside
     corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
-    corners_mode_scaling.png    (--modes) mode per corner and ky as a table, and the
+    corners_mode_scaling.png    (--modes) mode per corner and ky as a table, each cell
+                                the mode's colour shaded by gamma (dark = fastest corner
+                                at that ky, light = slowest) with gamma printed, and the
                                 mode mix at each knob level; + corners_mode_scaling.csv
     corners_s_alpha.png         shat vs alpha_MHD at x0: each corner a small ring of
                                 its converged ky (unconverged ones left out), each
@@ -159,6 +161,9 @@ MODE_MARKER = {"ITG_TEM": "o", "ETG": "^", "KBM": "s", "MTM": "v", "unidentified
 #: panel also carries its label (legend, table text).
 MODE_COLOR = {"ITG_TEM": "#6250d6", "ETG": "#eda100", "KBM": "#2a78d6", "MTM": "#eb6834",
               "unidentified": "#9b9a92"}
+#: Mode table shading: gamma / (largest gamma at that ky) of 0 -> this toward white,
+#: 1 -> this toward black (shade()); per ky, since gamma rises steeply with ky.
+TABLE_SHADE = (0.82, -0.3)
 #: Gaussian width (in ky) of the smoothed mode fraction under the growth plot.
 MODE_KDE_BW = 0.12
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
@@ -666,11 +671,26 @@ def mode_strip(ax, ds, weighted):
     tidy(ax)
 
 
+def table_colour(mode, frac):
+    """The mode's colour, light for frac 0 to dark for frac 1 (TABLE_SHADE)."""
+    lo, hi = TABLE_SHADE
+    f = float(np.clip(frac, 0, 1)) if np.isfinite(frac) else 0.0
+    return shade(MODE_COLOR.get(mode, MODE_COLOR["unidentified"]), lo + (hi - lo) * f)
+
+
 def plot_mode_scaling(ds, out, written):
-    """Mode at every (corner, ky) as a coloured table, and per knob level the mode
-    make-up of all labelled ky: how each profile scaling moves the mode mix."""
+    """Mode at every (corner, ky) as a table shaded by gamma, and per knob level the
+    mode make-up of all labelled ky: how each profile scaling moves the mode mix.
+
+    A cell is its mode's colour, from light (gamma near 0) to dark (the largest
+    gamma of any corner at that ky), with gamma printed under the mode, so a
+    column reads as which corners, and so which knobs, drive that ky hardest."""
     m, ky = ds["mode"].values, ds.ky.values
     status = ds.status.values
+    gam = ds.gamma.values
+    trusted = np.where((m != "") & np.isfinite(gam), gam, np.nan)
+    with np.errstate(invalid="ignore"):
+        col_max = np.nanmax(np.where(trusted > 0, trusted, np.nan), axis=0)
     n = ds.sizes["corner"]
     found = [x for x in MODE_COLOR if (m == x).any()]
     fig, (tab, bars) = plt.subplots(1, 2, figsize=(16, max(5.5, 0.34 * n + 2.2)),
@@ -678,15 +698,17 @@ def plot_mode_scaling(ds, out, written):
     for i in range(n):
         for j in range(ky.size):
             mode = m[i, j]
-            fc = (MODE_COLOR.get(mode, SURFACE) if mode else
+            fc = (table_colour(mode, trusted[i, j] / col_max[j]) if mode else
                   {"decaying": "#dcefdc", "ambiguous": "#ecebe6"}.get(status[i, j], SURFACE))
             tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=SURFACE, lw=2))
             text = MODE_SHORT.get(mode, mode) if mode else {
                 "zero": "x", "empty": "x", "decaying": "dec", "ambiguous": "amb"}.get(
                 status[i, j], "-")
+            if mode and np.isfinite(gam[i, j]):
+                text += f"\n{gam[i, j]:.3f}"
             dark = mode and np.mean(to_rgb(fc)) < 0.55
-            tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=7.5,
-                     color="white" if dark else INK)
+            tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=6.5,
+                     linespacing=1.1, color="white" if dark else INK)
     tab.set_xlim(0, ky.size)
     tab.set_ylim(0, n)
     tab.set_xticks(np.arange(ky.size) + 0.5, [f"{k:g}" for k in ky], fontsize=8)
@@ -695,9 +717,16 @@ def plot_mode_scaling(ds, out, written):
     tab.tick_params(length=0)
     for sp in tab.spines.values():
         sp.set_visible(False)
-    tab.set_title(f"mode per corner and ky, rows {LEGEND_TITLE}  (x unconverged, - none"
-                  + (", dec/amb recorded fit" if ds.attrs.get("field_fits") else "") + ")",
+    tab.set_title(f"mode and gamma per corner and ky, rows {LEGEND_TITLE}  (x unconverged, - none"
+                  + (", dec/amb recorded fit" if ds.attrs.get("field_fits") else "") + ")\n"
+                  "shade: gamma / largest gamma at that ky, light 0 to dark 1",
                   loc="left", fontsize=10, color=INK)
+    for k, mode in enumerate(found):              # light-to-dark key per mode, under the table
+        for q in range(5):
+            tab.add_patch(plt.Rectangle((k * 1.9 + q * 0.3, -1.95), 0.3, 0.45,
+                                        fc=table_colour(mode, q / 4), ec="none", clip_on=False))
+        tab.text(k * 1.9 + 1.6, -1.72, MODE_SHORT.get(mode, mode), fontsize=7, va="center", color=INK,
+                 clip_on=False)
 
     groups = [(k, v) for k in ORDER for v in (0.8, 1.2)]
     xs = np.array([i + 0.6 * (i // 2) for i in range(len(groups))])
