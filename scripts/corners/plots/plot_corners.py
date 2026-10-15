@@ -123,6 +123,9 @@ LEGEND_TITLE = "(" + ", ".join(ORDER) + ")"
 
 #: Pedestal window of the zoomed profile figure (rho_tor).
 PED_ZOOM = (0.6, 1.0)
+#: q panels show x0 +- this in rho_tor (5% of the minor radius); the window is
+#: shaded on the profile panels above.
+Q_ZOOM = 0.05
 
 #: A local parameter is "varying" when (max - min) / max|value| over the corners
 #: exceeds this. max|value|, not |mean|: gradients like omn_e cross zero, and a
@@ -791,9 +794,12 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
             a.axvline(ds.x0, color=INK, ls=":", lw=1.4)
             a.set_xlim(*xlim)
             tidy(a)
-    if has_q:                                     # one under each column, same x axis
+    if has_q:                                     # one under each column, zoomed on x0
+        qlim = (max(float(x.min()), ds.x0 - Q_ZOOM), min(float(x.max()), ds.x0 + Q_ZOOM))
+        for a in ax.ravel():
+            a.axvspan(*qlim, color=GRID, alpha=0.45, lw=0, zorder=0)
         for j in range(len(vars_)):
-            plot_q(fig.add_subplot(gs[2, j], sharex=ax[0, 0]), ds, x, xlim,
+            plot_q(fig.add_subplot(gs[2, j]), ds, x, qlim,
                    labels=j == len(vars_) - 1, title=j == 0)
     handles = [Line2D([], [], color=style(point_of(ds, c))["color"],
                       ls=style(point_of(ds, c))["ls"], lw=1.8, label=str(l))
@@ -834,11 +840,14 @@ def plot_q(ax, ds, x, xlim, labels=True, title=True):
                           zorder=2)
     ax.axvline(ds.x0, color=INK, ls=":", lw=1.4)
     ax.set_ylim(lo, hi)
+    if 2 <= ints.size <= 20:                      # ticks on the integers themselves
+        ax.set_yticks(ints)
     ax.set_xlim(*xlim)
     ax.set_xlabel(r"$\rho_{tor}$")
     if title:
-        ax.set_title(r"$|q|$ (cheaseBS geqdsk) under each column; drop lines at each "
-                     r"corner's integer-$q$ surfaces", loc="left", fontsize=10, color=INK)
+        ax.set_title(rf"$|q|$ (cheaseBS geqdsk), $x_0 \pm {Q_ZOOM:g}$ (shaded above); drop "
+                     r"lines at each corner's integer-$q$ surfaces", loc="left", fontsize=10,
+                     color=INK)
     tidy(ax)
 
 
