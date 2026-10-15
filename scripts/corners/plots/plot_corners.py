@@ -804,11 +804,14 @@ def plot_q_offset(ds, out, written):
                 continue
             fc = Q_OFFSET_CMAP(abs(d[i, j]) / 0.5)
             tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=SURFACE, lw=2))
+            if m[i, j]:                            # mode band along the top, MODE_COLOR
+                tab.add_patch(plt.Rectangle((j + 0.04, n - 1 - i + 0.8), 0.92, 0.16, ec="none",
+                                            fc=MODE_COLOR.get(m[i, j], MODE_COLOR["unidentified"])))
             text = f"{d[i, j]:+.2f}\nn={n0[i, j]:g}"
             if np.isfinite(gam[i, j]):
                 mode = f"{MODE_SHORT.get(m[i, j], m[i, j])} " if m[i, j] else ""
                 text += f"\n{mode}{gam[i, j]:.3f}"
-            tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=6,
+            tab.text(j + 0.5, n - 0.55 - i, text, ha="center", va="center", fontsize=6,
                      linespacing=1.05, color="white" if np.mean(fc[:3]) < 0.55 else INK)
     tab.set_xlim(0, ky.size)
     tab.set_ylim(0, n)
@@ -819,28 +822,37 @@ def plot_q_offset(ds, out, written):
     for sp in tab.spines.values():
         sp.set_visible(False)
     tab.set_title(r"$\delta = nq_0 - \mathrm{round}(nq_0)$ per corner and ky, rows "
-                  f"{LEGEND_TITLE}\ncell: delta, n, [mode] gamma; dark = on a q = m/n "
-                  "surface, light = midway (|delta| = 1/2)", loc="left", fontsize=10, color=INK)
+                  f"{LEGEND_TITLE}\ncell: delta, n, [mode] gamma, top band the mode's colour; "
+                  "dark = on a q = m/n surface, light = midway", loc="left", fontsize=10, color=INK)
     for q in range(6):                             # dark-to-light key under the table
         tab.add_patch(plt.Rectangle((q * 0.35, -1.95), 0.35, 0.45, fc=Q_OFFSET_CMAP(q / 5),
                                     ec="none", clip_on=False))
     tab.text(2.2, -1.72, "|delta| 0 to 0.5", fontsize=7, va="center", color=INK, clip_on=False)
+    for k, mode in enumerate(x for x in MODE_COLOR if (m == x).any()):   # mode band key
+        tab.add_patch(plt.Rectangle((3.6 + k * 1.3, -1.85), 0.3, 0.25, fc=MODE_COLOR[mode],
+                                    ec="none", clip_on=False))
+        tab.text(3.95 + k * 1.3, -1.72, MODE_SHORT.get(mode, mode), fontsize=7, va="center",
+                 color=INK, clip_on=False)
 
-    cmap = plt.get_cmap("viridis")
-    for j, k in enumerate(ky):
-        c = cmap(j / max(ky.size - 1, 1))
-        for i in np.flatnonzero(conv[:, j] & np.isfinite(d[:, j])):
-            mk = MODE_MARKER.get(m[i, j], "o") if m[i, j] else "o"
-            sc.plot(abs(d[i, j]), gam[i, j], mk, color=c, ms=6, mec=INK, mew=0.4, zorder=3)
-        sc.plot([], [], "o", color=c, ms=6, label=f"ky {k:g}")
-    if "mode" in ds:
-        for mode in [x for x in MODE_MARKER if (m == x).any()]:
-            sc.plot([], [], MODE_MARKER[mode], color=MUTED, ms=6, label=f"mode: {mode}")
+    # each point its mode's marker and colour (as in the growth and mode plots), ky beside it
+    for i, j in zip(*np.nonzero(conv & np.isfinite(d))):
+        mode = m[i, j]
+        mk = MODE_MARKER.get(mode, "*") if mode else "o"
+        c = MODE_COLOR.get(mode, MODE_COLOR["unidentified"]) if mode else MUTED
+        sc.plot(abs(d[i, j]), gam[i, j], mk, color=c, ms=7, mec=INK, mew=0.4, zorder=3)
+        sc.annotate(f"{ky[j]:g}", (abs(d[i, j]), gam[i, j]), xytext=(4, 3),
+                    textcoords="offset points", fontsize=6, color=MUTED)
+    for mode in [x for x in MODE_MARKER if (m == x).any()]:
+        sc.plot([], [], MODE_MARKER[mode], color=MODE_COLOR[mode], mec=INK, mew=0.4, ms=7,
+                label=mode)
+    if not (m != "").any():
+        sc.plot([], [], "o", color=MUTED, ms=7, label="no mode (run --modes)")
     sc.axhline(0, color=MUTED, lw=0.8)
     sc.set_xlim(-0.01, 0.51)
     sc.set_xlabel(r"$|\delta|$  (0 on a rational surface, 0.5 midway)")
     sc.set_ylabel(r"$\gamma$ [$c_{ref}/L_{ref}$]")
-    sc.set_title("GENE-converged gamma vs rational-surface offset", loc="left", fontsize=10,
+    sc.set_title("GENE-converged gamma vs rational-surface offset (number: ky)", loc="left",
+                 fontsize=10,
                  color=INK)
     sc.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(sc)
