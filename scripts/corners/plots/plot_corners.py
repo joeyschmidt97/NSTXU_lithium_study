@@ -32,6 +32,7 @@ hue never share a line style and no corner is told apart by colour alone.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --spread 0.02 --max-params 16
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --modes
+    python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.8447 --modes --field-fits
 
 With --modes each ky GENE converged (or the field estimate filled) is
 classified by TPED's mode_identifier (GENE_sim_analysis: fingerprint transport
@@ -40,6 +41,13 @@ drawn with that mode's marker in corners_growth.png, and listed with the
 inputs behind each label in corners_modes.csv. The fingerprint diffusivity is
 Gamma / omn: where omn ~ 0 (the ne top) the D ratios, and so the ETG, KBM and
 ITG/TEM checks, are unreliable; read the inputs before the label.
+
+With --field-fits, a ky that GENE left 0/0 but field_omega.py recorded a
+fit for with verdict 'decaying' (gamma + 2 std < 0) or 'ambiguous' (std too
+large to tell a slow-growing mode from beating damped ones) is drawn at its
+fitted gamma/omega with +-1 std error bars: green-edged for decaying, faint
+grey for ambiguous, never joined into the corner's line, never classified,
+and left out of gamma_max when ambiguous. Without the flag they stay x.
 
 A ky whose omega file carries a TPED field estimate below GENE's 0/0 line
 (field_omega.py --write) plots as a diamond with ±1 std error bars.
@@ -122,7 +130,11 @@ GAMMA_CMAP = LinearSegmentedColormap.from_list("gamma", ["#008300", "#f0efec", "
 INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 DPI = 150
 #: Which reading of a ky wins when two scanfiles dirs hold it.
-RANK = {"ok": 2, "field": 1}
+RANK = {"ok": 2, "field": 1, "decaying": 0.5, "ambiguous": 0.5}
+#: --field-fits: recorded field fits that did not pass, by verdict.
+FIT_STYLE = {"decaying": {"mec": "#008300", "alpha": 1.0, "label": "decaying fit (γ+2σ<0) ±1σ"},
+             "ambiguous": {"mec": "#9b9a92", "alpha": 0.55,
+                           "label": "ambiguous fit (σ too large) ±1σ"}}
 
 #: --modes: TPED mode_identifier label -> marker, and the inputs it decided on,
 #: (TPED node, variable) -> column name.
@@ -178,8 +190,11 @@ def gene_runs(corner_dir: str) -> list[str]:
     return sorted(found)
 
 
-def read_run(par_path: str) -> dict:
-    """One scan member through TPED's GeneSimulation: kymin, gamma, omega, status, locals."""
+def read_run(par_path: str, field_fits: bool = False) -> dict:
+    """One scan member through TPED's GeneSimulation: kymin, gamma, omega, status, locals.
+
+    field_fits: GENE's 0/0 with a recorded 'decaying'/'ambiguous' field fit reads
+    as that status with the fit's value and std, instead of 'zero'."""
     sim = GeneSimulation(par_path)
     # No omega file at all: skip the load, TPED would log a traceback for the None path.
     tree = sim.return_sim_xarray(["omega"] if sim.omega_filepath else [])
@@ -198,6 +213,13 @@ def read_run(par_path: str) -> dict:
             elif rec["gamma"] == 0 and rec["omega"] == 0:   # GENE's "not converged" placeholder
                 rec["gamma"] = rec["omega"] = np.nan
                 rec["status"] = "zero"
+                verdict = om.attrs.get("field_verdict")
+                if field_fits and verdict in FIT_STYLE and "gamma_field" in om:
+                    rec["status"] = verdict
+                    rec["gamma"], rec["omega"] = float(om["gamma_field"]), float(om["omega_field"])
+                    for k in ("gamma", "omega"):
+                        rec[f"{k}_std"] = (float(om[f"{k}_field_std"]) if f"{k}_field_std" in om
+                                           else np.nan)
     rec["params"] = {k: float(par[k]) for k in par.data_vars
                      if (k in PARAM_KEYS or SPECIES_PARAM.match(k))
                      and np.issubdtype(par[k].dtype, np.number)}
@@ -217,7 +239,7 @@ def alpha_mhd(pr: dict) -> float:
     return pr.get("q0", np.nan) ** 2 * pr.get("major_R", np.nan) * dpdx
 
 
-def gene_corner(corner_dir: str):
+def gene_corner(corner_dir: str, field_fits: bool = False):
     """({kymin: (gamma, omega, status, gamma_std, omega_std, parameters path)},
     local parameters) of one corner, or None."""
     runs = gene_runs(corner_dir)
@@ -227,7 +249,7 @@ def gene_corner(corner_dir: str):
     params: dict[str, list[float]] = {}
     for path in runs:
         try:
-            rec = read_run(path)
+            rec = read_run(path, field_fits)
         except Exception as exc:                # one bad member never sinks the corner
             print(f"    unreadable {path}: {type(exc).__name__}: {exc}")
             continue
@@ -299,7 +321,8 @@ def add_modes(ds: xr.Dataset) -> xr.Dataset:
 
 def write_modes_csv(ds, out, written):
     path = os.path.join(out, "corners_modes.csv")
-    cols = ["status", "gamma", "omega", "mode", *(f"mode_{c}" for c in MODE_INPUTS.values()),
+    cols = ["status", "gamma", "gamma_std", "omega", "omega_std", "mode",
+            *(f"mode_{c}" for c in MODE_INPUTS.values()),
             "mode_w_wstar"]
     with open(path, "w") as fh:
         fh.write(",".join(["corner", *ORDER, "ky"] + cols) + "\n")
@@ -328,7 +351,7 @@ def iterdb_profiles(case_dir: str):
 # ----------------------------------------------------------------------------- dataset
 
 def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
-                 modes=False) -> xr.Dataset:
+                 modes=False, field_fits=False) -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
@@ -338,7 +361,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
     gene, prof, pts = {}, {}, []
     for p in ordered(corners()):
         name = tag(p)
-        g = gene_corner(os.path.join(diag_root, x0_label(x0), name))
+        g = gene_corner(os.path.join(diag_root, x0_label(x0), name), field_fits)
         pr = iterdb_profiles(os.path.join(ped_root, name))
         if g is None and pr is None:
             print(f"--- {name}: SKIP, no GENE output and no profiles.iterdb")
@@ -380,9 +403,10 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
         ds[k] = ("corner", [gene[n][1].get(k, np.nan) if n in gene else np.nan for n in names])
     if "alpha_MHD" in ds:
         ds["alpha_MHD"].attrs["formula"] = "q0^2 * major_R * dpdx_pm (GENE units)"
-    finite = ds["gamma"].notnull().any("ky")
-    ds["gamma_max"] = ds["gamma"].fillna(-np.inf).max("ky").where(finite)
-    ds["ky_at_max"] = xr.DataArray(ky[ds["gamma"].fillna(-np.inf).argmax("ky").values],
+    trusted = ds["gamma"].where(ds["status"] != "ambiguous")   # an ambiguous fit is no maximum
+    finite = trusted.notnull().any("ky")
+    ds["gamma_max"] = trusted.fillna(-np.inf).max("ky").where(finite)
+    ds["ky_at_max"] = xr.DataArray(ky[trusted.fillna(-np.inf).argmax("ky").values],
                                    dims="corner").where(finite)
 
     if prof:                                       # profiles on the first corner's grid
@@ -402,7 +426,8 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                 ds[f"omg_{var}"] = (("corner", "rho_tor"),
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
-    ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root)
+    ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root,
+                    field_fits=int(field_fits))
     if modes and gene:
         print("\nmode_identifier (TPED) per ky:")
         ds = add_modes(ds)
@@ -443,12 +468,22 @@ def plot_growth(ds, out, written):
     else:
         fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
     unconv = fielded = False
+    fits_seen = set()
     for c in ds.corner.values:
         st = style(point_of(ds, c))
         status = ds.status.sel(corner=c).values
         for ax, var in zip(axes, ("gamma", "omega")):
+            line = ds[var].sel(corner=c).where(~np.isin(status, list(FIT_STYLE)))
+            for verdict, fs in FIT_STYLE.items():
+                sel = status == verdict
+                if sel.any():
+                    fits_seen.add(verdict)
+                    ax.errorbar(ds.ky.values[sel], ds[var].sel(corner=c).values[sel],
+                                yerr=ds[f"{var}_std"].sel(corner=c).values[sel], fmt="o", ms=5,
+                                mfc="none", mec=fs["mec"], mew=1.4, color=st["color"],
+                                alpha=fs["alpha"], capsize=2.5, lw=0.9, zorder=4)
             if modes:                   # line only; each point gets its mode's marker below
-                ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.4, color=st["color"], ls=st["ls"])
+                ax.plot(ds.ky, line, lw=1.4, color=st["color"], ls=st["ls"])
                 y = ds[var].sel(corner=c).values
                 for j, m in enumerate(ds["mode"].sel(corner=c).values):
                     if m and np.isfinite(y[j]):
@@ -457,7 +492,7 @@ def plot_growth(ds, out, written):
                                 color=st["color"], mec=st["color"] if filled else INK,
                                 mfc=st["color"] if filled else "none", mew=1.2, zorder=6)
             else:
-                ax.plot(ds.ky, ds[var].sel(corner=c), lw=1.6, ms=5, mfc="none", **st)
+                ax.plot(ds.ky, line, lw=1.6, ms=5, mfc="none", **st)
             bad = ds.ky.values[np.isin(status, ("empty", "zero"))]
             if bad.size:
                 unconv = True
@@ -486,6 +521,9 @@ def plot_growth(ds, out, written):
         extra.append(Line2D([], [], ls="none", marker="o" if modes else "D", color=MUTED,
                             mec=INK, mfc="none" if modes else MUTED, ms=6,
                             label="TPED field estimate ±1σ" + (" (hollow)" if modes else "")))
+    extra += [Line2D([], [], ls="none", marker="o", mfc="none", mec=FIT_STYLE[v]["mec"], mew=1.4,
+                     ms=6, alpha=FIT_STYLE[v]["alpha"], label=FIT_STYLE[v]["label"])
+              for v in FIT_STYLE if v in fits_seen]
     if modes:
         found = [m for m in MODE_MARKER if (ds["mode"].values == m).any()]
         extra += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, ms=7,
@@ -557,10 +595,12 @@ def plot_mode_scaling(ds, out, written):
     for i in range(n):
         for j in range(ky.size):
             mode = m[i, j]
-            fc = MODE_COLOR.get(mode, SURFACE) if mode else SURFACE
+            fc = (MODE_COLOR.get(mode, SURFACE) if mode else
+                  {"decaying": "#dcefdc", "ambiguous": "#ecebe6"}.get(status[i, j], SURFACE))
             tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=SURFACE, lw=2))
-            text = MODE_SHORT.get(mode, mode) if mode else (
-                "x" if status[i, j] in ("zero", "empty") else "-")
+            text = MODE_SHORT.get(mode, mode) if mode else {
+                "zero": "x", "empty": "x", "decaying": "dec", "ambiguous": "amb"}.get(
+                status[i, j], "-")
             dark = mode and np.mean(to_rgb(fc)) < 0.55
             tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=7.5,
                      color="white" if dark else INK)
@@ -572,7 +612,8 @@ def plot_mode_scaling(ds, out, written):
     tab.tick_params(length=0)
     for sp in tab.spines.values():
         sp.set_visible(False)
-    tab.set_title(f"mode per corner and ky, rows {LEGEND_TITLE}  (x unconverged, - none)",
+    tab.set_title(f"mode per corner and ky, rows {LEGEND_TITLE}  (x unconverged, - none"
+                  + (", dec/amb recorded fit" if ds.attrs.get("field_fits") else "") + ")",
                   loc="left", fontsize=10, color=INK)
 
     groups = [(k, v) for k in ORDER for v in (0.8, 1.2)]
@@ -711,6 +752,11 @@ def plot_s_alpha(ds, out, written):
                 ax.scatter(x[j], y[j], s=14, facecolors="none", edgecolors=MUTED,
                            linewidths=0.8, zorder=3)
                 continue
+            if status[i, j] in FIT_STYLE:
+                fs = FIT_STYLE[status[i, j]]
+                ax.scatter(x[j], y[j], c=[gam[i, j]], cmap=GAMMA_CMAP, norm=norm, s=30,
+                           edgecolors=fs["mec"], linewidths=1.3, alpha=fs["alpha"], zorder=3.5)
+                continue
             field = status[i, j] == "field"
             sc = ax.scatter(x[j], y[j], c=[gam[i, j]], cmap=GAMMA_CMAP, norm=norm, s=42,
                             marker=MODE_MARKER.get(modes[i, j], "o") if modes[i, j] else "o",
@@ -726,6 +772,9 @@ def plot_s_alpha(ds, out, written):
                       label="ky unconverged / missing"),
                Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.8, ms=7,
                       label="TPED field estimate (thick edge)")]
+    handles += [Line2D([], [], ls="none", marker="o", color=MUTED, mec=FIT_STYLE[v]["mec"],
+                       mew=1.3, ms=6, alpha=FIT_STYLE[v]["alpha"], label=FIT_STYLE[v]["label"])
+                for v in FIT_STYLE if (status == v).any()]
     if wide:
         handles += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, mec=INK, ms=7,
                            label=m) for m in MODE_MARKER if (modes == m).any()]
@@ -845,10 +894,10 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0, modes=False):
+        x0=X0, modes=False, field_fits=False):
     x0 = tuple(x0)
     out = out or default_out(x0)
-    ds = load_dataset(diag_root, ped_root, x0, modes)
+    ds = load_dataset(diag_root, ped_root, x0, modes, field_fits)
     os.makedirs(out, exist_ok=True)
     written: list[str] = []
     with warnings.catch_warnings():
@@ -877,6 +926,9 @@ if __name__ == "__main__":
                     help="radius of the scan to plot (reads its x0_<x0>/ folder)")
     ap.add_argument("--out", default=None,
                     help="directory for the PNGs and CSV [<diag-root>/x0_<x0>/plots]")
+    ap.add_argument("--field-fits", action="store_true",
+                    help="draw recorded field fits that did not pass (decaying/ambiguous, "
+                         "from field_omega.py --write) with their error bars")
     ap.add_argument("--modes", action="store_true",
                     help="classify each ky with TPED mode_identifier (reads nrg, field, "
                          "geometry; slower) and mark the growth plot by mode")
@@ -886,4 +938,4 @@ if __name__ == "__main__":
                     help="most varying parameters to chart and tabulate")
     args = ap.parse_args()
     run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params, args.x0,
-        args.modes)
+        args.modes, args.field_fits)
