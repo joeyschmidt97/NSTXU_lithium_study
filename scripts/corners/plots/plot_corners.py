@@ -5,13 +5,17 @@ Reads every corner corner_gene_scan.py launched,
     GENE output   <diag-root>/x0_<x0>/<tag>/scanfilesNNNN/{parameters,omega}_000K
                   (every scanfiles dir, merged by ky)
     profiles      <ped-root>/<tag>/profiles.iterdb   (what GENE read, prof_type -2)
+    q             <ped-root>/<tag>/*_CH_COCOS*.geqdsk (the cheaseBS equilibrium GENE read)
 
 into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
 
     corners_growth.png          gamma and omega vs ky, all corners, GENE-converged ky only
     corners_growth_field.png    the same with the field-fit guess (+-1 std) at every
                                 unconverged ky, on its corner's own line
-    corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
+    corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked; under
+                                them |q| vs rho_tor, a faint line at each integer q and a
+                                drop line where each corner crosses it (rational surfaces,
+                                to line MTM drive up against q = m/n)
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
     corners_mode_scaling.png    (--modes) mode per corner and ky as a table, each cell
                                 the mode's colour shaded by gamma (dark = fastest corner
@@ -102,8 +106,9 @@ from matplotlib.lines import Line2D
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
 from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
 from TPED.projects.utils.read_iterdb import read_iterdb
+from TPED.projects.discharge_tools.src.filetypes.gfile_data import GFileData
 from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, X0,
-                                                         corners, tag, x0_label)
+                                                         corners, find_geqdsk, tag, x0_label)
 from NSTXU_lithium_study.scripts.ped_grid import KNOBS
 
 
@@ -376,6 +381,29 @@ def iterdb_profiles(case_dir: str):
             for sig, (name, scale, _) in ITERDB_VARS.items() if sig in prof}
 
 
+def q_profile(case_dir: str):
+    """(rho_tor, |q|) of the corner's cheaseBS geqdsk (TPED GFileData), or None."""
+    geqdsk, problem = find_geqdsk(case_dir)
+    if problem:
+        return None
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            g = GFileData(os.path.join(case_dir, geqdsk)).gfile_to_xarray()
+    except Exception as exc:                      # a bad gfile never sinks the corner
+        print(f"    unreadable {geqdsk}: {type(exc).__name__}: {exc}")
+        return None
+    rho, q = np.asarray(g["rho_tor"].values), np.abs(np.asarray(g["q"].values))
+    order = np.argsort(rho)
+    return rho[order], q[order]
+
+
+def integer_crossings(x, y, n):
+    """rho where y crosses n (linear between grid points)."""
+    d = y - n
+    i = np.flatnonzero(np.isfinite(d[:-1]) & np.isfinite(d[1:]) & (np.sign(d[:-1]) != np.sign(d[1:])))
+    return x[i] - d[i] * (x[i + 1] - x[i]) / (d[i + 1] - d[i])
+
+
 # ----------------------------------------------------------------------------- dataset
 
 def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
@@ -391,6 +419,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
         name = tag(p)
         g = gene_corner(os.path.join(diag_root, x0_label(x0), name), field_fits)
         pr = iterdb_profiles(os.path.join(ped_root, name))
+        q = q_profile(os.path.join(ped_root, name))
+        if q is not None:
+            pr = {**(pr or {}), "q": q}
         if g is None and pr is None:
             print(f"--- {name}: SKIP, no GENE output and no profiles.iterdb")
             continue
@@ -444,7 +475,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
         ref = next(iter(prof.values()))
         grid = ref.get("ne", next(iter(ref.values())))[0]
         ds = ds.assign_coords(rho_tor=grid)
-        for var in [v for v, *_ in ITERDB_VARS.values()]:
+        for var in [v for v, *_ in ITERDB_VARS.values()] + ["q"]:
             rows = []
             for n in names:
                 r, y = prof.get(n, {}).get(var, (None, None))
@@ -453,6 +484,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
             if np.isnan(arr).all():
                 continue
             ds[var] = (("corner", "rho_tor"), arr)
+            if var == "q":
+                ds[var].attrs["long_name"] = "|q| from the cheaseBS geqdsk"
+                continue
             with np.errstate(divide="ignore", invalid="ignore"):
                 ds[f"omg_{var}"] = (("corner", "rho_tor"),
                                     -np.gradient(arr, grid, axis=1) / arr,
@@ -732,8 +766,14 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
     units = {v: u for v, _, u in ITERDB_VARS.values()}
     x = ds.rho_tor.values
     xlim = xlim or (float(x.min()), float(x.max()))
-    fig, ax = plt.subplots(2, len(vars_), figsize=(3.6 * len(vars_) + 2.8, 6.4),
-                           sharex=True, squeeze=False)
+    has_q = "q" in ds
+    fig = plt.figure(figsize=(3.6 * len(vars_) + 2.8, 9.4 if has_q else 6.4))
+    gs = fig.add_gridspec(3 if has_q else 2, len(vars_),
+                          height_ratios=(1, 1, 1.25) if has_q else (1, 1))
+    ax = np.empty((2, len(vars_)), dtype=object)
+    for j in range(len(vars_)):
+        ax[0, j] = fig.add_subplot(gs[0, j], sharex=ax[0, 0] if j else None)
+        ax[1, j] = fig.add_subplot(gs[1, j], sharex=ax[0, 0])
     for j, v in enumerate(vars_):
         top, bot = ax[0, j], ax[1, j]
         for c in ds.corner.values:
@@ -745,11 +785,16 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
         fit_ylim(bot, x, ds[f"omg_{v}"].values, (xlim[0], min(xlim[1], 0.98)))
         top.set_title(f"{v} [{units[v]}]", loc="left", fontsize=10, color=INK)
         bot.set_title(rf"$-d\ln {v[0]}_{v[1]}/d\rho_{{tor}}$", loc="left", fontsize=10, color=INK)
-        bot.set_xlabel(r"$\rho_{tor}$")
+        if not has_q:
+            bot.set_xlabel(r"$\rho_{tor}$")
         for a in (top, bot):
             a.axvline(ds.x0, color=INK, ls=":", lw=1.4)
             a.set_xlim(*xlim)
             tidy(a)
+    if has_q:                                     # one under each column, same x axis
+        for j in range(len(vars_)):
+            plot_q(fig.add_subplot(gs[2, j], sharex=ax[0, 0]), ds, x, xlim,
+                   labels=j == len(vars_) - 1, title=j == 0)
     handles = [Line2D([], [], color=style(point_of(ds, c))["color"],
                       ls=style(point_of(ds, c))["ls"], lw=1.8, label=str(l))
                for c, l in zip(ds.corner.values, ds.label.values)]
@@ -760,6 +805,41 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
                  x=0.04, ha="left", fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
     save(fig, out, name, written)
+
+
+def plot_q(ax, ds, x, xlim, labels=True, title=True):
+    """|q| vs rho_tor per corner, a faint line at each integer q in view and, per
+    corner, a drop line from the axis to where it crosses that integer."""
+    for c in ds.corner.values:
+        st = style(point_of(ds, c))
+        ax.plot(x, ds.q.sel(corner=c), color=st["color"], ls=st["ls"], lw=1.5, zorder=3)
+    # y range over the window, short of the separatrix where q runs away
+    fit_ylim(ax, x, ds.q.values, (xlim[0], min(xlim[1], 0.99)))
+    lo, hi = ax.get_ylim()
+    ints = np.arange(np.ceil(max(lo, 0)), np.floor(hi) + 1)
+    every = max(1, int(np.ceil(ints.size / 20)))      # label at most ~20 integers
+    for k, n in enumerate(ints):
+        ax.axhline(n, color=GRID, lw=0.7, zorder=1)
+        if labels and k % every == 0:
+            ax.text(1.003, n, f"{n:g}", transform=ax.get_yaxis_transform(), fontsize=7,
+                    va="center", color=MUTED)
+    for c in ds.corner.values:
+        st = style(point_of(ds, c))
+        y = ds.q.sel(corner=c).values
+        for n in ints:
+            r = integer_crossings(x, y, n)
+            r = r[(r >= xlim[0]) & (r <= xlim[1])]
+            if r.size:
+                ax.vlines(r, lo, n, color=st["color"], ls=st["ls"], lw=0.8, alpha=0.75,
+                          zorder=2)
+    ax.axvline(ds.x0, color=INK, ls=":", lw=1.4)
+    ax.set_ylim(lo, hi)
+    ax.set_xlim(*xlim)
+    ax.set_xlabel(r"$\rho_{tor}$")
+    if title:
+        ax.set_title(r"$|q|$ (cheaseBS geqdsk) under each column; drop lines at each "
+                     r"corner's integer-$q$ surfaces", loc="left", fontsize=10, color=INK)
+    tidy(ax)
 
 
 def corner_modes(ds):
