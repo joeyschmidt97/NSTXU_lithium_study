@@ -38,11 +38,11 @@ hue never share a line style and no corner is told apart by colour alone.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.8447 --modes --field-fits
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --field-all
 
-With --field-all, corners_growth_field.png draws every row of the CSV that
-field_omega.py --csv wrote (default <diag-root>/x0_<x0>/field_omega_fits.csv):
-the field fit of every run with +-1 std bars, filled where GENE converged and
-hollow where it did not, with GENE's converged value as a black tick at the
-same ky. It shows where the unconverged runs are heading and how far the fit
+With --field-all, corners_growth_field.png draws the field fit that
+field_omega.py --write recorded in each omega file (TPED's gamma_field +-
+gamma_field_std), for every run, converged or not: +-1 std bars, filled
+where GENE converged and hollow where it did not, with GENE's converged value
+as a black tick at the same ky. It shows where the unconverged runs are heading and how far the fit
 sits from GENE where both exist. ky is log-scaled and each corner nudged
 sideways so the bars do not overlap. corners_growth.png is unchanged.
 
@@ -94,14 +94,11 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.lines import Line2D
 
-import pandas as pd
-
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
 from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
 from TPED.projects.utils.read_iterdb import read_iterdb
 from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, X0,
                                                          corners, tag, x0_label)
-from NSTXU_lithium_study.scripts.corners.field_omega.field_omega import csv_path
 
 
 def default_out(x0=X0) -> str:
@@ -146,6 +143,9 @@ INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 DPI = 150
 #: Which reading of a ky wins when two scanfiles dirs hold it.
 RANK = {"ok": 2, "field": 1, "decaying": 0.5, "ambiguous": 0.5}
+#: The TPED field fit of a run (GeneOmega), any GENE state; --field-all.
+FIT_KEYS = ("gamma_field", "gamma_field_std", "omega_field", "omega_field_std")
+FIT_NONE = (np.nan,) * len(FIT_KEYS) + ("",)
 #: --field-fits: recorded field fits that did not pass, by verdict.
 FIT_STYLE = {"decaying": {"mec": "#008300", "alpha": 1.0, "label": "decaying fit (γ+2σ<0) ±1σ"},
              "ambiguous": {"mec": "#9b9a92", "alpha": 0.55,
@@ -215,9 +215,12 @@ def read_run(par_path: str, field_fits: bool = False) -> dict:
     tree = sim.return_sim_xarray(["omega"] if sim.omega_filepath else [])
     par = tree["parameters"].ds
     rec = {"kymin": float(par["kymin"]), "gamma": np.nan, "omega": np.nan, "status": "missing",
-           "gamma_std": np.nan, "omega_std": np.nan}
+           "gamma_std": np.nan, "omega_std": np.nan, "fit": FIT_NONE}
     if "omega" in tree.children:
         om = tree["omega"].ds
+        if "gamma_field" in om:                     # field_omega.py --write, any run
+            rec["fit"] = tuple(float(om[k]) if k in om else np.nan for k in FIT_KEYS) + (
+                om.attrs.get("field_verdict", ""),)
         rec["status"] = "ok" if "gamma" in om else "empty"
         if "gamma" in om:
             rec["gamma"], rec["omega"] = float(om["gamma"]), float(om["omega"])
@@ -255,8 +258,8 @@ def alpha_mhd(pr: dict) -> float:
 
 
 def gene_corner(corner_dir: str, field_fits: bool = False):
-    """({kymin: (gamma, omega, status, gamma_std, omega_std, parameters path)},
-    local parameters) of one corner, or None."""
+    """({kymin: (gamma, omega, status, gamma_std, omega_std, parameters path,
+    *FIT_KEYS, field verdict)}, local parameters) of one corner, or None."""
     runs = gene_runs(corner_dir)
     if not runs:
         return None
@@ -273,7 +276,7 @@ def gene_corner(corner_dir: str, field_fits: bool = False):
         k = round(rec["kymin"], 6)
         if k not in by_ky or RANK.get(rec["status"], 0) >= RANK.get(by_ky[k][2], 0):
             by_ky[k] = (rec["gamma"], rec["omega"], rec["status"], rec["gamma_std"],
-                        rec["omega_std"], path)
+                        rec["omega_std"], path, *rec["fit"])
         for k, v in rec["params"].items():
             params.setdefault(k, []).append(v)
     local = {}
@@ -413,6 +416,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                        {"long_name": "std of the TPED field estimate (status 'field' only)"})
     ds["omega_std"] = (("corner", "ky"), [on_ky(n, 4, np.nan) for n in names])
     ds["path"] = (("corner", "ky"), [on_ky(n, 5, "") for n in names])
+    for j, k in enumerate(FIT_KEYS, start=6):      # recorded field fit, whatever GENE did
+        ds[k] = (("corner", "ky"), [on_ky(n, j, np.nan) for n in names])
+    ds["field_verdict"] = (("corner", "ky"), [on_ky(n, 6 + len(FIT_KEYS), "") for n in names])
     keys = sorted({k for g in gene.values() for k in g[1]})
     for k in keys:
         ds[k] = ("corner", [gene[n][1].get(k, np.nan) if n in gene else np.nan for n in names])
@@ -555,54 +561,52 @@ def plot_growth(ds, out, written):
     save(fig, out, "corners_growth.png", written)
 
 
-def plot_growth_field(csv_file, x0, out, written, dodge=0.025):
-    """gamma and omega vs ky from field_omega.py --csv: every run's field fit +-1 std,
-    filled where GENE converged, hollow where not, GENE's converged value as a tick."""
-    if not os.path.isfile(csv_file):
-        print(f"no {csv_file} (field_omega.py --csv); corners_growth_field.png skipped")
-        return
-    df = pd.read_csv(csv_file)
-    if df.empty:
-        print(f"{csv_file} has no rows; corners_growth_field.png skipped")
+def plot_growth_field(ds, out, written, dodge=0.025):
+    """gamma and omega vs ky: every run's recorded field fit +-1 std, filled where
+    GENE converged, hollow where not, GENE's converged value as a tick."""
+    have = ds["gamma_field"].notnull()
+    if not bool(have.any()):
+        print("no field fits in the omega files (field_omega.py --write); "
+              "corners_growth_field.png skipped")
         return
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
-    pts = ordered([dict(zip(ORDER, k)) for k in df.groupby(list(ORDER)).groups])
+    ky = ds.ky.values
+    names = [c for c in ds.corner.values if bool(have.sel(corner=c).any())]
     ys = {"gamma": [], "omega": []}
-    for n, p in enumerate(pts):
-        st = style(p)
-        d = df[np.logical_and.reduce([df[k] == p[k] for k in ORDER])].sort_values("ky")
-        x = d["ky"].values * (1 + dodge * (n - (len(pts) - 1) / 2))
-        conv = (d["gene_state"] == "converged").values
+    for n, c in enumerate(names):
+        st = style(point_of(ds, c))
+        x = ky * (1 + dodge * (n - (len(names) - 1) / 2))
+        conv = ds.status.sel(corner=c).values == "ok"
         for ax, var in zip(axes, ("gamma", "omega")):
-            y, err = d[f"{var}_field"].values, d[f"{var}_std"].values
-            ys[var] += list(y[np.isfinite(y)])
-            ax.plot(x, y, lw=0.9, color=st["color"], ls=st["ls"], alpha=0.6)
-            for sel, mfc in ((conv, st["color"]), (~conv, "none")):
+            y = ds[f"{var}_field"].sel(corner=c).values
+            err = ds[f"{var}_field_std"].sel(corner=c).values
+            ok = np.isfinite(y)
+            ys[var] += list(y[ok])
+            ax.plot(x[ok], y[ok], lw=0.9, color=st["color"], ls=st["ls"], alpha=0.6)
+            for sel, mfc in ((ok & conv, st["color"]), (ok & ~conv, "none")):
                 if sel.any():
                     ax.errorbar(x[sel], y[sel], yerr=err[sel], fmt=st["marker"], ms=5,
                                 color=st["color"], mfc=mfc, mec=st["color"], mew=1.2,
                                 capsize=2, lw=0.9, zorder=4)
-            gene = d[f"{var}_gene"].values
-            if conv.any():
-                ax.plot(x[conv], gene[conv], "_", color=INK, ms=9, mew=1.6, zorder=5)
+            if (ok & conv).any():
+                ax.plot(x[ok & conv], ds[var].sel(corner=c).values[ok & conv], "_", color=INK,
+                        ms=9, mew=1.6, zorder=5)
     for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
         ax.axhline(0, color=MUTED, lw=0.8)
         ax.set_xscale("log")
         ax.set_xlabel(r"$k_y\rho_{ref}$ (corners nudged apart)")
         ax.set_ylabel(rf"${sym}$ field fit [$c_{{ref}}/L_{{ref}}$]")
         v = np.array(ys[var])
-        if v.size:                              # frame the values, not the widest bars
-            lo, hi = v.min(), v.max()
-            pad = 0.15 * (hi - lo or abs(hi) or 1.0)
-            ax.set_ylim(min(lo - pad, -pad / 3), hi + pad)
+        lo, hi = v.min(), v.max()                  # frame the values, not the widest bars
+        pad = 0.15 * (hi - lo or abs(hi) or 1.0)
+        ax.set_ylim(min(lo - pad, -pad / 3), hi + pad)
+        ax.set_xticks(ky, [f"{k:g}" for k in ky])
+        ax.minorticks_off()
         tidy(ax)
-    ky = np.sort(df["ky"].unique())
-    axes[0].set_xticks(ky, [f"{k:g}" for k in ky])
-    axes[0].minorticks_off()
-    axes[1].minorticks_off()
     axes[0].set_title("growth rate, field fit ±1σ", loc="left", fontsize=10, color=INK)
     axes[1].set_title("real frequency, field fit ±1σ", loc="left", fontsize=10, color=INK)
-    handles = [Line2D([], [], lw=1.8, ms=5, mfc="none", **style(p), label=label(p)) for p in pts]
+    handles = [h for h in corner_handles(ds) if h.get_label() in
+               set(ds.label.sel(corner=names).values)]
     extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=6,
                     label="GENE converged (filled)"),
              Line2D([], [], ls="none", marker="o", mfc="none", mec=MUTED, ms=6,
@@ -610,9 +614,10 @@ def plot_growth_field(csv_file, x0, out, written, dodge=0.025):
              Line2D([], [], ls="none", marker="_", color=INK, ms=9, mew=1.6,
                     label="GENE's converged value")]
     legend_right(fig, handles, extra)
-    n_un = int((df["gene_state"] != "converged").sum())
-    fig.suptitle(f"NSTX 129038 corners, field-trace fits of every run at x0 = {x0:g} "
-                 f"({len(df)} runs, {n_un} not converged by GENE)", x=0.06, ha="left",
+    n_fit = int(have.sum())
+    n_un = int((have & (ds.status != "ok")).sum())
+    fig.suptitle(f"NSTX 129038 corners, field-trace fits of every run at x0 = {ds.x0:g} "
+                 f"({n_fit} runs, {n_un} not converged by GENE)", x=0.06, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
     save(fig, out, "corners_growth_field.png", written)
@@ -964,9 +969,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0, modes=False, field_fits=False, field_all=None):
-    """field_all: field_omega.py --csv file to draw as corners_growth_field.png
-    ('' for its default path), or None for no such plot."""
+        x0=X0, modes=False, field_fits=False, field_all=False):
     x0 = tuple(x0)
     out = out or default_out(x0)
     ds = load_dataset(diag_root, ped_root, x0, modes, field_fits)
@@ -975,8 +978,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)       # all-NaN corners and rows
         plot_growth(ds, out, written)
-        if field_all is not None:
-            plot_growth_field(field_all or csv_path(diag_root, x0), x0[0], out, written)
+        if field_all:
+            plot_growth_field(ds, out, written)
         plot_profiles(ds, out, written)
         plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
         plot_s_alpha(ds, out, written)
@@ -1003,9 +1006,9 @@ if __name__ == "__main__":
     ap.add_argument("--field-fits", action="store_true",
                     help="draw recorded field fits that did not pass (decaying/ambiguous, "
                          "from field_omega.py --write) with their error bars")
-    ap.add_argument("--field-all", nargs="?", const="", default=None, metavar="CSV",
-                    help="also plot every run's field fit +-1 std from field_omega.py --csv "
-                         "[<diag-root>/x0_<x0>/field_omega_fits.csv]")
+    ap.add_argument("--field-all", action="store_true",
+                    help="also plot every run's recorded field fit +-1 std, converged or not "
+                         "(field_omega.py --write), as corners_growth_field.png")
     ap.add_argument("--modes", action="store_true",
                     help="classify each ky with TPED mode_identifier (reads nrg, field, "
                          "geometry; slower) and mark the growth plot by mode")
