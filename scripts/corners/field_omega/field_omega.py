@@ -33,11 +33,19 @@ its uncertainty.
 --validate also fits every ky GENE did converge and prints both, writing
 nothing for those: a check of the estimator (window, sign of omega) on runs
 where the answer is known, before trusting it where it is not.
+
+--csv fits every ky, converged or not, and writes them all, with GENE's own
+value beside each, to <diag-root>/x0_<x0>/field_omega_fits.csv (or the path
+given); plot_corners.py --field-all draws that file. The omega files are
+still only appended to for unconverged ky, and only with --write.
+
+    python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --x0 0.6737 --csv
 """
 
 from __future__ import annotations
 
 import contextlib
+import csv
 import glob
 import io
 import os
@@ -48,6 +56,11 @@ import numpy as np
 from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
 from TPED.projects.GENE_sim_reader.src.GENE_omega_data import parse_omega_text
 from NSTXU_lithium_study.scripts.corner_gene_scan import DIAG_ROOT, X0, corners, tag, x0_label
+
+#: Every fit of a --csv run, beside the scan's corners.
+CSV_NAME = "field_omega_fits.csv"
+CSV_COLUMNS = ("corner", "Tew", "new", "Teh", "neh", "ky", "gene_state", "gamma_gene",
+               "omega_gene", "gamma_field", "gamma_std", "omega_field", "omega_std", "verdict")
 
 #: Fraction of the run's field output the fit uses: its last 30%.
 WINDOW = (0.7, 1.0)
@@ -104,9 +117,17 @@ def verdict(g, gs, w, ws, rel_tol=REL_TOL, abs_tol=ABS_TOL) -> str:
     return "decaying" if np.isfinite(g) and np.isfinite(gs) and g + 2 * gs < 0 else "ambiguous"
 
 
+def csv_path(diag_root=DIAG_ROOT, x0=X0) -> str:
+    return os.path.join(diag_root, x0_label(x0), CSV_NAME)
+
+
 def run(diag_root=DIAG_ROOT, x0=X0, write=False, validate=False, window=WINDOW,
-        rel_tol=REL_TOL, abs_tol=ABS_TOL, passing_only=False):
+        rel_tol=REL_TOL, abs_tol=ABS_TOL, passing_only=False, csv_out=None):
+    """csv_out: path ('' for csv_path) to write every fit to; fits converged ky too."""
     root = os.path.join(diag_root, x0_label(x0))
+    rows = []
+    if csv_out is not None:
+        validate, csv_out = True, csv_out or csv_path(diag_root, x0)
     counts = {"written": 0, "pass": 0, "decaying": 0, "ambiguous": 0, "fit failed": 0,
               "no field": 0}
     print(f"{root}\nfit window {window[0]:g}-{window[1]:g} of the field output, {FIELDS}, "
@@ -137,6 +158,11 @@ def run(diag_root=DIAG_ROOT, x0=X0, write=False, validate=False, window=WINDOW,
             g, w = s["gamma_avg"], s["omega_avg"]
             gs, ws = np.sqrt(s["gamma_variance"]), np.sqrt(s["omega_variance"])
             v = verdict(g, gs, w, ws, rel_tol, abs_tol)
+            rows.append({"corner": tag(p), **{k: p[k] for k in ("Tew", "new", "Teh", "neh")},
+                         "ky": ky, "gene_state": state,
+                         "gamma_gene": values.get("gamma_gene", np.nan),
+                         "omega_gene": values.get("omega_gene", np.nan), "gamma_field": g,
+                         "gamma_std": gs, "omega_field": w, "omega_std": ws, "verdict": v})
             if state == "converged":                # --validate: compare, never write
                 result = (f"check: d_gamma {g - values['gamma_gene']:+.4f}, "
                           f"d_omega {w - values['omega_gene']:+.4f}")
@@ -152,6 +178,12 @@ def run(diag_root=DIAG_ROOT, x0=X0, write=False, validate=False, window=WINDOW,
                     result += ", appended"
             print(f"{tag(p):34} {ky:5.2f} {gene:>11} {g:9.4f} ±{gs:7.1e} {w:9.4f} ±{ws:7.1e}  {result}")
     print("\n" + ", ".join(f"{v} {k}" for k, v in counts.items()))
+    if csv_out:
+        with open(csv_out, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, CSV_COLUMNS)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"{len(rows)} fits written to {csv_out}")
     return counts
 
 
@@ -168,10 +200,13 @@ if __name__ == "__main__":
                     help="with --write, append only estimates that pass")
     ap.add_argument("--validate", action="store_true",
                     help="also fit ky GENE converged and print the difference (never written)")
+    ap.add_argument("--csv", nargs="?", const="", default=None, metavar="PATH",
+                    help=f"fit every ky (converged too) and write all to PATH "
+                         f"[<diag-root>/x0_<x0>/{CSV_NAME}]")
     ap.add_argument("--window", type=float, nargs=2, default=list(WINDOW),
                     help="fraction of the field output to fit, start end")
     ap.add_argument("--rel-tol", type=float, default=REL_TOL)
     ap.add_argument("--abs-tol", type=float, default=ABS_TOL)
     args = ap.parse_args()
     run(args.diag_root, tuple(args.x0), args.write, args.validate, tuple(args.window),
-        args.rel_tol, args.abs_tol, args.passing_only)
+        args.rel_tol, args.abs_tol, args.passing_only, args.csv)
