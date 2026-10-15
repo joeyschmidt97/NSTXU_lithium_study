@@ -16,7 +16,10 @@ Sources (vault note 2026-10-10-mtanh-fit-error-campaign-shots, 2026-10-15):
     132543          campaign fit (FIT_KWARGS, default bounds) on the local pfile;
                     95% (Te) and 90% (ne) of a requested ped_scale at the
                     pedestal top
-    132588          campaign fit on the local pfile, bounds set in REFIT_132588
+    132588          refit with b_pos >= 0.70 (both) and a_width <= 0.5 (Te).
+                    With the default 0.85 floor ne pinned b_pos and both cut the
+                    axis by 13-15%; the refit matches the raw core, and the
+                    requested factor reaches the broad (rho_tor 0.4-1) pedestal
 """
 
 from __future__ import annotations
@@ -38,9 +41,8 @@ FROZEN_FITS = os.path.join(HERE, "frozen_mtanh_fits.json")
 # Box-scan runs whose transform logs hold the 129xxx coefficients.
 NERSC_129XXX = "data/129015_129038/pm0.2_ncscal4_warmup0/{shot}/{var}_ped_scale_1.000"
 
-# (b_pos lower bound, a_width upper bound) per 132588 variable; the defaults
-# for now.
-REFIT_132588 = {"Te": (0.85, 2.0), "ne": (0.85, 2.0)}
+# (b_pos lower bound, a_width upper bound) per refitted 132588 variable.
+REFIT_132588 = {"Te": (0.70, 0.5), "ne": (0.70, 2.0)}
 
 
 def _from_nersc_log(repo, shot, var):
