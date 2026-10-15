@@ -31,6 +31,7 @@ or from a notebook:
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -47,6 +48,7 @@ if __name__ == "__main__":
 # TPED/ and NSTXU_lithium_study/ must be on PYTHONPATH (see README).
 from TPED.projects.discharge_tools.src.discharge_data import DischargeData
 from TPED.projects.discharge_tools.src.discharge_physics import DischargePhysics
+from TPED.projects.discharge_tools.src.transforms.mtanh_full_profile import StefanikovaProfile
 from TPED.projects.discharge_tools.src.transforms.mtanh_transforms import fit_mtanh_full
 
 # ---------------------------------------------------------------------------
@@ -71,6 +73,14 @@ PFILES = {129038: "p129038.00400"}
 # Campaign fit setting for mtanh_full. One value everywhere.
 FIT_KWARGS = dict(pedestal_weight=8.0)
 QZ = 6.0
+
+# Frozen nominal fits (freeze_fits.py). The same fit call lands in different
+# minima on different machines, and the fit decides what a ped_scale factor
+# does, so every machine reads these instead of refitting. A shot/variable
+# missing from the file is fitted live with FIT_KWARGS.
+FROZEN_FITS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "frozen_mtanh_fits.json")
+USE_FROZEN_FITS = True
 
 # (rhot_topped, rhot_midped) for the omt/omne gradient transforms.
 RAMP_WINDOW = (0.8, 1.0)
@@ -144,12 +154,29 @@ def _fit(phys: DischargePhysics, var: str):
     """Nominal StefanikovaProfile for one variable, cached on the object.
 
     Fitted once off the unscaled profiles so every scale factor is measured
-    against the same fit rather than a refit of its own output.
+    against the same fit rather than a refit of its own output. Read from
+    FROZEN_FITS when the shot is there (see USE_FROZEN_FITS).
     """
     cache = phys.__dict__.setdefault("_scaling_fits", {})
     if var not in cache:
-        cache[var] = fit_mtanh_full(phys.ds, var, **FIT_KWARGS)[0]
+        frozen = _frozen_fit(phys, var) if USE_FROZEN_FITS else None
+        cache[var] = frozen or fit_mtanh_full(phys.ds, var, **FIT_KWARGS)[0]
     return cache[var]
+
+
+def _frozen_fit(phys: DischargePhysics, var: str):
+    """StefanikovaProfile from FROZEN_FITS for this shot, or None."""
+    if not os.path.isfile(FROZEN_FITS):
+        return None
+    with open(FROZEN_FITS) as f:
+        fits = json.load(f)["fits"]
+    entry = fits.get(str(phys.ds.attrs.get("shot")), {}).get(var)
+    if entry is None:
+        return None
+    prof = StefanikovaProfile(**entry["params"], label=var)
+    prof.rms_residual = entry.get("rms_residual", float("nan"))
+    prof.rms_relative = entry.get("rms_relative", float("nan"))
+    return prof
 
 
 def _apply_mtanh_full(phys, spec, s, **kw):
