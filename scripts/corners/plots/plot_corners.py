@@ -8,9 +8,9 @@ Reads every corner corner_gene_scan.py launched,
 
 into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
 
-    corners_growth.png          gamma and omega vs ky, all corners
-    corners_growth_field.png    (--field-all) the field_omega fit of every run, converged
-                                or not, gamma and omega +-1 std vs ky, GENE's value beside
+    corners_growth.png          gamma and omega vs ky, all corners, GENE-converged ky only
+    corners_growth_field.png    the same with the field-fit guess (+-1 std) at every
+                                unconverged ky, on its corner's own line
     corners_profiles.png        ne, Te, ni, Ti and their -dln/drho_tor, x0 marked
     corners_profiles_ped.png    the same, zoomed to PED_ZOOM
     corners_mode_scaling.png    (--modes) mode per corner and ky as a table, each cell
@@ -38,15 +38,19 @@ hue never share a line style and no corner is told apart by colour alone.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --modes
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.8447 --modes --field-fits
-    python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --field-all
 
-With --field-all, corners_growth_field.png draws the field fit that
-field_omega.py --write recorded in each omega file (TPED's gamma_field +-
-gamma_field_std), for every run, converged or not: +-1 std bars, filled
-where GENE converged and hollow where it did not, with GENE's converged value
-as a black tick at the same ky. It shows where the unconverged runs are heading and how far the fit
-sits from GENE where both exist. ky is log-scaled and each corner nudged
-sideways so the bars do not overlap. corners_growth.png is unchanged.
+Two growth plots, always:
+
+    corners_growth.png        only what GENE converged (filled markers on each
+                              corner's line); every other ky is an x on the zero line
+    corners_growth_field.png  the same corners and lines, with each unconverged ky
+                              (0/0 or empty omega file) filled in by the field fit
+                              field_omega.py --write recorded there (TPED's gamma_field
+                              +- gamma_field_std, whatever its verdict): a hollow
+                              marker with +-1 std bars in the corner's own colour, line
+                              style and marker, joined into its line, so every guess
+                              reads as part of its family. 'ambiguous' fits are faded.
+                              Skipped when no omega file holds a fit.
 
 With --modes each ky GENE converged (or the field estimate filled) is
 classified by TPED's mode_identifier (GENE_sim_analysis: fingerprint transport
@@ -58,18 +62,16 @@ ITG/TEM checks, are unreliable; read the inputs before the label.
 
 With --field-fits, a ky that GENE left 0/0 but field_omega.py recorded a
 fit for with verdict 'decaying' (gamma + 2 std < 0) or 'ambiguous' (std too
-large to tell a slow-growing mode from beating damped ones) is drawn at its
-fitted gamma/omega with +-1 std error bars: green-edged for decaying, faint
-grey for ambiguous, never joined into the corner's line, never classified,
-and left out of gamma_max when ambiguous. Without the flag they stay x.
+large to tell a slow-growing mode from beating damped ones) carries that fit
+in the dataset: 'dec'/'amb' cells in the mode table, gamma_std/omega_std in
+corners_modes.csv, and left out of gamma_max when ambiguous. Without the flag
+they stay x. A passing fit (status 'field') is the point's gamma either way.
 
-A ky whose omega file carries a TPED field estimate below GENE's 0/0 line
-(field_omega.py --write) plots as a diamond with ±1 std error bars.
 An empty omega file, or one holding gamma = omega = 0 exactly (GENE's
 placeholder when a run ends without a converged growth rate: time limit, or
-a decaying mode), reads as NaN and is drawn as an x on the zero line; a
-missing omega or parameters file is NaN and left out. The ky axis is every
-kymin found across the corners, so scans with different ky lists combine. A corner with neither GENE output nor profiles is
+a decaying mode), reads as NaN; a missing omega or parameters file is NaN and
+left out. The ky axis is every kymin found across the corners, so scans with
+different ky lists combine. A corner with neither GENE output nor profiles is
 reported and skipped. Nothing here raises on a partial scan.
 
 alpha_MHD = q0^2 * major_R * dpdx_pm, all in GENE units (major_R = R0/Lref,
@@ -145,7 +147,7 @@ INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 DPI = 150
 #: Which reading of a ky wins when two scanfiles dirs hold it.
 RANK = {"ok": 2, "field": 1, "decaying": 0.5, "ambiguous": 0.5}
-#: The TPED field fit of a run (GeneOmega), any GENE state; --field-all.
+#: The TPED field fit of a run (GeneOmega), any GENE state; corners_growth_field.png.
 FIT_KEYS = ("gamma_field", "gamma_field_std", "omega_field", "omega_field_std")
 FIT_NONE = (np.nan,) * len(FIT_KEYS) + ("",)
 #: --field-fits: recorded field fits that did not pass, by verdict.
@@ -485,51 +487,53 @@ def save(fig, out, name, written):
     written.append(path)
 
 
-def plot_growth(ds, out, written):
+def plot_growth(ds, out, written, guesses=False):
+    """gamma and omega vs ky, one line per corner through what GENE converged
+    (corners_growth.png) or, with *guesses*, also through the recorded field fit
+    at each unconverged ky, drawn hollow with +-1 std (corners_growth_field.png)."""
+    name = "corners_growth_field.png" if guesses else "corners_growth.png"
+    ky = ds.ky.values
+    status = ds.status.values
+    conv = status == "ok"
+    guess = ~conv & np.isfinite(ds["gamma_field"].values) if guesses else np.zeros_like(conv)
+    if guesses and not guess.any():
+        print(f"no field fit at any unconverged ky (field_omega.py --write); {name} skipped")
+        return
     modes = "mode" in ds
+    mode = ds["mode"].values if modes else np.full(conv.shape, "", dtype=object)
+    verdict = ds["field_verdict"].values
     if modes:
         fig, grid = plt.subplots(2, 2, figsize=(13, 8.2), sharex=True,
                                  height_ratios=(3, 1.5))
         axes, mode_axes = grid[0], grid[1]
     else:
         fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
-    unconv = fielded = False
-    fits_seen = set()
-    for c in ds.corner.values:
+    unconv = faded = False
+    for i, c in enumerate(ds.corner.values):
         st = style(point_of(ds, c))
-        status = ds.status.sel(corner=c).values
+
+        def marker(j):
+            return MODE_MARKER.get(mode[i, j], "*") if modes and mode[i, j] else st["marker"]
+
         for ax, var in zip(axes, ("gamma", "omega")):
-            line = ds[var].sel(corner=c).where(~np.isin(status, list(FIT_STYLE)))
-            for verdict, fs in FIT_STYLE.items():
-                sel = status == verdict
-                if sel.any():
-                    fits_seen.add(verdict)
-                    ax.errorbar(ds.ky.values[sel], ds[var].sel(corner=c).values[sel],
-                                yerr=ds[f"{var}_std"].sel(corner=c).values[sel], fmt="o", ms=5,
-                                mfc="none", mec=fs["mec"], mew=1.4, color=st["color"],
-                                alpha=fs["alpha"], capsize=2.5, lw=0.9, zorder=4)
-            if modes:                   # line only; each point gets its mode's marker below
-                ax.plot(ds.ky, line, lw=1.4, color=st["color"], ls=st["ls"])
-                y = ds[var].sel(corner=c).values
-                for j, m in enumerate(ds["mode"].sel(corner=c).values):
-                    if m and np.isfinite(y[j]):
-                        filled = status[j] == "ok"
-                        ax.plot(ds.ky.values[j], y[j], MODE_MARKER.get(m, "*"), ms=7,
-                                color=st["color"], mec=st["color"] if filled else INK,
-                                mfc=st["color"] if filled else "none", mew=1.2, zorder=6)
-            else:
-                ax.plot(ds.ky, line, lw=1.6, ms=5, mfc="none", **st)
-            bad = ds.ky.values[np.isin(status, ("empty", "zero"))]
-            if bad.size:
+            y = np.where(conv[i], ds[var].values[i], np.nan)
+            y = np.where(guess[i], ds[f"{var}_field"].values[i], y)
+            err = ds[f"{var}_field_std"].values[i]
+            ok = np.isfinite(y)
+            ax.plot(ky[ok], y[ok], lw=1.4, color=st["color"], ls=st["ls"], zorder=3)
+            for j in np.flatnonzero(conv[i] & ok):
+                ax.plot(ky[j], y[j], marker(j), ms=7 if modes else 5.5, color=st["color"],
+                        mec=st["color"], zorder=6)
+            for j in np.flatnonzero(guess[i]):
+                amb = verdict[i, j] == "ambiguous"
+                faded |= bool(amb)
+                ax.errorbar(ky[j], y[j], yerr=err[j], fmt=marker(j), ms=7 if modes else 6,
+                            mfc=SURFACE, mec=st["color"], mew=1.4, color=st["color"],
+                            capsize=2.5, lw=0.9, alpha=0.5 if amb else 1.0, zorder=5)
+            bad = ~conv[i] & ~guess[i] & (status[i] != "missing")
+            if bad.any():
                 unconv = True
-                ax.plot(bad, np.zeros(bad.size), "x", color=st["color"], ms=9, mew=2)
-            est = status == "field"
-            if est.any():
-                fielded = True
-                ax.errorbar(ds.ky.values[est], ds[var].sel(corner=c).values[est],
-                            yerr=ds[f"{var}_std"].sel(corner=c).values[est],
-                            fmt="none" if modes else "D",
-                            color=st["color"], ms=6, mec=INK, mew=0.6, capsize=3, lw=1, zorder=5)
+                ax.plot(ky[bad], np.zeros(bad.sum()), "x", color=st["color"], ms=9, mew=2)
     if modes:
         mode_strip(mode_axes[0], ds, weighted=False)
         mode_strip(mode_axes[1], ds, weighted=True)
@@ -539,93 +543,35 @@ def plot_growth(ds, out, written):
             ax.set_xlabel(r"$k_y\rho_{ref}$")
         ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
         tidy(ax)
-    axes[0].set_title("growth rate", loc="left", fontsize=10, color=INK)
-    axes[1].set_title("real frequency", loc="left", fontsize=10, color=INK)
-    extra = [Line2D([], [], ls="none", marker="x", color=INK, ms=8, mew=2,
-                    label="unconverged (empty or 0/0 omega)")] if unconv else []
-    if fielded:
-        extra.append(Line2D([], [], ls="none", marker="o" if modes else "D", color=MUTED,
-                            mec=INK, mfc="none" if modes else MUTED, ms=6,
-                            label="TPED field estimate ±1σ" + (" (hollow)" if modes else "")))
-    extra += [Line2D([], [], ls="none", marker="o", mfc="none", mec=FIT_STYLE[v]["mec"], mew=1.4,
-                     ms=6, alpha=FIT_STYLE[v]["alpha"], label=FIT_STYLE[v]["label"])
-              for v in FIT_STYLE if v in fits_seen]
+    what = "GENE converged + field-fit guess" if guesses else "GENE converged only"
+    axes[0].set_title(f"growth rate, {what}", loc="left", fontsize=10, color=INK)
+    axes[1].set_title(f"real frequency, {what}", loc="left", fontsize=10, color=INK)
+    extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=6,
+                    label="GENE converged (filled)")]
+    if guesses:
+        extra.append(Line2D([], [], ls="none", marker="o", mfc=SURFACE, mec=MUTED, mew=1.4,
+                            ms=6, label="field-fit guess ±1σ (hollow)"))
+        if faded:
+            extra.append(Line2D([], [], ls="none", marker="o", mfc=SURFACE, mec=MUTED, mew=1.4,
+                                ms=6, alpha=0.5, label="guess with ambiguous fit (faded)"))
+    if unconv:
+        extra.append(Line2D([], [], ls="none", marker="x", color=INK, ms=8, mew=2,
+                            label="unconverged" + (", no fit" if guesses else "")))
     if modes:
-        found = [m for m in MODE_MARKER if (ds["mode"].values == m).any()]
+        found = [m for m in MODE_MARKER if (mode == m).any()]
         extra += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, ms=7,
                          label=f"mode: {m}") for m in found]
         handles = [Line2D([], [], lw=1.8, color=style(point_of(ds, c))["color"],
                           ls=style(point_of(ds, c))["ls"], label=str(l))
                    for c, l in zip(ds.corner.values, ds.label.values)]
     else:
-        handles = corner_handles(ds)
+        handles = [Line2D([], [], lw=1.8, ms=5.5, **style(point_of(ds, c)), label=str(l))
+                   for c, l in zip(ds.corner.values, ds.label.values)]
     legend_right(fig, handles, extra)
     fig.suptitle(f"NSTX 129038 corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
-    save(fig, out, "corners_growth.png", written)
-
-
-def plot_growth_field(ds, out, written, dodge=0.025):
-    """gamma and omega vs ky: every run's recorded field fit +-1 std, filled where
-    GENE converged, hollow where not, GENE's converged value as a tick."""
-    have = ds["gamma_field"].notnull()
-    if not bool(have.any()):
-        print("no field fits in the omega files (field_omega.py --write); "
-              "corners_growth_field.png skipped")
-        return
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), sharex=True)
-    ky = ds.ky.values
-    names = [c for c in ds.corner.values if bool(have.sel(corner=c).any())]
-    ys = {"gamma": [], "omega": []}
-    for n, c in enumerate(names):
-        st = style(point_of(ds, c))
-        x = ky * (1 + dodge * (n - (len(names) - 1) / 2))
-        conv = ds.status.sel(corner=c).values == "ok"
-        for ax, var in zip(axes, ("gamma", "omega")):
-            y = ds[f"{var}_field"].sel(corner=c).values
-            err = ds[f"{var}_field_std"].sel(corner=c).values
-            ok = np.isfinite(y)
-            ys[var] += list(y[ok])
-            ax.plot(x[ok], y[ok], lw=0.9, color=st["color"], ls=st["ls"], alpha=0.6)
-            for sel, mfc in ((ok & conv, st["color"]), (ok & ~conv, "none")):
-                if sel.any():
-                    ax.errorbar(x[sel], y[sel], yerr=err[sel], fmt=st["marker"], ms=5,
-                                color=st["color"], mfc=mfc, mec=st["color"], mew=1.2,
-                                capsize=2, lw=0.9, zorder=4)
-            if (ok & conv).any():
-                ax.plot(x[ok & conv], ds[var].sel(corner=c).values[ok & conv], "_", color=INK,
-                        ms=9, mew=1.6, zorder=5)
-    for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
-        ax.axhline(0, color=MUTED, lw=0.8)
-        ax.set_xscale("log")
-        ax.set_xlabel(r"$k_y\rho_{ref}$ (corners nudged apart)")
-        ax.set_ylabel(rf"${sym}$ field fit [$c_{{ref}}/L_{{ref}}$]")
-        v = np.array(ys[var])
-        lo, hi = v.min(), v.max()                  # frame the values, not the widest bars
-        pad = 0.15 * (hi - lo or abs(hi) or 1.0)
-        ax.set_ylim(min(lo - pad, -pad / 3), hi + pad)
-        ax.set_xticks(ky, [f"{k:g}" for k in ky])
-        ax.minorticks_off()
-        tidy(ax)
-    axes[0].set_title("growth rate, field fit ±1σ", loc="left", fontsize=10, color=INK)
-    axes[1].set_title("real frequency, field fit ±1σ", loc="left", fontsize=10, color=INK)
-    handles = [h for h in corner_handles(ds) if h.get_label() in
-               set(ds.label.sel(corner=names).values)]
-    extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=6,
-                    label="GENE converged (filled)"),
-             Line2D([], [], ls="none", marker="o", mfc="none", mec=MUTED, ms=6,
-                    label="GENE unconverged (hollow)"),
-             Line2D([], [], ls="none", marker="_", color=INK, ms=9, mew=1.6,
-                    label="GENE's converged value")]
-    legend_right(fig, handles, extra)
-    n_fit = int(have.sum())
-    n_un = int((have & (ds.status != "ok")).sum())
-    fig.suptitle(f"NSTX 129038 corners, field-trace fits of every run at x0 = {ds.x0:g} "
-                 f"({n_fit} runs, {n_un} not converged by GENE)", x=0.06, ha="left",
-                 fontsize=12, color=INK)
-    fig.tight_layout(rect=(0, 0, 0.8, 0.95))
-    save(fig, out, "corners_growth_field.png", written)
+    save(fig, out, name, written)
 
 
 def mode_strip(ax, ds, weighted):
@@ -998,7 +944,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0, modes=False, field_fits=False, field_all=False):
+        x0=X0, modes=False, field_fits=False):
     x0 = tuple(x0)
     out = out or default_out(x0)
     ds = load_dataset(diag_root, ped_root, x0, modes, field_fits)
@@ -1007,8 +953,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)       # all-NaN corners and rows
         plot_growth(ds, out, written)
-        if field_all:
-            plot_growth_field(ds, out, written)
+        plot_growth(ds, out, written, guesses=True)
         plot_profiles(ds, out, written)
         plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
         plot_s_alpha(ds, out, written)
@@ -1033,11 +978,9 @@ if __name__ == "__main__":
     ap.add_argument("--out", default=None,
                     help="directory for the PNGs and CSV [<diag-root>/x0_<x0>/plots]")
     ap.add_argument("--field-fits", action="store_true",
-                    help="draw recorded field fits that did not pass (decaying/ambiguous, "
-                         "from field_omega.py --write) with their error bars")
-    ap.add_argument("--field-all", action="store_true",
-                    help="also plot every run's recorded field fit +-1 std, converged or not "
-                         "(field_omega.py --write), as corners_growth_field.png")
+                    help="carry recorded field fits that did not pass (decaying/ambiguous, "
+                         "from field_omega.py --write) into the mode table, modes CSV and "
+                         "gamma_max (the growth plots show every fit regardless)")
     ap.add_argument("--modes", action="store_true",
                     help="classify each ky with TPED mode_identifier (reads nrg, field, "
                          "geometry; slower) and mark the growth plot by mode")
@@ -1047,4 +990,4 @@ if __name__ == "__main__":
                     help="most varying parameters to chart and tabulate")
     args = ap.parse_args()
     run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params, args.x0,
-        args.modes, args.field_fits, args.field_all)
+        args.modes, args.field_fits)
