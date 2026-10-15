@@ -26,8 +26,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_local_table.png     their values per corner, as a table
     corners_local_params.csv    every local parameter per corner (+ gamma_max)
 
-Every legend lists a corner as its knob factors in the order (Tew, new, Teh, neh),
-e.g. (0.8, 1.2, 0.8, 0.8). Colour hue is the width pair (Tew, new), shade
+Every legend, table and CSV lists a corner as its knob factors in the order
+of its run name, (Teh, Tew, neh, new): (1.2, 0.8, 0.8, 1.2) is
+Teh1.20_Tew0.80_neh0.80_new1.20. Corners are sorted in that order too. Colour hue is the width pair (Tew, new), shade
 the height pair (Teh, neh); line style is the height pair too (solid,
 dashed, dotted, dash-dot) and the marker neh, so the four corners sharing a
 hue never share a line style and no corner is told apart by colour alone.
@@ -103,14 +104,16 @@ from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
 from TPED.projects.utils.read_iterdb import read_iterdb
 from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, X0,
                                                          corners, tag, x0_label)
+from NSTXU_lithium_study.scripts.ped_grid import KNOBS
 
 
 def default_out(x0=X0) -> str:
     return os.path.join(DIAG_ROOT, x0_label(x0), "plots")
 
 
-#: Legend order of the knobs; the corner tag (ped_grid.tag) uses Teh, Tew, neh, new.
-ORDER = ("Tew", "new", "Teh", "neh")
+#: Legend order of the knobs: the corner tag's (ped_grid.tag, the GENE run and diag dir
+#: names), Teh, Tew, neh, new, so a label reads straight across to its run directory.
+ORDER = tuple(KNOBS)
 LEGEND_TITLE = "(" + ", ".join(ORDER) + ")"
 
 #: Pedestal window of the zoomed profile figure (rho_tor).
