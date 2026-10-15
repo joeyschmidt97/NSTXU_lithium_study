@@ -29,6 +29,10 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 mean, or the absolute difference for those that change sign
     corners_local_table.png     their values per corner, as a table
     corners_local_params.csv    every local parameter per corner (+ gamma_max)
+    corners_q_offset.png        rational-surface offset per corner and ky: delta =
+                                n q0 - round(n q0) (n = n0_global, q0 at x0, both from
+                                the run's parameters), as a table, and gamma vs |delta|;
+                                + corners_q_offset.csv
 
 Every legend, table and CSV lists a corner as its knob factors in the order
 of its run name, (Teh, Tew, neh, new): (1.2, 0.8, 0.8, 1.2) is
@@ -78,6 +82,14 @@ a decaying mode), reads as NaN; a missing omega or parameters file is NaN and
 left out. The ky axis is every kymin found across the corners, so scans with
 different ky lists combine. A corner with neither GENE output nor profiles is
 reported and skipped. Nothing here raises on a partial scan.
+
+delta = n q0 - round(n q0), in [-1/2, 1/2], places x0 between the q = m/n
+surfaces of the run's toroidal mode n: 0 on a rational surface, +-1/2 midway.
+|delta| is the distance to the nearest one as a fraction of their spacing
+x0 / (n shat q0) (in x = rho_tor), which dx_rational in the CSV gives in rho_tor.
+A flux tube does not see this offset (ballooning space assumes dense rational
+surfaces); it is the local proxy for the q-overlap a global MTM depends on.
+n is GENE's n0_global, or round(ky x0 / (q0 rhostar)) when that is absent.
 
 alpha_MHD = q0^2 * major_R * dpdx_pm, all in GENE units (major_R = R0/Lref,
 dpdx_pm = -dbeta/dx with x in Lref, as GENE writes it in the run's parameters
@@ -179,6 +191,8 @@ MODE_COLOR = {"ITG_TEM": "#6250d6", "ETG": "#eda100", "KBM": "#2a78d6", "MTM": "
 TABLE_SHADE = (0.82, -0.3)
 #: Gaussian width (in ky) of the smoothed mode fraction under the growth plot.
 MODE_KDE_BW = 0.12
+#: corners_q_offset.png: |delta| / 0.5, dark on a rational surface to light midway
+Q_OFFSET_CMAP = LinearSegmentedColormap.from_list("q_offset", ["#5b2a86", "#b58fd0", "#f4f1f8"])
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
 MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-Chi_e"): "Xi_Xe",
                ("fingerprints", "Q_EM_e-|Q_ES|_tot"): "QEM_e", ("epar", "Epar_norm"): "Epar_norm",
@@ -256,6 +270,14 @@ def read_run(par_path: str, field_fits: bool = False) -> dict:
                     for k in ("gamma", "omega"):
                         rec[f"{k}_std"] = (float(om[f"{k}_field_std"]) if f"{k}_field_std" in om
                                            else np.nan)
+    if "n0_global" in par:
+        rec["n0"] = float(par["n0_global"])
+    else:                                     # GENE's n for nky0 = 1: ky Cy / rhostar, Cy = x0/q0
+        try:
+            rec["n0"] = float(np.round(rec["kymin"] * float(par["x0"])
+                                       / (float(par["q0"]) * float(par["rhostar"]))))
+        except (KeyError, ZeroDivisionError):
+            rec["n0"] = np.nan
     rec["params"] = {k: float(par[k]) for k in par.data_vars
                      if (k in PARAM_KEYS or SPECIES_PARAM.match(k))
                      and np.issubdtype(par[k].dtype, np.number)}
@@ -277,7 +299,7 @@ def alpha_mhd(pr: dict) -> float:
 
 def gene_corner(corner_dir: str, field_fits: bool = False):
     """({kymin: (gamma, omega, status, gamma_std, omega_std, parameters path,
-    *FIT_KEYS, field verdict)}, local parameters) of one corner, or None."""
+    *FIT_KEYS, field verdict, n0)}, local parameters) of one corner, or None."""
     runs = gene_runs(corner_dir)
     if not runs:
         return None
@@ -294,7 +316,7 @@ def gene_corner(corner_dir: str, field_fits: bool = False):
         k = round(rec["kymin"], 6)
         if k not in by_ky or RANK.get(rec["status"], 0) >= RANK.get(by_ky[k][2], 0):
             by_ky[k] = (rec["gamma"], rec["omega"], rec["status"], rec["gamma_std"],
-                        rec["omega_std"], path, *rec["fit"])
+                        rec["omega_std"], path, *rec["fit"], rec["n0"])
         for k, v in rec["params"].items():
             params.setdefault(k, []).append(v)
     local = {}
@@ -463,11 +485,21 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
     for j, k in enumerate(FIT_KEYS, start=6):      # recorded field fit, whatever GENE did
         ds[k] = (("corner", "ky"), [on_ky(n, j, np.nan) for n in names])
     ds["field_verdict"] = (("corner", "ky"), [on_ky(n, 6 + len(FIT_KEYS), "") for n in names])
+    ds["n0"] = (("corner", "ky"), [on_ky(n, 7 + len(FIT_KEYS), np.nan) for n in names],
+                {"long_name": "toroidal mode number n (GENE n0_global)"})
     keys = sorted({k for g in gene.values() for k in g[1]})
     for k in keys:
         ds[k] = ("corner", [gene[n][1].get(k, np.nan) if n in gene else np.nan for n in names])
     if "alpha_MHD" in ds:
         ds["alpha_MHD"].attrs["formula"] = "q0^2 * major_R * dpdx_pm (GENE units)"
+    if "q0" in ds:                                 # q = m/n surfaces around x0
+        nq = ds["n0"] * ds["q0"]
+        ds["q_offset"] = (nq - np.round(nq)).assign_attrs(
+            long_name="n q0 - round(n q0): 0 on a rational surface, +-1/2 midway")
+        if "shat" in ds:
+            ds["dx_rational"] = (abs(ds["q_offset"]) * float(x0[0])
+                                 / (ds["n0"] * ds["shat"] * ds["q0"])).assign_attrs(
+                long_name="rho_tor from x0 to the nearest q = m/n surface")
     trusted = ds["gamma"].where(ds["status"] != "ambiguous")   # an ambiguous fit is no maximum
     finite = trusted.notnull().any("ky")
     ds["gamma_max"] = trusted.fillna(-np.inf).max("ky").where(finite)
@@ -748,6 +780,88 @@ def plot_mode_scaling(ds, out, written):
         fh.write("knob,level,labelled_ky," + ",".join(found) + "\n")
         for g_i, ((k, v), t) in enumerate(zip(groups, labelled)):
             fh.write(f"{k},{v:g},{t}," + ",".join(f"{fr[g_i]:.3f}" for _, fr in rows) + "\n")
+    written.append(path)
+
+
+def plot_q_offset(ds, out, written):
+    """delta = n q0 - round(n q0) per corner and ky as a table (dark on a rational
+    surface, light midway), and gamma vs |delta| beside it; + corners_q_offset.csv."""
+    if "q_offset" not in ds or not np.isfinite(ds.q_offset.values).any():
+        print("no n0_global/q0 in the runs' parameters; corners_q_offset.png skipped")
+        return
+    d, n0, gam, ky = ds.q_offset.values, ds.n0.values, ds.gamma.values, ds.ky.values
+    m = ds["mode"].values if "mode" in ds else np.full(d.shape, "", dtype=object)
+    conv = ds.status.values == "ok"
+    n = ds.sizes["corner"]
+    fig, (tab, sc) = plt.subplots(1, 2, figsize=(16, max(5.5, 0.34 * n + 2.2)),
+                                  width_ratios=(1.15, 1))
+    for i in range(n):
+        for j in range(ky.size):
+            if not np.isfinite(d[i, j]):
+                tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=SURFACE, ec=SURFACE, lw=2))
+                tab.text(j + 0.5, n - 0.5 - i, "-", ha="center", va="center", fontsize=6.5,
+                         color=MUTED)
+                continue
+            fc = Q_OFFSET_CMAP(abs(d[i, j]) / 0.5)
+            tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=SURFACE, lw=2))
+            text = f"{d[i, j]:+.2f}\nn={n0[i, j]:g}"
+            if np.isfinite(gam[i, j]):
+                mode = f"{MODE_SHORT.get(m[i, j], m[i, j])} " if m[i, j] else ""
+                text += f"\n{mode}{gam[i, j]:.3f}"
+            tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=6,
+                     linespacing=1.05, color="white" if np.mean(fc[:3]) < 0.55 else INK)
+    tab.set_xlim(0, ky.size)
+    tab.set_ylim(0, n)
+    tab.set_xticks(np.arange(ky.size) + 0.5, [f"{k:g}" for k in ky], fontsize=8)
+    tab.set_yticks(np.arange(n) + 0.5, [str(l) for l in ds.label.values[::-1]], fontsize=8)
+    tab.set_xlabel(r"$k_y\rho_{ref}$")
+    tab.tick_params(length=0)
+    for sp in tab.spines.values():
+        sp.set_visible(False)
+    tab.set_title(r"$\delta = nq_0 - \mathrm{round}(nq_0)$ per corner and ky, rows "
+                  f"{LEGEND_TITLE}\ncell: delta, n, [mode] gamma; dark = on a q = m/n "
+                  "surface, light = midway (|delta| = 1/2)", loc="left", fontsize=10, color=INK)
+    for q in range(6):                             # dark-to-light key under the table
+        tab.add_patch(plt.Rectangle((q * 0.35, -1.95), 0.35, 0.45, fc=Q_OFFSET_CMAP(q / 5),
+                                    ec="none", clip_on=False))
+    tab.text(2.2, -1.72, "|delta| 0 to 0.5", fontsize=7, va="center", color=INK, clip_on=False)
+
+    cmap = plt.get_cmap("viridis")
+    for j, k in enumerate(ky):
+        c = cmap(j / max(ky.size - 1, 1))
+        for i in np.flatnonzero(conv[:, j] & np.isfinite(d[:, j])):
+            mk = MODE_MARKER.get(m[i, j], "o") if m[i, j] else "o"
+            sc.plot(abs(d[i, j]), gam[i, j], mk, color=c, ms=6, mec=INK, mew=0.4, zorder=3)
+        sc.plot([], [], "o", color=c, ms=6, label=f"ky {k:g}")
+    if "mode" in ds:
+        for mode in [x for x in MODE_MARKER if (m == x).any()]:
+            sc.plot([], [], MODE_MARKER[mode], color=MUTED, ms=6, label=f"mode: {mode}")
+    sc.axhline(0, color=MUTED, lw=0.8)
+    sc.set_xlim(-0.01, 0.51)
+    sc.set_xlabel(r"$|\delta|$  (0 on a rational surface, 0.5 midway)")
+    sc.set_ylabel(r"$\gamma$ [$c_{ref}/L_{ref}$]")
+    sc.set_title("GENE-converged gamma vs rational-surface offset", loc="left", fontsize=10,
+                 color=INK)
+    sc.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    tidy(sc)
+    fig.suptitle(f"NSTX 129038 corners at x0 = {ds.x0:g}: q = m/n overlap", x=0.02, ha="left",
+                 fontsize=12, color=INK)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    save(fig, out, "corners_q_offset.png", written)
+
+    path = os.path.join(out, "corners_q_offset.csv")
+    cols = [c for c in ("n0", "q0", "shat", "q_offset", "dx_rational", "status", "gamma", "mode")
+            if c in ds]
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky"] + cols) + "\n")
+        for i, c in enumerate(ds.corner.values):
+            for j, k in enumerate(ky):
+                row = []
+                for col in cols:
+                    v = ds[col].values[i, j] if ds[col].ndim == 2 else ds[col].values[i]
+                    row.append(str(v) if ds[col].dtype.kind in "OUS" else f"{v:.6g}")
+                fh.write(",".join([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}"] + row)
+                         + "\n")
     written.append(path)
 
 
@@ -1050,6 +1164,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
         plot_s_alpha(ds, out, written)
         plot_local(ds, out, written, spread, max_params)
+        plot_q_offset(ds, out, written)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
