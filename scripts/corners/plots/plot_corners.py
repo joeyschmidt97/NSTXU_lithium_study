@@ -33,6 +33,18 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 n q0 - round(n q0) (n = n0_global, q0 at x0, both from
                                 the run's parameters), as a table, and gamma vs |delta|;
                                 + corners_q_offset.csv
+    corners_res2.png            (when 2x-resolution runs exist) the 1x corner beside
+                                its 2x rerun: gamma and omega vs ky, and 2x gamma vs
+                                1x gamma; + corners_res2.csv
+
+2x-resolution runs are found under <diag-root> (and any sibling <diag-root>_res2,
+the root corner_gene_scan.py --res-scale 2 writes) as any directory holding
+scanfiles* or parameters_NNNN whose path names a corner tag and carries 2XRES
+(any case, also 2x_res, res2x) or _res2, at --x0 (from an x0_<x0> folder in the
+path, else the run's parameters). Each is matched to the 1x corner of the same
+tag. A 2x ky GENE has not converged (still running, or 0/0 at timelim) gets a
+field fit computed here from its field_NNNN, as field_omega.py does it, so the
+best guess is there while the runs are going; its verdict sets the marker.
 
 Every legend, table and CSV lists a corner as its knob factors in the order
 of its run name, (Teh, Tew, neh, new): (1.2, 0.8, 0.8, 1.2) is
@@ -123,6 +135,7 @@ from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_
                                                          SHOTS, X0, corners, find_geqdsk,
                                                          shot_defaults, tag, x0_label)
 from NSTXU_lithium_study.scripts.ped_grid import KNOBS
+from NSTXU_lithium_study.scripts.corners.field_omega import field_omega
 
 
 def default_out(x0=X0, diag_root=DIAG_ROOT) -> str:
@@ -194,6 +207,15 @@ TABLE_SHADE = (0.82, -0.3)
 MODE_KDE_BW = 0.12
 #: corners_q_offset.png: |delta| / 0.5, dark on a rational surface to light midway
 Q_OFFSET_CMAP = LinearSegmentedColormap.from_list("q_offset", ["#5b2a86", "#b58fd0", "#f4f1f8"])
+#: 2x-resolution run dirs: 2XRES / 2x_res / res2x anywhere in the path, or the _res2
+#: suffix of corner_gene_scan.py --res-scale 2 and the dashboard's 2x button
+RES2_RE = re.compile(r"(?i)2x_?res|res_?2x|_res2(?!\d)")
+TAG_RE = re.compile(r"Teh\d+\.\d+_Tew\d+\.\d+_neh\d+\.\d+_new\d+\.\d+")
+X0_RE = re.compile(r"x0_(\d+(?:\.\d+)?)(?![\d.-])")
+#: how deep below each root to look for 2x run dirs
+RES2_DEPTH = 5
+#: corners_res2.png: 2x points sit this fraction of the ky span right of their ky
+RES2_NUDGE = 0.012
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
 MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-Chi_e"): "Xi_Xe",
                ("fingerprints", "Q_EM_e-|Q_ES|_tot"): "QEM_e", ("epar", "Epar_norm"): "Epar_norm",
@@ -234,7 +256,9 @@ def gene_runs(corner_dir: str) -> list[str]:
         found = GeneFileFinder(corner_dir).find_files("parameters")
     except FileNotFoundError:
         return []
-    found = [f for f in found if re.search(r"parameters_\d{4}$", f)]
+    # a 2x rerun nested in the corner dir (<tag>/2XRES/...) is not this corner's
+    found = [f for f in found if re.search(r"parameters_\d{4}$", f)
+             and not RES2_RE.search(os.path.relpath(f, corner_dir))]
     return sorted(found)
 
 
@@ -878,6 +902,229 @@ def plot_q_offset(ds, out, written):
     written.append(path)
 
 
+def _listdir(d):
+    try:
+        return os.listdir(d)
+    except OSError:
+        return []
+
+
+def run_x0(run_dir: str, rel: str):
+    """x0 of a run dir: the last x0_<x0> folder in *rel*, else its parameters' x0."""
+    m = X0_RE.findall(rel)
+    if m:
+        return float(m[-1])
+    for path in gene_runs(run_dir)[:1]:
+        with open(path) as fh:
+            m = re.search(r"^\s*x0\s*=\s*([-+.\deE]+)", fh.read(), re.M)
+        return float(m.group(1)) if m else None
+    return None
+
+
+def res2_dirs(diag_root: str, x0, extra_roots=(), depth=RES2_DEPTH) -> dict[str, list[str]]:
+    """{corner tag: [2x run dirs at x0]} under diag_root, its 2x siblings and extra_roots."""
+    parent, base = os.path.split(diag_root.rstrip("/\\"))
+    roots = [diag_root] + [os.path.join(parent, d) for d in sorted(_listdir(parent))
+                           if d != base and d.startswith(base) and RES2_RE.search(d)]
+    roots += [r for r in extra_roots if r not in roots]
+    found: dict[str, list[str]] = {}
+    other = set()
+    for root in roots:
+        top = os.path.dirname(os.path.normpath(root))
+        for d, subs, files in os.walk(root):
+            rel = os.path.relpath(d, top).replace(os.sep, "/")   # starts at root's own name
+            run = (any(x.startswith("scanfiles") for x in subs)
+                   or any(re.fullmatch(r"parameters_\d{4}", f) for f in files))
+            subs[:] = [x for x in subs if not x.startswith("scanfiles") and x != "plots"]
+            if rel.count("/") >= depth:
+                subs[:] = []
+            m = TAG_RE.search(rel)
+            if not (run and m and RES2_RE.search(rel)):
+                continue
+            subs[:] = []
+            x = run_x0(d, rel)
+            if x is not None and abs(x - float(x0[0])) < 5e-4:
+                found.setdefault(m.group(), []).append(d)
+            else:
+                other.add(x)
+    if other:
+        print(f"2x runs at other x0 left out: {sorted(other, key=lambda v: (v is None, v))}")
+    return found
+
+
+def live_fit(par_path: str):
+    """(gamma, gamma_std, omega, omega_std, verdict) of field_omega's fit to the
+    field_NNNN next to *par_path*, or None when there is no field output yet."""
+    field = re.sub(r"parameters_(\d{4})$", r"field_\1", par_path)
+    if not os.path.isfile(field) or os.path.getsize(field) == 0:
+        return None
+    try:
+        _, stats = field_omega.fit(field)
+    except Exception as exc:                    # a field file still being written
+        print(f"    field fit failed {field}: {type(exc).__name__}: {exc}")
+        return None
+    f = stats[field_omega.FIELDS]
+    g, w = f["gamma_avg"], f["omega_avg"]
+    gs, ws = np.sqrt(f["gamma_variance"]), np.sqrt(f["omega_variance"])
+    return g, gs, w, ws, field_omega.verdict(g, gs, w, ws)
+
+
+def load_res2(ds, extra_roots=()) -> dict:
+    """{(corner tag, ky): 2x record} for every 2x run matching a corner in *ds*.
+
+    A record holds gamma, omega and their std, source ('GENE' where GENE
+    converged, else the verdict of the live field fit: 'pass', 'decaying',
+    'ambiguous'; 'no fit' without field output) and the parameters path."""
+    dirs = res2_dirs(ds.diag_root, (ds.x0,), extra_roots)
+    out = {}
+    for name, paths in sorted(dirs.items()):
+        if name not in ds.corner.values:
+            print(f"--- 2x {name}: no 1x corner at x0 = {ds.x0:g}; left out")
+            continue
+        for d in paths:
+            g = gene_corner(d)
+            if g is None:
+                continue
+            for k, v in sorted(g[0].items()):
+                rec = {"dir": d, "path": v[5], "gamma": v[0], "omega": v[1],
+                       "gamma_std": np.nan, "omega_std": np.nan, "source": "GENE"}
+                if v[2] != "ok":
+                    fitted = live_fit(v[5])
+                    if fitted is None:
+                        rec.update(gamma=np.nan, omega=np.nan, source="no fit")
+                    else:
+                        rec.update(zip(("gamma", "gamma_std", "omega", "omega_std", "source"),
+                                       fitted))
+                old = out.get((name, k))
+                if old is None or old["source"] != "GENE":   # GENE converged wins
+                    out[(name, k)] = rec
+        print(f"--- 2x {name}: " + "; ".join(
+            f"ky={k:g} {r['source']}" for (n, k), r in sorted(out.items()) if n == name))
+    return out
+
+
+def one_x(ds, i, var):
+    """1x value per ky of corner i: GENE converged, else the recorded field fit; + std, conv."""
+    conv = ds.status.values[i] == "ok"
+    y = np.where(conv, ds[var].values[i], ds[f"{var}_field"].values[i])
+    err = np.where(conv, np.nan, ds[f"{var}_field_std"].values[i])
+    return y, err, conv
+
+
+def plot_res2(ds, out, written, extra_roots=()):
+    """Each corner with a 2x rerun: its 1x line (converged filled, recorded field
+    fit hollow) and the 2x values as diamonds beside them (GENE converged filled,
+    live field fit hollow +-1 std, faded unless it passes), joined to the 1x value
+    at the same ky; and 2x gamma vs 1x gamma. + corners_res2.csv."""
+    res = load_res2(ds, extra_roots)
+    if not res:
+        print("no 2x-resolution runs (2XRES / _res2) at this x0; corners_res2.png skipped")
+        return
+    names = [c for c in ds.corner.values if any(n == c for n, _ in res)]
+    ky = ds.ky.values
+    nudge = RES2_NUDGE * (np.ptp(ky) if ky.size > 1 else 1.0)
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.4), width_ratios=(1, 1, 0.85))
+    rows, faded = [], False
+    for c in names:
+        i = int(np.flatnonzero(ds.corner.values == c)[0])
+        st = style(point_of(ds, c))
+        one = {v: one_x(ds, i, v) for v in ("gamma", "omega")}
+        for ax, var in zip(axes[:2], ("gamma", "omega")):
+            y, err, conv = one[var]
+            ok = np.isfinite(y)
+            ax.plot(ky[ok], y[ok], lw=1.2, color=st["color"], ls=st["ls"], alpha=0.7, zorder=3)
+            ax.plot(ky[ok & conv], y[ok & conv], st["marker"], ms=5, color=st["color"], zorder=4)
+            g = ok & ~conv
+            ax.errorbar(ky[g], y[g], yerr=err[g], fmt=st["marker"], ms=5, mfc=SURFACE,
+                        mec=st["color"], color=st["color"], capsize=2, lw=0.8, zorder=4)
+        for (n, k), r in sorted(res.items()):
+            if n != c:
+                continue
+            j = int(np.argmin(abs(ky - k)))
+            on_ky = abs(ky[j] - k) < 1e-6
+            weak = r["source"] not in ("GENE", "pass")
+            faded |= weak and np.isfinite(r["gamma"])
+            for ax, var in zip(axes[:2], ("gamma", "omega")):
+                v2, e2 = r[var], r[f"{var}_std"]
+                if not np.isfinite(v2):
+                    ax.plot(k + nudge, 0, "x", color=st["color"], ms=8, mew=1.8, zorder=6)
+                    continue
+                if on_ky and np.isfinite(one[var][0][j]):
+                    ax.plot([k, k + nudge], [one[var][0][j], v2], ":", color=st["color"],
+                            lw=1, zorder=4)
+                filled = r["source"] == "GENE"
+                ax.errorbar(k + nudge, v2, yerr=e2, fmt="D", ms=8,
+                            mfc=st["color"] if filled else SURFACE, mec=st["color"], mew=1.8,
+                            color=st["color"], capsize=3, lw=1, alpha=0.45 if weak else 1.0,
+                            zorder=7)
+            g1, e1 = (one["gamma"][0][j], one["gamma"][1][j]) if on_ky else (np.nan, np.nan)
+            if np.isfinite(g1) and np.isfinite(r["gamma"]):
+                axes[2].errorbar(g1, r["gamma"], xerr=e1, yerr=r["gamma_std"], fmt="D", ms=7,
+                                 mfc=st["color"] if r["source"] == "GENE" else SURFACE,
+                                 mec=st["color"], mew=1.6, color=st["color"], capsize=2, lw=0.8,
+                                 alpha=0.45 if weak else 1.0, zorder=5)
+                axes[2].annotate(f"{k:g}", (g1, r["gamma"]), xytext=(5, 3),
+                                 textcoords="offset points", fontsize=7, color=MUTED)
+            st1 = ds.status.values[i, j] if on_ky else "missing"
+            rows.append([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}",
+                         st1 if st1 == "ok" or not np.isfinite(g1) else
+                         f"field {ds.field_verdict.values[i, j]}".strip(),
+                         *(f"{one[v][0][j]:.6g}" if on_ky else "nan" for v in ("gamma", "omega")),
+                         r["source"], *(f"{r[v]:.6g}" for v in ("gamma", "gamma_std",
+                                                               "omega", "omega_std")),
+                         f"{(r['gamma'] - g1) / abs(g1):.4g}" if np.isfinite(g1) and g1 else "nan",
+                         r["dir"]])
+    for ax, var, sym in zip(axes[:2], ("gamma", "omega"), (r"\gamma", r"\omega")):
+        ax.axhline(0, color=MUTED, lw=0.8)
+        ax.set_xlabel(r"$k_y\rho_{ref}$")
+        ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
+        tidy(ax)
+    axes[0].set_title("growth rate: 1x line, 2x diamonds", loc="left", fontsize=10, color=INK)
+    axes[1].set_title("real frequency: 1x line, 2x diamonds", loc="left", fontsize=10, color=INK)
+    sc = axes[2]
+    lim = [min(sc.get_xlim()[0], sc.get_ylim()[0], 0),
+           1.05 * max(sc.get_xlim()[1], sc.get_ylim()[1])]
+    xs = np.linspace(*lim, 50)
+    sc.fill_between(xs, 0.9 * xs, 1.1 * xs, color=GRID, lw=0, zorder=1)
+    sc.plot(lim, lim, color=MUTED, lw=0.9, zorder=2)
+    sc.set_xlim(lim)
+    sc.set_ylim(lim)
+    sc.set_aspect("equal")
+    sc.set_xlabel(r"$\gamma$ 1x [$c_{ref}/L_{ref}$]")
+    sc.set_ylabel(r"$\gamma$ 2x [$c_{ref}/L_{ref}$]")
+    sc.set_title("2x vs 1x gamma (number: ky; band: ±10%)", loc="left", fontsize=10, color=INK)
+    tidy(sc)
+    handles = [Line2D([], [], lw=1.8, ms=5, **style(point_of(ds, c)),
+                      label=str(ds.label.values[list(ds.corner.values).index(c)]))
+               for c in names]
+    extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=5, label="1x GENE converged"),
+             Line2D([], [], ls="none", marker="o", mfc=SURFACE, mec=MUTED, ms=5,
+                    label="1x recorded field fit ±1σ"),
+             Line2D([], [], ls="none", marker="D", color=MUTED, ms=7, label="2x GENE converged"),
+             Line2D([], [], ls="none", marker="D", mfc=SURFACE, mec=MUTED, mew=1.8, ms=7,
+                    label="2x field fit, passing ±1σ")]
+    if faded:
+        extra.append(Line2D([], [], ls="none", marker="D", mfc=SURFACE, mec=MUTED, mew=1.8,
+                            ms=7, alpha=0.45, label="2x field fit, ambiguous/decaying"))
+    if any(not np.isfinite(r["gamma"]) for r in res.values()):
+        extra.append(Line2D([], [], ls="none", marker="x", color=MUTED, ms=7, mew=1.8,
+                            label="2x, no field output yet"))
+    legend_right(fig, handles, extra)
+    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: 2x resolution check "
+                 "(2x not converged: live field fit)", x=0.02, ha="left", fontsize=12, color=INK)
+    fig.tight_layout(rect=(0, 0, 0.83, 0.95))
+    save(fig, out, "corners_res2.png", written)
+
+    path = os.path.join(out, "corners_res2.csv")
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky", "status_1x", "gamma_1x", "omega_1x",
+                           "source_2x", "gamma_2x", "gamma_2x_std", "omega_2x", "omega_2x_std",
+                           "gamma_rel_diff", "dir_2x"]) + "\n")
+        for r in rows:
+            fh.write(",".join(r) + "\n")
+    written.append(path)
+
+
 def fit_ylim(ax, x, ys, xlim, pad=0.05):
     m = (x >= xlim[0]) & (x <= xlim[1])
     vals = np.concatenate([np.asarray(y)[m] for y in ys])
@@ -1163,7 +1410,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0, modes=False, field_fits=False, shot=SHOT):
+        x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=()):
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot)
@@ -1178,6 +1425,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_s_alpha(ds, out, written)
         plot_local(ds, out, written, spread, max_params)
         plot_q_offset(ds, out, written)
+        plot_res2(ds, out, written, res2_roots)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
@@ -1209,6 +1457,9 @@ if __name__ == "__main__":
     ap.add_argument("--modes", action="store_true",
                     help="classify each ky with TPED mode_identifier (reads nrg, field, "
                          "geometry; slower) and mark the growth plot by mode")
+    ap.add_argument("--res2-root", nargs="+", default=(),
+                    help="more dirs to search for 2x-resolution runs (2XRES / _res2 in the "
+                         "path) [<diag-root> and its _res2 siblings]")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
@@ -1216,4 +1467,5 @@ if __name__ == "__main__":
     args = ap.parse_args()
     d = shot_defaults(args.shot)
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
-        args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot)
+        args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
+        args.res2_root)
