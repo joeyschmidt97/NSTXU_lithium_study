@@ -26,6 +26,13 @@ errors.csv, and the run carries on without that quantity.
     python -m NSTXU_lithium_study.notebooks.pingyu_runs.pingyu_runs
     python -m NSTXU_lithium_study.notebooks.pingyu_runs.pingyu_runs --groups NSTX_KBM --no-modes
     python -m NSTXU_lithium_study.notebooks.pingyu_runs.pingyu_runs --outdir pingyu_out --our-nx0 64
+    python -m NSTXU_lithium_study.notebooks.pingyu_runs.pingyu_runs --groups NSTX_KBM --list-dirs
+    python -m NSTXU_lithium_study.notebooks.pingyu_runs.pingyu_runs --groups NSTX_KBM \
+        --start <run dir name> --limit 100        # 100 consecutive runs, ky traces intact
+
+--match / --start / --limit trim the run list before any file is read. Paths
+are kept in sorted order, so consecutive runs of one scanfiles dir (its ky
+scan) stay together; --list-dirs shows the dirs and counts to start from.
 """
 
 from __future__ import annotations
@@ -123,31 +130,68 @@ def scalar(ds, k):
 ################################### readers ####################################
 ################################################################################
 
-def discover(roots, max_depth=MAX_DEPTH):
+def progress(stage, i, n, every=50):
+    if i == n or i % every == 0:
+        print(f"  {stage}: {i}/{n}", flush=True)
+
+
+def select(found, match=None, start=None, limit=None):
+    """Trim [(group, path)] before anything is read. Paths stay in sorted order,
+    so a slice keeps each scanfiles dir's ky points together.
+
+    match  keep paths containing this substring
+    start  begin at the first path containing this substring
+    limit  keep this many consecutive paths
+    """
+    if match:
+        found = [f for f in found if match in f[1]]
+    if start:
+        first = next((i for i, f in enumerate(found) if start in f[1]), None)
+        if first is None:
+            raise SystemExit(f"--start '{start}' matches none of the {len(found)} runs")
+        found = found[first:]
+    return found[:limit] if limit else found
+
+
+def discover(roots, max_depth=MAX_DEPTH, match=None, start=None, limit=None, list_dirs=False):
     """One GeneSimulationPlus per parameters file, built one at a time so a bad
-    file costs that run, not the whole group. Returns (sims, runs)."""
-    sims, rows = {}, []
+    file costs that run, not the whole group. Returns (sims, runs).
+
+    list_dirs prints each run dir (after match / start / limit) with its run
+    count and exits, for choosing --start.
+    """
+    found = []
     for group, root in roots.items():
         try:
-            paths = sorted(GFF(root).find_files(filetype="parameters", max_depth=max_depth))
+            found += [(group, fp) for fp in
+                      sorted(GFF(root).find_files(filetype="parameters", max_depth=max_depth))]
         except Exception as exc:
             log_error(group, root, "discover", exc)
+    print(f"{len(found)} runs found", flush=True)
+    found = select(found, match, start, limit)
+    if list_dirs:
+        counts = pd.Series([os.path.dirname(fp) for _, fp in found]).value_counts(sort=False)
+        print(counts.rename("n_runs").to_string())
+        raise SystemExit(0)
+    print(f"{len(found)} runs selected" + (f", {found[0][1]} first" if found else ""), flush=True)
+
+    sims, rows = {}, []
+    for i, (group, fp) in enumerate(found, 1):
+        progress("parameters", i, len(found))
+        try:
+            sim = GeneSimulationPlus(fp)
+            ds = sim.parameters_xarray
+        except Exception as exc:
+            log_error(group, fp, "parameters", exc)
             continue
-        for fp in paths:
-            try:
-                sim = GeneSimulationPlus(fp)
-                ds = sim.parameters_xarray
-            except Exception as exc:
-                log_error(group, fp, "parameters", exc)
-                continue
-            iterdb = resolve(par(ds, "iterdb_file"), sim.directory)
-            geomdir, geomfile = par(ds, "geomdir"), par(ds, "geomfile")
-            sims[fp] = (group, sim)
-            rows.append({"group": group, "run": fp,
-                         **parse_path_tags(iterdb, geomdir, geomfile, sim.directory),
-                         **{k: par(ds, k) for k in PAR_KEYS},
-                         "iterdb_file": iterdb, "geomdir": geomdir, "geomfile": geomfile,
-                         "suffix": sim.suffix, "directory": sim.directory})
+        iterdb = resolve(par(ds, "iterdb_file"), sim.directory)
+        geomdir, geomfile = par(ds, "geomdir"), par(ds, "geomfile")
+        sims[fp] = (group, sim)
+        rows.append({"group": group, "run": fp,
+                     **parse_path_tags(iterdb, geomdir, geomfile, sim.directory),
+                     **{k: par(ds, k) for k in PAR_KEYS},
+                     "iterdb_file": iterdb, "geomdir": geomdir, "geomfile": geomfile,
+                     "suffix": sim.suffix, "directory": sim.directory})
     runs = pd.DataFrame(rows, columns=["group", "run", "shot", "omt_scale", "omne_scale",
                                        "scale_source", *PAR_KEYS, "iterdb_file", "geomdir",
                                        "geomfile", "suffix", "directory"])
@@ -160,7 +204,8 @@ def discover(roots, max_depth=MAX_DEPTH):
 
 def add_omega(sims, runs):
     rows = []
-    for fp, (group, sim) in sims.items():
+    for i, (fp, (group, sim)) in enumerate(sims.items(), 1):
+        progress("omega", i, len(sims))
         try:
             sim.return_sim_xarray(["omega"])
             tree = sim.tree
@@ -188,6 +233,7 @@ def add_modes(sims, runs):
     for fp, (group, sim) in sims.items():
         if fp not in growing:
             continue
+        progress("modes", len(rows) + 1, len(growing), every=20)
         row = {"run": fp}
         for name, cols in (("fingerprints", FP_COLS), ("epar", EP_COLS), ("mode_identifier", ["mode_ID"])):
             try:
@@ -340,12 +386,11 @@ def plot_modes(runs, path):
 ##################################### run ######################################
 ################################################################################
 
-def run(roots, outdir, max_depth=MAX_DEPTH, our_nx0=OUR_NX0, modes=True):
-    os.makedirs(outdir, exist_ok=True)
+def run(roots, outdir, max_depth=MAX_DEPTH, our_nx0=OUR_NX0, modes=True,
+        match=None, start=None, limit=None, list_dirs=False):
     ERRORS.clear()
-
-    sims, runs = discover(roots, max_depth)
-    print(f"{len(runs)} runs found")
+    sims, runs = discover(roots, max_depth, match, start, limit, list_dirs)
+    os.makedirs(outdir, exist_ok=True)
     if runs.empty:
         print(error_table()[1].to_string())
         return runs
@@ -397,8 +442,17 @@ if __name__ == "__main__":
     ap.add_argument("--our-nx0", type=int, default=OUR_NX0, help="our nx0, for the resolution flag")
     ap.add_argument("--no-modes", action="store_true",
                     help="skip fingerprints / Epar / mode_identifier (needs nrg, field, geometry)")
+    ap.add_argument("--match", default=None, metavar="SUBSTR",
+                    help="keep only runs whose parameters path contains this")
+    ap.add_argument("--start", default=None, metavar="SUBSTR",
+                    help="begin at the first run (sorted path order) whose path contains this")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="keep this many consecutive runs from --start")
+    ap.add_argument("--list-dirs", action="store_true",
+                    help="print each run dir with its run count and exit (to choose --start)")
     args = ap.parse_args()
     # The readers log a full traceback per failed file; those land in errors.csv instead.
     logging.getLogger("TPED").setLevel(logging.CRITICAL)
     run({g: os.path.join(args.parent, g) for g in args.groups}, args.outdir,
-        args.max_depth, args.our_nx0, not args.no_modes)
+        args.max_depth, args.our_nx0, not args.no_modes, args.match, args.start, args.limit,
+        args.list_dirs)
