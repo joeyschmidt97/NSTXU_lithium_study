@@ -20,6 +20,7 @@ the fit drops axis Te to 0.853 of raw, and raw ni carries a kink):
     N  campaign outer bounds under L's settings: Te_ped_scale 0.8, 1.2, and
        ne_ped_scale 0.8, 1.2 on the fit-Te base without the nz rebuild, plus
        the fit-Te base itself as the 1.0 reference
+    P  BOUNDS on Pingyu's profiles_* (see below)
 
 132543 -- option ladder (profiles are clean and fit ~ raw within 2%; failures are
 a deterministic CHEASE segfault in the magnetic-axis search, flipping on ~1%
@@ -35,6 +36,16 @@ control plus four box-scan failures inside the 0.8-1.2 campaign box.
        pilot cases (D: Te 1.1; T: Te 1.2, ne 1.2)
     M  campaign outer bounds under K's settings: Te_ped_scale and ne_ped_scale
        at 0.8 and 1.2, plus Te_ped_scale 1.0 as the reference
+    O  BOUNDS on Pingyu's profiles_* (see below)
+
+Both shots, from O/P on -- campaign outer bounds on the repo's data/discharges
+(Pingyu's GENE profiles_e/i/z, which NERSC already loaded for 132543 and the
+129xxx scans; the pfile alone gave 132543 a different core and 132588 an nz
+~100x low) with the 2026-10-16 frozen fits, under K/L's settings. ne cases run
+through the nz rebuild: the profiles are quasineutral to 0.00%.
+
+    BOUNDS  Te and ne fit at 1.0 together (the reference), Te_ped_scale and
+            ne_ped_scale alone at 0.8 and 1.2, and the four joint corners
 
 Output goes straight into the cheaseBS_tests checkout, one directory per test:
 
@@ -123,6 +134,14 @@ PILOT_132543 = [_single("Te_ped_scale", 1.0), _single("Te_ped_scale", 1.1),
                 _single("Te_ped_scale", 1.2), _single("ne_ped_scale", 0.9),
                 _single("ne_ped_scale", 1.2)]
 
+# Campaign outer bounds (O/P): the joint 1.0 reference, each knob alone at the
+# bounds, then the four Te x ne corners.
+BOUNDS = ([("Te_ne_ped_scale_1.000", [("Te_ped_scale", 1.0, {}), ("ne_ped_scale", 1.0, {})])]
+          + [_single(name, s) for name in ("Te_ped_scale", "ne_ped_scale") for s in (0.8, 1.2)]
+          + [(tag("Te_ped_scale", a) + "_" + tag("ne_ped_scale", b),
+              [("Te_ped_scale", a, {}), ("ne_ped_scale", b, {})])
+             for a in (0.8, 1.2) for b in (0.8, 1.2)])
+
 # name -> dict(shot, dir, settings, namelist, cases, ref)
 #   namelist : entries written into the CHEASE namelist copy
 #   ref      : box-scan case labels overlaid on the comparison as jparallel
@@ -183,6 +202,12 @@ TESTS = {
                     + [("fitTe_" + tag("ne_ped_scale", s) + "_noqn",
                         [FIT_TE, ("ne_ped_scale", s, NO_QN)])
                        for s in (0.8, 1.2)],
+              ref=["Te_ped_scale_1.000"]),
+    "O": dict(shot=132543, dir="O_profiles_bounds", settings=RHOP,
+              namelist=dict(NAMELIST, **TENSBND), cases=BOUNDS,
+              ref=["Te_ped_scale_1.000"]),
+    "P": dict(shot=132588, dir="P_profiles_bounds", settings=RHOP,
+              namelist=dict(NAMELIST, **TENSBND), cases=BOUNDS,
               ref=["Te_ped_scale_1.000"]),
 }
 
