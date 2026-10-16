@@ -6,7 +6,7 @@ directory, copied from a template run, whose parameters point geomdir and
 iterdb_file at that corner's cheaseBS output and scan
 
     kymin  0.1, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0   (a scanlist: 8 parallel sims, one job)
-    x0     a 129038 baseline Chapman radius, fixed (default Te top; --x0 picks another)
+    x0     a baseline Chapman radius of the discharge, fixed (default Te top; --x0 picks another)
 
 The equilibrium cannot be a scanlist (geomdir and iterdb_file are paths),
 hence one job per corner. x0 is the same at every corner: the Chapman radii
@@ -35,6 +35,11 @@ and records everything in <genedir>/<prefix>_x0_<x0>_manifest.json.
 
     python corner_gene_scan.py --x0 0.6737 --only Teh1.20_Tew0.80_neh0.80_new1.20         --kymin 0.5 1 --res-scale 2 --walltime 08:00:00 --submit   # 2x grid, *_res2 dirs
     python corner_gene_scan.py --case Teh1.00_Tew1.00_neh1.00_new1.00 --kymin 0.3 --submit  # any ped_grid case
+    python corner_gene_scan.py --shot 129015 --template <129015 GENE dir> --dry-run  # another discharge
+
+--shot picks the discharge: ped root, diag root, prefix and default x0 (its
+Te-top Chapman radius) come from SHOTS, and the template too where one is
+recorded. Any of them given explicitly wins. Default 129038.
 
 --res-scale N multiplies nz0, nv0, nw0 by N, and nx0 too (kept odd: 3 -> 7),
 and n_procs_z, n_procs_v, n_procs_w with them, so each rank holds the same
@@ -73,19 +78,46 @@ import sys
 
 from NSTXU_lithium_study.scripts.ped_grid import DONE, design, tag
 
-TEMPLATE = "/global/u1/j/joeschm/simulators/GENE3/NSTX_lithium_129038_V2"
-PED_ROOT = "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038/129038"
-DIAG_ROOT = "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/corners"
-PREFIX = "NSTX_129038_corner"
+#: Per-discharge defaults behind --shot. template: the GENE problem dir copied per
+#: corner (None until one exists; pass --template). chapman: baseline Chapman radii
+#: (rho_tor), from chapman_dataset_from_profile on the box scan's REF_profiles_e,
+#: as baseline_x0_plots.py draws them (129015: 2026-09-25 refit).
+SHOTS = {
+    129038: {"template": "/global/u1/j/joeschm/simulators/GENE3/NSTX_lithium_129038_V2",
+             "chapman": {"ne_top": 0.6737, "Te_top": 0.8447, "steep": 0.8535}},
+    129015: {"template": None,
+             "chapman": {"ne_top": 0.8745, "Te_top": 0.8425, "steep": 0.9515}},
+}
+SHOT = 129038
+
+
+def shot_defaults(shot: int = SHOT) -> dict:
+    """template, ped_root, diag_root, prefix, x0 and chapman for one discharge.
+
+    ped_root is ped_grid.py's <savedir>/<shot> with savedir cheaseBS_runs/ped_grid/<shot>.
+    x0 is the Te-top Chapman radius.
+    """
+    if shot not in SHOTS:
+        raise ValueError(f"no corner defaults for {shot}; known: {sorted(SHOTS)}")
+    s = SHOTS[shot]
+    return {"template": s["template"],
+            "ped_root": f"/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/{shot}/{shot}",
+            "diag_root": f"/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/{shot}/corners",
+            "prefix": f"NSTX_{shot}_corner",
+            "x0": (s["chapman"]["Te_top"],),
+            "chapman": dict(s["chapman"])}
+
+
+_D = shot_defaults()
+TEMPLATE, PED_ROOT, DIAG_ROOT, PREFIX = _D["template"], _D["ped_root"], _D["diag_root"], _D["prefix"]
 
 CORNER_GRID = (0.8, 1.2)
 #: 1.5-3 added after the x0 = 0.6737 scan peaked at the top of 0.1-1.0.
 KYMIN = (0.1, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0)
-#: 129038 baseline Chapman radii (rho_tor). From chapman_dataset_from_profile
-#: on the box scan's REF_profiles_e, as baseline_x0_plots.py draws them.
-CHAPMAN = {"ne_top": 0.6737, "Te_top": 0.8447, "steep": 0.8535}
-#: Scanned radius; ne top (0.6737) was the first scan, Te top is the second.
-X0 = (CHAPMAN["Te_top"],)
+#: 129038 baseline Chapman radii; other shots in SHOTS.
+CHAPMAN = _D["chapman"]
+#: Scanned radius; ne top (0.6737) was the first 129038 scan, Te top is the second.
+X0 = _D["x0"]
 
 #: 1:30 timed out 22 of 80 x0 = 0.6737 points (all ky <= 0.7, t = timelim);
 #: converged ones took up to 4800 s.
@@ -241,6 +273,8 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     dry_run  print the first eligible corner's parameters and submit.cmd;
              write, create and submit nothing
     """
+    if not template:
+        raise SystemExit("no GENE template for this shot yet; pass --template <GENE problem dir>")
     walltime, qos = (walltime or TEST_WALLTIME, TEST_QOS) if test else (walltime or WALLTIME, QOS)
     if res_scale != 1:
         prefix, diag_root = f"{prefix}_res{res_scale}", f"{diag_root.rstrip('/')}_res{res_scale}"
@@ -344,13 +378,18 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--template", default=TEMPLATE, help="GENE problem dir to copy")
-    ap.add_argument("--ped-root", default=PED_ROOT, help="ped_grid cheaseBS cases <tag>/")
-    ap.add_argument("--diag-root", default=DIAG_ROOT,
-                    help="GENE output, one x0_<x0>/<tag>/ per corner")
-    ap.add_argument("--x0", type=float, nargs="+", default=list(X0),
-                    help=f"radius (rho_tor) to scan; Chapman points {CHAPMAN}")
-    ap.add_argument("--prefix", default=PREFIX, help="run dir name prefix, beside the template")
+    ap.add_argument("--shot", type=int, default=SHOT, choices=sorted(SHOTS),
+                    help="discharge; sets the defaults of the five options below")
+    ap.add_argument("--template", default=None, help=f"GENE problem dir to copy [{TEMPLATE}]")
+    ap.add_argument("--ped-root", default=None,
+                    help=f"ped_grid cheaseBS cases <tag>/ [{PED_ROOT}]")
+    ap.add_argument("--diag-root", default=None,
+                    help=f"GENE output, one x0_<x0>/<tag>/ per corner [{DIAG_ROOT}]")
+    ap.add_argument("--x0", type=float, nargs="+", default=None,
+                    help="radius (rho_tor) to scan [Te-top Chapman radius]; Chapman points "
+                         + "; ".join(f"{s}: {v['chapman']}" for s, v in SHOTS.items()))
+    ap.add_argument("--prefix", default=None,
+                    help=f"run dir name prefix, beside the template [{PREFIX}]")
     ap.add_argument("--kymin", type=float, nargs="+", default=None,
                     help=f"ky values to scan [{scanlist(KYMIN)}]")
     ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
@@ -371,6 +410,9 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true",
                     help="print one corner's parameters and submit.cmd, write nothing")
     args = ap.parse_args()
+    for key, value in shot_defaults(args.shot).items():
+        if key != "chapman" and getattr(args, key) is None:
+            setattr(args, key, value)
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
                        args.walltime, args.kymin,

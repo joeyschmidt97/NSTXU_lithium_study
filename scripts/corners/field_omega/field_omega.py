@@ -30,6 +30,7 @@ dashboard and samplers (VURS) read the fit of any run, and plot_corners.py
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --write
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --x0 0.6737 --write
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --path .     # any dir
+    python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --shot 129015 --write
 
 --path skips the corner layout and fits every omega_NNNN found at any depth
 under the given directory (e.g. several scanfiles* dirs, or a continued run
@@ -52,7 +53,8 @@ import numpy as np
 
 from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
 from TPED.projects.GENE_sim_reader.src.GENE_omega_data import parse_omega_text
-from NSTXU_lithium_study.scripts.corner_gene_scan import DIAG_ROOT, X0, corners, tag, x0_label
+from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, SHOT, SHOTS, X0, corners,
+                                                         shot_defaults, tag, x0_label)
 
 #: Fraction of the run's field output the fit uses: its last 30%.
 WINDOW = (0.7, 1.0)
@@ -175,8 +177,12 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--diag-root", default=DIAG_ROOT, help="corners are under <diag-root>/x0_<x0>/<tag>/")
-    ap.add_argument("--x0", type=float, nargs="+", default=list(X0), help="which x0_<x0>/ scan")
+    ap.add_argument("--shot", type=int, default=SHOT, choices=sorted(SHOTS),
+                    help="discharge; sets the --diag-root and --x0 defaults")
+    ap.add_argument("--diag-root", default=None,
+                    help=f"corners are under <diag-root>/x0_<x0>/<tag>/ [{DIAG_ROOT}]")
+    ap.add_argument("--x0", type=float, nargs="+", default=None,
+                    help=f"which x0_<x0>/ scan [Te-top Chapman radius, {X0[0]:g} for {SHOT}]")
     ap.add_argument("--path", help="fit every omega_NNNN at any depth under this dir "
                                    "instead of the corner scan (--diag-root/--x0 ignored)")
     ap.add_argument("--write", action="store_true",
@@ -189,5 +195,6 @@ if __name__ == "__main__":
     ap.add_argument("--rel-tol", type=float, default=REL_TOL)
     ap.add_argument("--abs-tol", type=float, default=ABS_TOL)
     args = ap.parse_args()
-    run(args.diag_root, tuple(args.x0), args.write, tuple(args.window),
+    d = shot_defaults(args.shot)
+    run(args.diag_root or d["diag_root"], tuple(args.x0 or d["x0"]), args.write, tuple(args.window),
         args.rel_tol, args.abs_tol, args.passing_only, args.path)

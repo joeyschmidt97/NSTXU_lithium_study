@@ -119,13 +119,14 @@ from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
 from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
 from TPED.projects.utils.read_iterdb import read_iterdb
 from TPED.projects.discharge_tools.src.filetypes.gfile_data import GFileData
-from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, X0,
-                                                         corners, find_geqdsk, tag, x0_label)
+from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, SHOT,
+                                                         SHOTS, X0, corners, find_geqdsk,
+                                                         shot_defaults, tag, x0_label)
 from NSTXU_lithium_study.scripts.ped_grid import KNOBS
 
 
-def default_out(x0=X0) -> str:
-    return os.path.join(DIAG_ROOT, x0_label(x0), "plots")
+def default_out(x0=X0, diag_root=DIAG_ROOT) -> str:
+    return os.path.join(diag_root, x0_label(x0), "plots")
 
 
 #: Legend order of the knobs: the corner tag's (ped_grid.tag, the GENE run and diag dir
@@ -432,7 +433,7 @@ def integer_crossings(x, y, n):
 # ----------------------------------------------------------------------------- dataset
 
 def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
-                 modes=False, field_fits=False) -> xr.Dataset:
+                 modes=False, field_fits=False, shot=SHOT) -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
@@ -527,7 +528,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
     ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root,
-                    field_fits=int(field_fits))
+                    field_fits=int(field_fits), shot=int(shot))
     if modes and gene:
         print("\nmode_identifier (TPED) per ky:")
         ds = add_modes(ds)
@@ -640,7 +641,7 @@ def plot_growth(ds, out, written, guesses=False):
         handles = [Line2D([], [], lw=1.8, ms=5.5, **style(point_of(ds, c)), label=str(l))
                    for c, l in zip(ds.corner.values, ds.label.values)]
     legend_right(fig, handles, extra)
-    fig.suptitle(f"NSTX 129038 corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
+    fig.suptitle(f"NSTX {ds.shot} corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
     save(fig, out, name, written)
@@ -770,7 +771,7 @@ def plot_mode_scaling(ds, out, written):
                    fontsize=10, color=INK)
     bars.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(bars)
-    fig.suptitle(f"NSTX 129038 corners at x0 = {ds.x0:g}: profile scaling vs mode",
+    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: profile scaling vs mode",
                  x=0.02, ha="left", fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, out, "corners_mode_scaling.png", written)
@@ -856,7 +857,7 @@ def plot_q_offset(ds, out, written):
                  color=INK)
     sc.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(sc)
-    fig.suptitle(f"NSTX 129038 corners at x0 = {ds.x0:g}: q = m/n overlap", x=0.02, ha="left",
+    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: q = m/n overlap", x=0.02, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, out, "corners_q_offset.png", written)
@@ -932,7 +933,7 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
                for c, l in zip(ds.corner.values, ds.label.values)]
     legend_right(fig, handles, [Line2D([], [], color=INK, ls=":", lw=1.4,
                                        label=f"x0 = {ds.x0:g}")])
-    fig.suptitle("NSTX 129038 corner profiles (profiles.iterdb)"
+    fig.suptitle(f"NSTX {ds.shot} corner profiles (profiles.iterdb)"
                  + (f", rho_tor {xlim[0]:g}-{xlim[1]:g}" if name.endswith("_ped.png") else ""),
                  x=0.04, ha="left", fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
@@ -1162,10 +1163,10 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0, modes=False, field_fits=False):
+        x0=X0, modes=False, field_fits=False, shot=SHOT):
     x0 = tuple(x0)
-    out = out or default_out(x0)
-    ds = load_dataset(diag_root, ped_root, x0, modes, field_fits)
+    out = out or default_out(x0, diag_root)
+    ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot)
     os.makedirs(out, exist_ok=True)
     written: list[str] = []
     with warnings.catch_warnings():
@@ -1189,11 +1190,16 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--diag-root", default=DIAG_ROOT,
-                    help="GENE output root; corners are under <diag-root>/x0_<x0>/<tag>/")
-    ap.add_argument("--ped-root", default=PED_ROOT, help="ped_grid cheaseBS cases <tag>/")
-    ap.add_argument("--x0", type=float, nargs="+", default=list(X0),
-                    help="radius of the scan to plot (reads its x0_<x0>/ folder)")
+    ap.add_argument("--shot", type=int, default=SHOT, choices=sorted(SHOTS),
+                    help="discharge; sets the --diag-root, --ped-root and --x0 defaults")
+    ap.add_argument("--diag-root", default=None,
+                    help="GENE output root; corners are under <diag-root>/x0_<x0>/<tag>/ "
+                         f"[{DIAG_ROOT}]")
+    ap.add_argument("--ped-root", default=None,
+                    help=f"ped_grid cheaseBS cases <tag>/ [{PED_ROOT}]")
+    ap.add_argument("--x0", type=float, nargs="+", default=None,
+                    help="radius of the scan to plot (reads its x0_<x0>/ folder) "
+                         "[Te-top Chapman radius]")
     ap.add_argument("--out", default=None,
                     help="directory for the PNGs and CSV [<diag-root>/x0_<x0>/plots]")
     ap.add_argument("--field-fits", action="store_true",
@@ -1208,5 +1214,6 @@ if __name__ == "__main__":
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
                     help="most varying parameters to chart and tabulate")
     args = ap.parse_args()
-    run(args.diag_root, args.ped_root, args.out, args.spread, args.max_params, args.x0,
-        args.modes, args.field_fits)
+    d = shot_defaults(args.shot)
+    run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
+        args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot)
