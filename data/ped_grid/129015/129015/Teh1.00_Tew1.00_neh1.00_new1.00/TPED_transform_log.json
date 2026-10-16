@@ -1,0 +1,147 @@
+{
+    "schema_version": 1,
+    "generated": "2026-10-15T21:00:52",
+    "generated_by": "TPED discharge_tools output_gfile",
+    "discharge": {
+        "shot": 129015,
+        "time_ms": 409,
+        "machine": null,
+        "input_dir": "/global/homes/j/joeschm/projects/NSTXU_lithium_study/data/discharges/129015",
+        "source_gfile": "/global/homes/j/joeschm/projects/NSTXU_lithium_study/data/discharges/129015/g129015.00409_450",
+        "source_pfile": "/global/homes/j/joeschm/projects/NSTXU_lithium_study/data/discharges/129015/p129015.00400_x8099"
+    },
+    "command": {
+        "lines": [
+            "discharge = DischargeData(input_dir='/global/homes/j/joeschm/projects/NSTXU_lithium_study/data/discharges/129015')",
+            "phys = DischargePhysics(discharge)",
+            "# no profile transforms applied - untransformed replay"
+        ],
+        "text": "discharge = DischargeData(input_dir='/global/homes/j/joeschm/projects/NSTXU_lithium_study/data/discharges/129015')\nphys = DischargePhysics(discharge)\n# no profile transforms applied - untransformed replay"
+    },
+    "transform_history": [],
+    "cheasebs": {
+        "config_template": "/global/homes/j/joeschm/tools/TPED/projects/discharge_tools/src/configs/nstx_cheasebs_config.json",
+        "overrides": {
+            "max_iter": 40,
+            "tol_bs": 0.001,
+            "tol_q": 0.001,
+            "tol_ip_rel": 0.001,
+            "amplitude_warmup_iters": 0,
+            "replay_representation": "jparallel",
+            "coordinate": "rhot",
+            "bootstrap_mix": 0.35
+        },
+        "baseline_dir": null,
+        "baseline_gfile": null,
+        "strict": false,
+        "acceptance": null,
+        "script": "/global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py",
+        "chease_binary": "/global/homes/j/joeschm/simulators/chease/src-f90/chease",
+        "chease_namelist": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/chease_namelist_nstx_ncscal4",
+        "chease_namelist_values": {
+            "RELAX": 0.0,
+            "NDIAGOP": 1,
+            "NBSEXPQ": 0,
+            "NPROPT": 2,
+            "NIDEAL": 6,
+            "NS": 60,
+            "NT": 60,
+            "NPSI": 220,
+            "NCHI": 220,
+            "NISO": 220,
+            "NTNOVA": 12,
+            "NCSCAL": 4,
+            "NOPT": 0,
+            "NSURF": 6,
+            "NPPFUN": 4,
+            "NFUNC": 4,
+            "NDIFPS": 0,
+            "NDIFT": 1,
+            "NMESHC": 1,
+            "NPOIDC": 2,
+            "SOLPDC": 0.7,
+            "CPLACE": [
+                0.95,
+                0.99,
+                1.0
+            ],
+            "CWIDTH": [
+                0.1,
+                0.02,
+                0.05
+            ],
+            "NTURN": 20,
+            "NBLC0": 16,
+            "NPPR": 24,
+            "NINMAP": 40,
+            "NINSCA": 40,
+            "NSYM": 0,
+            "NEGP": -1,
+            "NER": 1,
+            "NEQDSK": 1,
+            "NRBOX": 513,
+            "NZBOX": 513,
+            "EPSLON": 1e-10,
+            "ETAEI": 0.33,
+            "RPEOP": 0.5,
+            "RZION": 1.5,
+            "GAMMA": 1.6666666667,
+            "TENSPROF": 0.0,
+            "TENSBND": [
+                -0.3,
+                "/"
+            ]
+        },
+        "reference_profiles_used": true
+    },
+    "outputs": {
+        "baseline_gfile_written": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/129015/Teh1.00_Tew1.00_neh1.00_new1.00/g129015.00409",
+        "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20261015/20261015_21-00-52-129015_Teh1.00_Tew1.00_neh1.00_new1.00",
+        "final_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/129015/Teh1.00_Tew1.00_neh1.00_new1.00",
+        "comment": "129015_Teh1.00_Tew1.00_neh1.00_new1.00"
+    },
+    "environment": {
+        "tped_repo": "/global/homes/j/joeschm/tools/TPED",
+        "tped_git": {
+            "commit": "5908fe44b9af30dc65ee36b9ac5690fa3b18e11b",
+            "branch": "gene_datatree",
+            "dirty": true
+        },
+        "python": "3.10.14",
+        "platform": "Linux-6.4.0-150600.23.125_15.0.29-cray_shasta_c-x86_64-with-glibc2.38",
+        "hostname": "login01",
+        "user": "joeschm",
+        "cwd": "/global/u1/j/joeschm/projects/NSTXU_lithium_study",
+        "argv": [
+            "/global/homes/j/joeschm/projects/NSTXU_lithium_study/scripts/ped_grid.py",
+            "--shot",
+            "129015",
+            "--design",
+            "corners",
+            "centre",
+            "--cheasebs",
+            "--no-plots",
+            "--ncscal",
+            "4",
+            "--replay-representation",
+            "jparallel",
+            "--coordinate",
+            "rhot",
+            "--bootstrap-mix",
+            "0.35",
+            "--amplitude-warmup-iters",
+            "0",
+            "--tol-bs",
+            "1e-3",
+            "--tol-q",
+            "1e-3",
+            "--tol-ip-rel",
+            "1e-3",
+            "--max-iter",
+            "40",
+            "--savedir",
+            "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015"
+        ]
+    },
+    "plot_caption": "untransformed"
+}

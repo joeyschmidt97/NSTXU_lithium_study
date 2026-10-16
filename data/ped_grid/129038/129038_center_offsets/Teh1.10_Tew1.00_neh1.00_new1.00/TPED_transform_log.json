@@ -1,0 +1,189 @@
+{
+    "schema_version": 1,
+    "generated": "2026-10-06T20:29:54",
+    "generated_by": "TPED discharge_tools output_gfile",
+    "discharge": {
+        "shot": 129038,
+        "time_ms": 110,
+        "machine": null,
+        "input_dir": "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129038",
+        "source_gfile": "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129038/g129038.00400",
+        "source_pfile": "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129038/p129038.00400"
+    },
+    "command": {
+        "lines": [
+            "discharge = DischargeData(input_dir='/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129038')",
+            "phys = DischargePhysics(discharge)",
+            "# fit= was not recorded as an argument; re-running refits from the same data (coefficients under transform_history[].fit_params)",
+            "phys = phys.apply_mtanh_full(var='Te', scale_height=1.1, scale_sol=1.0, scale_width=1.0, shift_pos=0.0, scale_slope=1.0, scale_core_height=1.0, scale_core_width=1.0, pedestal_weight=1.0, ped_threshold=0.85, edge_weight=1.0, edge_threshold=0.99, enforce_quasineutrality=True, qz=6.0)"
+        ],
+        "text": "discharge = DischargeData(input_dir='/global/homes/j/joeschm/data/ST_research/NSTXU_discharges/129038')\nphys = DischargePhysics(discharge)\n# fit= was not recorded as an argument; re-running refits from the same data (coefficients under transform_history[].fit_params)\nphys = phys.apply_mtanh_full(var='Te', scale_height=1.1, scale_sol=1.0, scale_width=1.0, shift_pos=0.0, scale_slope=1.0, scale_core_height=1.0, scale_core_width=1.0, pedestal_weight=1.0, ped_threshold=0.85, edge_weight=1.0, edge_threshold=0.99, enforce_quasineutrality=True, qz=6.0)"
+    },
+    "transform_history": [
+        {
+            "transform": "apply_mtanh_full",
+            "var": "Te",
+            "form": "stefanikova2016_Ffull",
+            "fit_source": "user_supplied",
+            "fit_params": {
+                "b_height": 153.32134132372585,
+                "b_sol": 46.30985029336443,
+                "b_pos": 0.9447469311864659,
+                "b_width": 0.02152286966511721,
+                "b_slope": 1.0196993212738177,
+                "a_height": 1100.162633539267,
+                "a_width": 0.4615357579535686,
+                "a_exp": 2.994805006085171
+            },
+            "applied_params": {
+                "b_height": 168.65347545609845,
+                "b_sol": 46.30985029336443,
+                "b_pos": 0.9447469311864659,
+                "b_width": 0.02152286966511721,
+                "b_slope": 1.0196993212738177,
+                "a_height": 1100.162633539267,
+                "a_width": 0.4615357579535686,
+                "a_exp": 2.994805006085171
+            },
+            "rms_residual": 0.8292163643865631,
+            "rms_relative": 0.0007845856532876748,
+            "scale_height": 1.1,
+            "scale_sol": 1.0,
+            "scale_width": 1.0,
+            "shift_pos": 0.0,
+            "scale_slope": 1.0,
+            "scale_core_height": 1.0,
+            "scale_core_width": 1.0,
+            "pedestal_weight": 1.0,
+            "ped_threshold": 0.85,
+            "edge_weight": 1.0,
+            "edge_threshold": 0.99,
+            "enforce_quasineutrality": true,
+            "qz": 6.0,
+            "quasineutrality_error": null
+        }
+    ],
+    "cheasebs": {
+        "config_template": "/global/homes/j/joeschm/tools/TPED/projects/discharge_tools/src/configs/nstx_cheasebs_config.json",
+        "overrides": {
+            "max_iter": 40,
+            "tol_bs": 0.001,
+            "tol_q": 0.001,
+            "tol_ip_rel": 0.001,
+            "amplitude_warmup_iters": 0,
+            "replay_representation": "jparallel",
+            "coordinate": "rhot",
+            "bootstrap_mix": 0.35
+        },
+        "baseline_dir": null,
+        "baseline_gfile": null,
+        "strict": true,
+        "acceptance": null,
+        "script": "/global/homes/j/joeschm/simulators/cheaseBS/run_chease_iterative_profiles.py",
+        "chease_binary": "/global/homes/j/joeschm/simulators/chease/src-f90/chease",
+        "chease_namelist": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038/chease_namelist_nstx_ncscal4",
+        "chease_namelist_values": {
+            "RELAX": 0.0,
+            "NDIAGOP": 1,
+            "NBSEXPQ": 0,
+            "NPROPT": 2,
+            "NIDEAL": 6,
+            "NS": 60,
+            "NT": 60,
+            "NPSI": 220,
+            "NCHI": 220,
+            "NISO": 220,
+            "NTNOVA": 12,
+            "NCSCAL": 4,
+            "NOPT": 0,
+            "NSURF": 6,
+            "NPPFUN": 4,
+            "NFUNC": 4,
+            "NDIFPS": 0,
+            "NDIFT": 1,
+            "NMESHC": 1,
+            "NPOIDC": 2,
+            "SOLPDC": 0.7,
+            "CPLACE": [
+                0.95,
+                0.99,
+                1.0
+            ],
+            "CWIDTH": [
+                0.1,
+                0.02,
+                0.05
+            ],
+            "NTURN": 20,
+            "NBLC0": 16,
+            "NPPR": 24,
+            "NINMAP": 40,
+            "NINSCA": 40,
+            "NSYM": 0,
+            "NEGP": -1,
+            "NER": 1,
+            "NEQDSK": 1,
+            "NRBOX": 513,
+            "NZBOX": 513,
+            "EPSLON": 1e-10,
+            "ETAEI": 0.33,
+            "RPEOP": 0.5,
+            "RZION": 1.5,
+            "GAMMA": 1.6666666667,
+            "TENSPROF": 0.0,
+            "TENSBND": [
+                -0.3,
+                "/"
+            ]
+        },
+        "reference_profiles_used": true
+    },
+    "outputs": {
+        "baseline_gfile_written": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038/129038/Teh1.10_Tew1.00_neh1.00_new1.00/g129038.00110",
+        "run_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/20261006/20261006_20-29-54-129038_Teh1.10_Tew1.00_neh1.00_new1.00",
+        "final_dir": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038/129038/Teh1.10_Tew1.00_neh1.00_new1.00",
+        "comment": "129038_Teh1.10_Tew1.00_neh1.00_new1.00"
+    },
+    "environment": {
+        "tped_repo": "/global/homes/j/joeschm/tools/TPED",
+        "tped_git": {
+            "commit": "cefa8b2f886d540be3d8c00273aa070a0258ca0a",
+            "branch": "gene_datatree",
+            "dirty": false
+        },
+        "python": "3.10.14",
+        "platform": "Linux-6.4.0-150600.23.125_15.0.29-cray_shasta_c-x86_64-with-glibc2.38",
+        "hostname": "login12",
+        "user": "joeschm",
+        "cwd": "/global/u1/j/joeschm/projects/NSTXU_lithium_study/reshape_convergence/X-final_convergence_check",
+        "argv": [
+            "/global/homes/j/joeschm/projects/NSTXU_lithium_study/scripts/ped_grid.py",
+            "--shot",
+            "129038",
+            "--cheasebs",
+            "--strict",
+            "--no-plots",
+            "--ncscal",
+            "4",
+            "--replay-representation",
+            "jparallel",
+            "--coordinate",
+            "rhot",
+            "--bootstrap-mix",
+            "0.35",
+            "--amplitude-warmup-iters",
+            "0",
+            "--tol-bs",
+            "1e-3",
+            "--tol-q",
+            "1e-3",
+            "--tol-ip-rel",
+            "1e-3",
+            "--max-iter",
+            "40",
+            "--savedir",
+            "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038"
+        ]
+    },
+    "plot_caption": "mtanh_full-Te-sh1.1"
+}
