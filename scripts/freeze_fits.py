@@ -8,18 +8,20 @@ coefficients are fitted once, here, and read by scalings._fit everywhere.
     python -m NSTXU_lithium_study.scripts.freeze_fits \
         --cheasebs-tests C:/Users/joesc/git/cheaseBS_tests
 
-Sources (vault note 2026-10-10-mtanh-fit-error-campaign-shots, 2026-10-15):
+Sources (vault note 2026-10-10-mtanh-fit-error-campaign-shots, 2026-10-16).
+All four shots load Pingyu's GENE profiles_e/i/z from data/discharges (TPED
+reads them over the pfile):
 
     129015, 129038  the coefficients the NERSC scans used (TPED_transform_log.json
                     of the jparallel box scan), so published 129xxx results
-                    stay reproducible
-    132543          campaign fit (FIT_KWARGS, default bounds) on the local pfile;
-                    95% (Te) and 90% (ne) of a requested ped_scale at the
-                    pedestal top
-    132588          refit with b_pos >= 0.70 (both) and a_width <= 0.5 (Te).
-                    With the default 0.85 floor ne pinned b_pos and both cut the
-                    axis by 13-15%; the refit matches the raw core, and the
-                    requested factor reaches the broad (rho_tor 0.4-1) pedestal
+                    stay reproducible; those scans already ran on profiles_*
+    132543          Te with b_slope >= 0: the free fit lands at b_slope -0.95,
+                    which cancels the pedestal (30% of a ped_scale at the top,
+                    core moving the other way); constrained, rms 0.98% and 95%
+                    ne at default bounds (90%)
+    132588          b_pos >= 0.70 for Te and ne. With the default 0.85 floor the
+                    ne fit pins b_pos and cuts the axis by 13%, and Te misses
+                    the shoulder (rms 2.8%); constrained, rms 0.17% / 0.05%
 """
 
 from __future__ import annotations
@@ -41,8 +43,13 @@ FROZEN_FITS = os.path.join(HERE, "frozen_mtanh_fits.json")
 # Box-scan runs whose transform logs hold the 129xxx coefficients.
 NERSC_129XXX = "data/129015_129038/pm0.2_ncscal4_warmup0/{shot}/{var}_ped_scale_1.000"
 
-# (b_pos lower bound, a_width upper bound) per refitted 132588 variable.
-REFIT_132588 = {"Te": (0.70, 0.5), "ne": (0.70, 2.0)}
+# Bound overrides per shot and variable: parameter -> (lower, upper), None
+# keeps the default. Everything not listed fits at default bounds.
+PARAMS = ("b_height", "b_sol", "b_pos", "b_width", "b_slope", "a_height", "a_width", "a_exp")
+REFITS = {
+    132543: {"Te": {"b_slope": (0.0, None)}},
+    132588: {"Te": {"b_pos": (0.70, None)}, "ne": {"b_pos": (0.70, None)}},
+}
 
 
 def _from_nersc_log(repo, shot, var):
@@ -76,17 +83,24 @@ def build(cheasebs_tests):
     out = {}
     for shot in (129015, 129038):
         out[str(shot)] = {v: _from_nersc_log(cheasebs_tests, shot, v) for v in ("Te", "ne")}
-    phys = scalings.load(132543)
-    out["132543"] = {v: dict(_local_fit(phys, v), source="local fit, default bounds")
-                     for v in ("Te", "ne")}
-    phys = scalings.load(132588)
-    out["132588"] = {}
-    for v, (bpos_lo, aw_hi) in REFIT_132588.items():
-        lo, hi = map(list, _default_bounds_full())
-        lo[2], hi[6] = bpos_lo, aw_hi
-        out["132588"][v] = dict(_local_fit(phys, v, (lo, hi)),
-                                source="local refit, b_pos >= %.2f, a_width <= %.2f" % (bpos_lo, aw_hi),
-                                bounds=[lo, [h if np.isfinite(h) else None for h in hi]])
+    for shot in (132543, 132588):
+        phys = scalings.load(shot)
+        out[str(shot)] = {}
+        for v in ("Te", "ne"):
+            over = REFITS.get(shot, {}).get(v)
+            if not over:
+                out[str(shot)][v] = dict(_local_fit(phys, v), source="local fit, default bounds")
+                continue
+            lo, hi = map(list, _default_bounds_full())
+            for name, (l, h) in over.items():
+                k = PARAMS.index(name)
+                lo[k] = lo[k] if l is None else l
+                hi[k] = hi[k] if h is None else h
+            out[str(shot)][v] = dict(
+                _local_fit(phys, v, (lo, hi)),
+                source="local refit, " + ", ".join(
+                    "%s in [%s, %s]" % (n, l, h) for n, (l, h) in over.items()),
+                bounds=[lo, [h if np.isfinite(h) else None for h in hi]])
     for shot in out.values():
         for entry in shot.values():
             entry["fit_kwargs"] = dict(scalings.FIT_KWARGS)
