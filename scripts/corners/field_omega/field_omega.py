@@ -29,6 +29,11 @@ dashboard and samplers (VURS) read the fit of any run, and plot_corners.py
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega               # report only
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --write
     python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --x0 0.6737 --write
+    python -m NSTXU_lithium_study.scripts.corners.field_omega.field_omega --path .     # any dir
+
+--path skips the corner layout and fits every omega_NNNN found at any depth
+under the given directory (e.g. several scanfiles* dirs, or a continued run
+next to a backed-up earlier segment).
 
 Where GENE converged, the report also prints fit minus GENE: a check of the
 estimator (window, sign of omega) where the answer is known, before trusting
@@ -60,6 +65,19 @@ ABS_TOL = 0.005
 def omega_files(corner_dir: str) -> list[str]:
     return sorted(f for f in glob.glob(os.path.join(corner_dir, "scanfiles*", "omega_*"))
                   if re.search(r"omega_\d{4}$", f))
+
+
+def corner_targets(diag_root: str, x0) -> tuple[str, list[tuple[str, str]]]:
+    """(root, [(corner tag, omega path)]) for the corner scan at x0."""
+    root = os.path.join(diag_root, x0_label(x0))
+    return root, [(tag(p), o) for p in corners() for o in omega_files(os.path.join(root, tag(p)))]
+
+
+def path_targets(path: str) -> tuple[str, list[tuple[str, str]]]:
+    """(path, [(omega path relative to path, omega path)]) for every omega_NNNN at any depth."""
+    found = sorted(f for f in glob.glob(os.path.join(path, "**", "omega_*"), recursive=True)
+                   if re.search(r"omega_\d{4}$", f))
+    return path, [(os.path.relpath(o, path), o) for o in found]
 
 
 def gene_state(omega_path: str) -> tuple[str, dict]:
@@ -105,51 +123,49 @@ def verdict(g, gs, w, ws, rel_tol=REL_TOL, abs_tol=ABS_TOL) -> str:
 
 
 def run(diag_root=DIAG_ROOT, x0=X0, write=False, window=WINDOW,
-        rel_tol=REL_TOL, abs_tol=ABS_TOL, passing_only=False):
-    root = os.path.join(diag_root, x0_label(x0))
+        rel_tol=REL_TOL, abs_tol=ABS_TOL, passing_only=False, path=None):
+    root, targets = path_targets(path) if path else corner_targets(diag_root, x0)
     counts = {"written": 0, "GENE converged": 0, "pass": 0, "decaying": 0, "ambiguous": 0,
               "fit failed": 0, "no field": 0}
     print(f"{root}\nfit window {window[0]:g}-{window[1]:g} of the field output, {FIELDS}, "
           f"{TRACE_MODE}; pass: std <= max({rel_tol:g}*|value|, {abs_tol:g})"
           + ("" if write else "; REPORT ONLY (--write to append)") + "\n")
-    print(f"{'corner':34} {'ky':>5} {'GENE':>11} {'gamma_field':>18} {'omega_field':>18}  result")
-    for p in corners():
-        corner_dir = os.path.join(root, tag(p))
-        for omega_path in omega_files(corner_dir):
-            state, values = gene_state(omega_path)
-            field_path = re.sub(r"omega_(\d{4})$", r"field_\1", omega_path)
-            ky = values.get("kymin", kymin_of(omega_path))
-            gene = ("empty" if state == "empty" else
-                    f"{values['gamma_gene']:.3f}/{values['omega_gene']:.2f}")
-            if not os.path.isfile(field_path) or os.path.getsize(field_path) == 0:
-                counts["no field"] += 1
-                print(f"{tag(p):34} {ky:5.2f} {gene:>11} {'-':>18} {'-':>18}  no field file")
-                continue
-            try:
-                est, stats = fit(field_path, window)
-            except Exception as exc:
-                counts["fit failed"] += 1
-                print(f"{tag(p):34} {ky:5.2f} {gene:>11}  fit failed: {type(exc).__name__}: {exc}")
-                continue
-            s = stats[FIELDS]
-            g, w = s["gamma_avg"], s["omega_avg"]
-            gs, ws = np.sqrt(s["gamma_variance"]), np.sqrt(s["omega_variance"])
-            v = verdict(g, gs, w, ws, rel_tol, abs_tol)
-            if state == "converged":                # GENE's value stays gamma; fit is a check
-                counts["GENE converged"] += 1
-                result = (f"GENE converged, {v}; fit-GENE: d_gamma {g - values['gamma_gene']:+.4f}, "
-                          f"d_omega {w - values['omega_gene']:+.4f}")
-            else:
-                counts[v] += 1
-                result = {"pass": "PASS, used as gamma",
-                          "decaying": "DECAYING (gamma+2std<0), recorded only",
-                          "ambiguous": "AMBIGUOUS (std too large), recorded only"}[v]
-            if write and (v == "pass" or not passing_only):
-                with contextlib.redirect_stdout(io.StringIO()):
-                    est._write_to_omega_file(stats, v)
-                counts["written"] += 1
-                result += ", appended"
-            print(f"{tag(p):34} {ky:5.2f} {gene:>11} {g:9.4f} ±{gs:7.1e} {w:9.4f} ±{ws:7.1e}  {result}")
+    print(f"{'run':34} {'ky':>5} {'GENE':>11} {'gamma_field':>18} {'omega_field':>18}  result")
+    for label, omega_path in targets:
+        state, values = gene_state(omega_path)
+        field_path = re.sub(r"omega_(\d{4})$", r"field_\1", omega_path)
+        ky = values.get("kymin", kymin_of(omega_path))
+        gene = ("empty" if state == "empty" else
+                f"{values['gamma_gene']:.3f}/{values['omega_gene']:.2f}")
+        if not os.path.isfile(field_path) or os.path.getsize(field_path) == 0:
+            counts["no field"] += 1
+            print(f"{label:34} {ky:5.2f} {gene:>11} {'-':>18} {'-':>18}  no field file")
+            continue
+        try:
+            est, stats = fit(field_path, window)
+        except Exception as exc:
+            counts["fit failed"] += 1
+            print(f"{label:34} {ky:5.2f} {gene:>11}  fit failed: {type(exc).__name__}: {exc}")
+            continue
+        s = stats[FIELDS]
+        g, w = s["gamma_avg"], s["omega_avg"]
+        gs, ws = np.sqrt(s["gamma_variance"]), np.sqrt(s["omega_variance"])
+        v = verdict(g, gs, w, ws, rel_tol, abs_tol)
+        if state == "converged":                # GENE's value stays gamma; fit is a check
+            counts["GENE converged"] += 1
+            result = (f"GENE converged, {v}; fit-GENE: d_gamma {g - values['gamma_gene']:+.4f}, "
+                      f"d_omega {w - values['omega_gene']:+.4f}")
+        else:
+            counts[v] += 1
+            result = {"pass": "PASS, used as gamma",
+                      "decaying": "DECAYING (gamma+2std<0), recorded only",
+                      "ambiguous": "AMBIGUOUS (std too large), recorded only"}[v]
+        if write and (v == "pass" or not passing_only):
+            with contextlib.redirect_stdout(io.StringIO()):
+                est._write_to_omega_file(stats, v)
+            counts["written"] += 1
+            result += ", appended"
+        print(f"{label:34} {ky:5.2f} {gene:>11} {g:9.4f} ±{gs:7.1e} {w:9.4f} ±{ws:7.1e}  {result}")
     print("\n" + ", ".join(f"{v} {k}" for k, v in counts.items()))
     return counts
 
@@ -161,6 +177,8 @@ if __name__ == "__main__":
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--diag-root", default=DIAG_ROOT, help="corners are under <diag-root>/x0_<x0>/<tag>/")
     ap.add_argument("--x0", type=float, nargs="+", default=list(X0), help="which x0_<x0>/ scan")
+    ap.add_argument("--path", help="fit every omega_NNNN at any depth under this dir "
+                                   "instead of the corner scan (--diag-root/--x0 ignored)")
     ap.add_argument("--write", action="store_true",
                     help="append every fit, with its verdict, to its omega file "
                          "(converged ky too; GENE's line is never changed)")
@@ -172,4 +190,4 @@ if __name__ == "__main__":
     ap.add_argument("--abs-tol", type=float, default=ABS_TOL)
     args = ap.parse_args()
     run(args.diag_root, tuple(args.x0), args.write, tuple(args.window),
-        args.rel_tol, args.abs_tol, args.passing_only)
+        args.rel_tol, args.abs_tol, args.passing_only, args.path)
