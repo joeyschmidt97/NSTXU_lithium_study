@@ -161,13 +161,22 @@ def discover(roots, max_depth=MAX_DEPTH):
 def add_omega(sims, runs):
     rows = []
     for fp, (group, sim) in sims.items():
-        sim.return_sim_xarray(["omega"])
-        tree = sim.tree
-        if "omega" not in tree.children:
-            log_error(group, fp, "omega", tree.attrs["load_errors"].get("omega", "no omega node"))
-            continue
-        ds = tree["omega"].ds
-        rows.append({"run": fp, "gamma": float(ds["gamma"].values), "omega": float(ds["omega"].values)})
+        try:
+            sim.return_sim_xarray(["omega"])
+            tree = sim.tree
+            if "omega" not in tree.children:
+                log_error(group, fp, "omega", tree.attrs["load_errors"].get("omega", "no omega node"))
+                continue
+            ds = tree["omega"].ds
+            # An empty or incomplete omega file (run never finished) reads as an
+            # empty Dataset carrying load_warning, not as an error.
+            if "gamma" not in ds or "omega" not in ds:
+                warning = ds.attrs.get("load_warning", "no gamma/omega in omega file")
+                log_error(group, fp, "omega", warning.split(":")[0])
+                continue
+            rows.append({"run": fp, "gamma": float(ds["gamma"].values), "omega": float(ds["omega"].values)})
+        except Exception as exc:
+            log_error(group, fp, "omega", exc)
     return runs.merge(pd.DataFrame(rows, columns=["run", "gamma", "omega"]), on="run", how="left")
 
 
