@@ -20,6 +20,7 @@ neither), so the order does not matter.
     python ped_grid.py --shot 129038                                # plots only
     python ped_grid.py --shot 129038 --pilot --cheasebs ...         # 2 corners + centre
     python ped_grid.py --shot 129038 --cheasebs --shard 0 --nshards 4 ...
+    python ped_grid.py --shot 132543 --cheasebs --coordinate rhop --tensbnd -1.0 ...  # 132xxx K/L
 
 With --cheasebs each case goes through output_gfile(run_cheasebs=True), which
 writes the reconstructed gfile, the GENE profiles_e/i/z and profiles.iterdb
@@ -162,6 +163,9 @@ def main(argv=None):
     ap.add_argument("--tol-ip-rel", type=float, default=None)
     ap.add_argument("--amplitude-warmup-iters", type=int, default=None)
     ap.add_argument("--ncscal", type=int, default=None)
+    ap.add_argument("--tensbnd", type=float, default=None,
+                    help="CHEASE TENSBND (boundary spline tension; template -0.3). "
+                         "-1.0 with --coordinate rhop is the 132xxx K/L configuration")
     ap.add_argument("--replay-representation", choices=("istar", "jparallel"),
                     default=None)
     ap.add_argument("--coordinate", choices=("rhop", "rhot"), default=None)
@@ -216,7 +220,12 @@ def main(argv=None):
                 "replay_representation", "coordinate", "bootstrap_mix"):
         if getattr(args, key) is not None:
             gfile_kw[key] = getattr(args, key)
-    if args.ncscal is not None:
+    if args.tensbnd is not None:
+        from NSTXU_lithium_study.scripts.cheasebs_132xxx_tests import namelist_with
+        entries = {"NCSCAL": args.ncscal} if args.ncscal is not None else {}
+        gfile_kw["chease_namelist"] = namelist_with({**entries, "TENSBND": args.tensbnd},
+                                                    savedir)
+    elif args.ncscal is not None:
         gfile_kw["chease_namelist"] = S.namelist_with_ncscal(args.ncscal, savedir)
     print("gfile_kw: %s" % gfile_kw, flush=True)
 
