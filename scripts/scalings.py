@@ -55,10 +55,14 @@ from TPED.projects.discharge_tools.src.transforms.mtanh_transforms import fit_mt
 # Discharges
 # ---------------------------------------------------------------------------
 
-# First path that exists wins, so the same code runs on NERSC and on a laptop.
+# The repo's own copy, so every machine loads the same files. 129015, 129038
+# and 132543 carry Pingyu's GENE profiles_e/i/z next to the pfile, and 132588
+# its copy from ST_research/pingyu_take_files; TPED's harmonizer reads
+# profiles_* over the pfile whenever both are present. (The ST_research copies
+# differ per machine: NERSC had profiles_* for three shots, the laptop none.)
 DISCHARGE_ROOT_CANDIDATES = [
-    "/global/homes/j/joeschm/data/ST_research/NSTXU_discharges",
-    "C:/Users/joesc/git/ST_research/NSTXU_discharges",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                 "data", "discharges"),
 ]
 
 SHOTS = (129015, 129038, 132543, 132588)
