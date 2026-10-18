@@ -33,7 +33,13 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 n q0 - round(n q0) (n = n0_global, q0 at x0, both from
                                 the run's parameters), as a table, and gamma vs |delta|;
                                 + corners_q_offset.csv
-    corners_res2.png            (when 2x-resolution runs exist) the 1x corner beside
+    corners_mode_extent.png     (--mode-extent) has each eigenfunction decayed by the ends
+                                of the ballooning domain? |phi| and |Apar| at the two z
+                                ends over their peak (last field time), per corner and
+                                ky, as tables like the mode table; a large end value
+                                means the mode is cut off and nx0 should grow;
+                                + corners_mode_extent.csv
+    corners_res2.png          (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
     corners_nz<N>.png           (--nz-compare N) the same comparison against the
@@ -135,6 +141,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.lines import Line2D
 
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
+from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
 from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
 from TPED.projects.utils.read_iterdb import read_iterdb
 from TPED.projects.discharge_tools.src.filetypes.gfile_data import GFileData
@@ -214,6 +221,12 @@ TABLE_SHADE = (0.82, -0.3)
 MODE_KDE_BW = 0.12
 #: corners_q_offset.png: |delta| / 0.5, dark on a rational surface to light midway
 Q_OFFSET_CMAP = LinearSegmentedColormap.from_list("q_offset", ["#5b2a86", "#b58fd0", "#f4f1f8"])
+#: corners_mode_extent.png: end/peak above this is flagged as cut off (bold, dark
+#: outline). A working threshold, not a GENE standard; tighten it if marginal
+#: cells change gamma when nx0 grows.
+EXTENT_TOL = 0.1
+#: colour scale of end/peak, log10: green at or below 10^lo, red at 10^hi
+EXTENT_LOG = (-3.0, 0.0)
 #: 2x-resolution run dirs: 2XRES / 2x_res / res2x anywhere in the path, or the _res2
 #: suffix of corner_gene_scan.py --res-scale 2 and the dashboard's 2x button
 RES2_RE = re.compile(r"(?i)2x_?res|res_?2x|_res2(?!\d)")
@@ -920,6 +933,98 @@ def plot_q_offset(ds, out, written):
     written.append(path)
 
 
+def mode_ends(par_path: str) -> dict:
+    """{field: max(|f| at the two z ends) / max|f|} on the ballooning grid (nx0 nz0
+    points), last field time; NaN for a field the run does not have."""
+    field = re.sub(r"parameters_(\d{4})$", r"field_\1", par_path)
+    out = {"field_phi": np.nan, "field_apar": np.nan}
+    if not os.path.isfile(field) or os.path.getsize(field) == 0:
+        return out
+    fx = GeneField(field).field_filepath_to_xarray("last", list(out))
+    for name in out:
+        if fx is not None and name in fx:
+            f = np.abs(fx[name].values[-1])
+            if f.max() > 0:
+                out[name] = float(max(f[0], f[-1]) / f.max())
+    return out
+
+
+def plot_mode_extent(ds, out, written, tol=EXTENT_TOL):
+    """|phi| and |Apar| end/peak per corner and ky as two tables, coloured green
+    (decayed) to red (cut off) on a log scale; cells above *tol* bold and outlined,
+    unconverged runs hatched (their eigenfunction is the last snapshot, not a
+    converged mode). + data/corners_mode_extent.csv."""
+    ky, n = ds.ky.values, ds.sizes["corner"]
+    ends = {f: np.full((n, ky.size), np.nan) for f in ("field_phi", "field_apar")}
+    nx0 = set()
+    for i in range(n):
+        for j in range(ky.size):
+            path = str(ds.path.values[i, j])
+            if not path:
+                continue
+            try:
+                e = mode_ends(path)
+            except Exception as exc:                # one unreadable field never sinks the plot
+                print(f"    field unreadable {path}: {type(exc).__name__}: {exc}")
+                continue
+            for f in ends:
+                ends[f][i, j] = e[f]
+            nx0.add(run_param(path, "nx0"))
+    if all(np.isnan(v).all() for v in ends.values()):
+        print("no field files; corners_mode_extent.png skipped")
+        return
+    lo, hi = EXTENT_LOG
+    norm = Normalize(lo, hi)
+    fig, axes = plt.subplots(1, 2, figsize=(17, max(5.5, 0.34 * n + 2.6)), layout="constrained")
+    for ax, (f, sym) in zip(axes, (("field_phi", r"$|\phi|$"), ("field_apar", r"$|A_\parallel|$"))):
+        v = ends[f]
+        for i in range(n):
+            for j in range(ky.size):
+                r = v[i, j]
+                fc = GAMMA_CMAP(norm(np.clip(np.log10(r), lo, hi))) if np.isfinite(r) and r > 0 \
+                    else SURFACE
+                bad = np.isfinite(r) and r > tol
+                ax.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=INK if bad else SURFACE,
+                                           lw=1.6 if bad else 2,
+                                           hatch="///" if ds.status.values[i, j] != "ok"
+                                           and np.isfinite(r) else None))
+                text = f"{r:.0e}" if np.isfinite(r) and r > 0 else ("0" if r == 0 else "-")
+                dark = fc != SURFACE and np.mean(to_rgb(fc)) < 0.45
+                ax.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=6.5,
+                        color="white" if dark else INK, fontweight="bold" if bad else "normal")
+        ax.set_xlim(0, ky.size)
+        ax.set_ylim(0, n)
+        ax.set_xticks(np.arange(ky.size) + 0.5, [f"{k:g}" for k in ky], fontsize=8)
+        ax.set_yticks(np.arange(n) + 0.5, [str(l) for l in ds.label.values[::-1]], fontsize=8)
+        ax.set_xlabel(r"$k_y\rho_{ref}$")
+        ax.tick_params(length=0)
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+        n_bad = int((v > tol).sum())
+        ax.set_title(f"{sym} at the z ends / peak, rows {LEGEND_TITLE}\n"
+                     f"{n_bad} cell(s) above {tol:g} (bold, outlined: cut off, grow nx0); "
+                     "hatched: not converged; - no field", loc="left", fontsize=10, color=INK)
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=GAMMA_CMAP)
+    cb = fig.colorbar(sm, ax=axes, fraction=0.025, pad=0.02)
+    cb.set_label("log10(end / peak)")
+    nx0_txt = ", ".join(f"{x:g}" for x in sorted(x for x in nx0 if x is not None)) or "?"
+    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: mode extent along the field line "
+                 f"(nx0 = {nx0_txt})", x=0.02, ha="left", fontsize=12, color=INK)
+    save(fig, out, "corners_mode_extent.png", written)
+
+    path = data_path(out, "corners_mode_extent.csv")
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky", "status", "phi_end_over_peak",
+                           "apar_end_over_peak"]) + "\n")
+        for i, c in enumerate(ds.corner.values):
+            for j, k in enumerate(ky):
+                if np.isfinite(ends["field_phi"][i, j]) or np.isfinite(ends["field_apar"][i, j]):
+                    fh.write(",".join([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}",
+                                       str(ds.status.values[i, j]),
+                                       *(f"{ends[f][i, j]:.4g}" for f in ends)]) + "\n")
+    written.append(path)
+
+
 def _listdir(d):
     try:
         return os.listdir(d)
@@ -970,10 +1075,16 @@ def res2_dirs(diag_root: str, x0, extra_roots=(), depth=RES2_DEPTH) -> dict[str,
     return found
 
 
-def run_nz0(par_path: str):
+def run_param(par_path: str, key: str):
+    """A number from a parameters file (e.g. nz0, nx0), or None."""
     with open(par_path) as fh:
-        m = re.search(r"^\s*nz0\s*=\s*(\d+)", fh.read(), re.M)
-    return int(m.group(1)) if m else None
+        m = re.search(rf"^\s*{key}\s*=\s*([-+.\deE]+)", fh.read(), re.M)
+    return float(m.group(1)) if m else None
+
+
+def run_nz0(par_path: str):
+    v = run_param(par_path, "nz0")
+    return int(v) if v is not None else None
 
 
 def scan_nz0(ds):
@@ -1546,7 +1657,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
-        nz_root=None):
+        nz_root=None, mode_extent=False):
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot)
@@ -1564,6 +1675,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_res2(ds, out, written, res2_roots)
         if nz_compare:
             plot_nz_compare(ds, out, written, nz_compare, nz_root)
+        if mode_extent:
+            plot_mode_extent(ds, out, written)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
@@ -1605,6 +1718,9 @@ if __name__ == "__main__":
     ap.add_argument("--nz-root", default=None,
                     help="diag root of the --nz-compare runs, <tag>s under x0_<x0>/ "
                          "[<diag-root>_nz<N>]")
+    ap.add_argument("--mode-extent", action="store_true",
+                    help="corners_mode_extent.png: |phi|, |Apar| at the ballooning z ends over "
+                         "their peak, per corner and ky (reads every field file)")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
@@ -1613,4 +1729,4 @@ if __name__ == "__main__":
     d = shot_defaults(args.shot)
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
-        args.res2_root, args.nz_compare, args.nz_root)
+        args.res2_root, args.nz_compare, args.nz_root, args.mode_extent)
