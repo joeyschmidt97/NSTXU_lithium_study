@@ -1191,6 +1191,23 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
     written.append(path)
 
 
+def plot_nz_compare(ds, out, written, nz_compare, nz_root=None):
+    """corners_nz<N>.png: each corner this scan ran beside its nz0 = N run of the
+    same profile scaling, from <diag-root>_nz<N> (or nz_root)."""
+    root = nz_root or ds.diag_root.rstrip("/\\") + NZ_SUFFIX.format(nz_compare)
+    own = scan_nz0(ds)
+    dirs = nz_dirs(root, (ds.x0,), nz_compare)
+    # ds lists every ped_grid corner, run or not: compare only the profile
+    # scalings this scan actually ran, not every nz0 = N corner
+    ran = {t for t in dirs if gene_runs(os.path.join(ds.diag_root, x0_label((ds.x0,)), t))}
+    if set(dirs) - ran:
+        print(f"--- nz0 {nz_compare}: {len(set(dirs) - ran)} corner(s) with no nz0 {own} run "
+              "left out")
+    plot_res2(ds, out, written, dirs={t: dirs[t] for t in sorted(ran)},
+              base=f"nz0 {own}", alt=f"nz0 {nz_compare}", stem=f"corners_nz{nz_compare}",
+              what=f"nz0 {own} vs {nz_compare}")
+
+
 def fit_ylim(ax, x, ys, xlim, pad=0.05):
     m = (x >= xlim[0]) & (x <= xlim[1])
     vals = np.concatenate([np.asarray(y)[m] for y in ys])
@@ -1494,11 +1511,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_q_offset(ds, out, written)
         plot_res2(ds, out, written, res2_roots)
         if nz_compare:
-            root = nz_root or diag_root.rstrip("/\\") + NZ_SUFFIX.format(nz_compare)
-            own = scan_nz0(ds)
-            plot_res2(ds, out, written, dirs=nz_dirs(root, x0, nz_compare),
-                      base=f"nz0 {own}", alt=f"nz0 {nz_compare}", stem=f"corners_nz{nz_compare}",
-                      what=f"nz0 {own} vs {nz_compare}")
+            plot_nz_compare(ds, out, written, nz_compare, nz_root)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
