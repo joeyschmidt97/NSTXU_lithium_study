@@ -36,10 +36,11 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_res2.png            (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
-    corners_nz128.png           (when nz0 = 128 reruns exist) the same comparison for
-                                the nz0 = 128 reruns under <diag-root>_nz128 (or
-                                --nz128-root), each matched to the nz0 = 64 corner of
-                                its profile scaling (tag); + corners_nz128.csv
+    corners_nz<N>.png           (--nz-compare N) the same comparison against the
+                                nz0 = N runs under <diag-root>_nz<N> (or --nz-root),
+                                each matched to the corner of the same profile
+                                scaling (tag); the line is this scan, at its own nz0
+                                read from its parameters; + corners_nz<N>.csv
 
 Every CSV is written to <out>/data/, beside the plots.
 
@@ -222,10 +223,9 @@ X0_RE = re.compile(r"x0_(\d+(?:\.\d+)?)(?![\d.-])")
 RES2_DEPTH = 5
 #: corners_res2.png: 2x points sit this fraction of the ky span right of their ky
 RES2_NUDGE = 0.012
-#: corners_nz128.png: nz0 = 128 reruns of the nz0 = 64 corners (corner_gene_scan.py
-#: --set nz0=128 n_procs_z=... --diag-root <diag-root>_nz128), at <root>/x0_<x0>/<tag>/
-NZ_SUFFIX = "_nz128"
-NZ0_BASE, NZ0_ALT = 64, 128
+#: --nz-compare N: the nz0 = N corners are at <diag-root>_nz<N>/x0_<x0>/<tag>/ (e.g.
+#: corners_nz64 beside the nz0 = 128 corners)
+NZ_SUFFIX = "_nz{}"
 #: subfolder of --out that every CSV is written to
 DATA_DIR = "data"
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
@@ -970,10 +970,25 @@ def res2_dirs(diag_root: str, x0, extra_roots=(), depth=RES2_DEPTH) -> dict[str,
     return found
 
 
-def nz_dirs(root: str, x0, nz0=NZ0_ALT) -> dict[str, list[str]]:
-    """{corner tag: [run dir]} of the reruns under <root>/x0_<x0>/<tag>/. A dir whose
-    parameters do not have nz0 = *nz0* is reported and left out, so a stray 1x run
-    can never pose as the rerun."""
+def run_nz0(par_path: str):
+    with open(par_path) as fh:
+        m = re.search(r"^\s*nz0\s*=\s*(\d+)", fh.read(), re.M)
+    return int(m.group(1)) if m else None
+
+
+def scan_nz0(ds):
+    """nz0 of this scan, from the first corner that has a run."""
+    for c in ds.corner.values:
+        runs = gene_runs(os.path.join(ds.diag_root, x0_label((ds.x0,)), c))
+        if runs:
+            return run_nz0(runs[0])
+    return None
+
+
+def nz_dirs(root: str, x0, nz0: int) -> dict[str, list[str]]:
+    """{corner tag: [run dir]} of the runs under <root>/x0_<x0>/<tag>/. A dir whose
+    parameters do not have nz0 = *nz0* is reported and left out, so a run at the
+    wrong resolution can never pose as the comparison."""
     base = os.path.join(root, x0_label(x0))
     found: dict[str, list[str]] = {}
     for name in sorted(_listdir(base)):
@@ -981,11 +996,9 @@ def nz_dirs(root: str, x0, nz0=NZ0_ALT) -> dict[str, list[str]]:
         runs = gene_runs(d) if TAG_RE.fullmatch(name) else []
         if not runs:
             continue
-        with open(runs[0]) as fh:
-            m = re.search(r"^\s*nz0\s*=\s*(\d+)", fh.read(), re.M)
-        if not m or int(m.group(1)) != nz0:
-            print(f"--- nz0 {name}: parameters nz0 = {m.group(1) if m else '?'}, not {nz0}; "
-                  "left out")
+        got = run_nz0(runs[0])
+        if got != nz0:
+            print(f"--- nz0 {name}: parameters nz0 = {got}, not {nz0}; left out")
             continue
         found[name] = [d]
     if not found:
@@ -1463,7 +1476,8 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
-        x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_root=None):
+        x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
+        nz_root=None):
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot)
@@ -1479,10 +1493,12 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         plot_local(ds, out, written, spread, max_params)
         plot_q_offset(ds, out, written)
         plot_res2(ds, out, written, res2_roots)
-        plot_res2(ds, out, written,
-                  dirs=nz_dirs(nz_root or diag_root.rstrip("/\\") + NZ_SUFFIX, x0),
-                  base=f"nz0 {NZ0_BASE}", alt=f"nz0 {NZ0_ALT}", stem="corners_nz128",
-                  what=f"nz0 {NZ0_BASE} vs {NZ0_ALT}")
+        if nz_compare:
+            root = nz_root or diag_root.rstrip("/\\") + NZ_SUFFIX.format(nz_compare)
+            own = scan_nz0(ds)
+            plot_res2(ds, out, written, dirs=nz_dirs(root, x0, nz_compare),
+                      base=f"nz0 {own}", alt=f"nz0 {nz_compare}", stem=f"corners_nz{nz_compare}",
+                      what=f"nz0 {own} vs {nz_compare}")
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
@@ -1518,9 +1534,12 @@ if __name__ == "__main__":
     ap.add_argument("--res2-root", nargs="+", default=(),
                     help="more dirs to search for 2x-resolution runs (2XRES / _res2 in the "
                          "path) [<diag-root> and its _res2 siblings]")
-    ap.add_argument("--nz128-root", default=None,
-                    help=f"diag root of the nz0 = {NZ0_ALT} reruns, <tag>s under x0_<x0>/ "
-                         f"[<diag-root>{NZ_SUFFIX}]")
+    ap.add_argument("--nz-compare", type=int, default=None, metavar="N",
+                    help="compare each corner with its nz0 = N run of the same profile "
+                         "scaling (corners_nz<N>.png) [off]")
+    ap.add_argument("--nz-root", default=None,
+                    help="diag root of the --nz-compare runs, <tag>s under x0_<x0>/ "
+                         "[<diag-root>_nz<N>]")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
@@ -1529,4 +1548,4 @@ if __name__ == "__main__":
     d = shot_defaults(args.shot)
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
-        args.res2_root, args.nz128_root)
+        args.res2_root, args.nz_compare, args.nz_root)
