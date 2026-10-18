@@ -4,8 +4,8 @@
   n_procs_w   = 4
   n_procs_x   = 1
   n_procs_y   = 1
-  n_procs_z   = 16
-n_procs_sim = 128
+  n_procs_z   = 32
+n_procs_sim = 256
 n_parallel_sims = 3
 /
 
@@ -13,7 +13,7 @@ n_parallel_sims = 3
   n_spec = 3
   nx0    = 3
   nky0   = 1
-  nz0    = 64
+  nz0    = 128
   nv0    = 36
   nw0    = 32
   kymin        = 0.2  !scanlist: 0.2, 0.5, 1.0

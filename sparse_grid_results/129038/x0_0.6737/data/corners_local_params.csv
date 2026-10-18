@@ -1,0 +1,17 @@
+corner,Teh,Tew,neh,new,gamma_max,ky_at_max,Bref,Lref,Tref,alpha_MHD,beta,coll,debye2,dens_c,dens_e,dens_i,dpdx_pm,major_R,minor_r,nref,nu_ei,nustar_e,nustar_i,omn_c,omn_e,omn_i,omt_c,omt_e,omt_i,q0,rhostar,shat,temp_c,temp_e,temp_i
+Teh0.80_Tew0.80_neh0.80_new0.80,0.8,0.8,0.8,0.8,1.368,3,0.499382,0.915502,0.459148,1.76059,0.0286176,0.00558864,1.71138e-05,0.084343,1,0.493942,0.129958,1.02813,1,3.85693,4.7816,0.4177,0.259834,-0.53329,-0.0696385,0.405387,1.47492,3.25633,1.47492,3.62997,0.00676077,2.70948,1.06617,1,1.06617
+Teh0.80_Tew0.80_neh0.80_new1.20,0.8,0.8,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew0.80_neh1.20_new0.80,0.8,0.8,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew0.80_neh1.20_new1.20,0.8,0.8,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh0.80_new0.80,0.8,1.2,0.8,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh0.80_new1.20,0.8,1.2,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh1.20_new0.80,0.8,1.2,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh1.20_new1.20,0.8,1.2,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew0.80_neh0.80_new0.80,1.2,0.8,0.8,0.8,0.991,3,0.486365,0.925687,0.752792,3.19138,0.0494649,0.0021739,1.62332e-05,0.084343,1,0.493942,0.187709,1.0153,1,3.85693,1.85997,0.177506,0.296818,-0.53329,-0.0696385,0.405387,1.47492,2.88534,1.47492,4.09212,0.00879069,2.52483,0.650286,1,0.650286
+Teh1.20_Tew0.80_neh0.80_new1.20,1.2,0.8,0.8,1.2,0.506,1,0.486594,0.925453,0.752792,3.6668,0.0483824,0.00212929,1.65964e-05,0.0843431,1,0.493942,0.221107,1.01478,1,3.77607,1.82181,0.171538,0.286838,0.160602,0.62427,1.09931,1.47492,2.88534,1.47492,4.04256,0.00878879,2.35703,0.650286,1,0.650286
+Teh1.20_Tew0.80_neh1.20_new0.80,1.2,0.8,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew0.80_neh1.20_new1.20,1.2,0.8,1.2,1.2,0.119,0.7,0.481326,0.928046,0.752792,8.19909,0.0734821,0.00313123,1.09275e-05,0.084343,1,0.493942,0.348026,1.00463,1,5.61151,2.67905,0.294672,0.492737,0.172457,0.636098,1.11111,1.47492,2.88534,1.47492,4.84255,0.00886014,1.7672,0.650286,1,0.650286
+Teh1.20_Tew1.20_neh0.80_new0.80,1.2,1.2,0.8,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew1.20_neh0.80_new1.20,1.2,1.2,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew1.20_neh1.20_new0.80,1.2,1.2,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew1.20_neh1.20_new1.20,1.2,1.2,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
