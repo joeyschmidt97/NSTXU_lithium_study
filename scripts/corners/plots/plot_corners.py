@@ -34,11 +34,11 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 the run's parameters), as a table, and gamma vs |delta|;
                                 + corners_q_offset.csv
     corners_mode_extent.png     (--mode-extent) has each eigenfunction decayed by the ends
-                                of the ballooning domain? |phi| and |Apar| at the two z
-                                ends over their peak (last field time), per corner and
-                                ky, as tables like the mode table; a large end value
-                                means the mode is cut off and nx0 should grow;
-                                + corners_mode_extent.csv
+                                of the ballooning domain? |phi| (top) and |Apar|
+                                (bottom) at the left and right z ends over their peak
+                                (last field time) against profile scaling, coloured by
+                                ky, on one log scale; a large end value means the mode
+                                is cut off and nx0 should grow; + corners_mode_extent.csv
     corners_res2.png          (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
@@ -137,7 +137,7 @@ if __name__ == "__main__":
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
+from matplotlib.colors import LinearSegmentedColormap, LogNorm, Normalize, to_rgb
 from matplotlib.lines import Line2D
 
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
@@ -221,12 +221,15 @@ TABLE_SHADE = (0.82, -0.3)
 MODE_KDE_BW = 0.12
 #: corners_q_offset.png: |delta| / 0.5, dark on a rational surface to light midway
 Q_OFFSET_CMAP = LinearSegmentedColormap.from_list("q_offset", ["#5b2a86", "#b58fd0", "#f4f1f8"])
-#: corners_mode_extent.png: end/peak above this is flagged as cut off (bold, dark
-#: outline). A working threshold, not a GENE standard; tighten it if marginal
+#: corners_mode_extent.png: end/peak above this is flagged as cut off (dashed line,
+#: shaded above). A working threshold, not a GENE standard; tighten it if marginal
 #: cells change gamma when nx0 grows.
 EXTENT_TOL = 0.1
-#: colour scale of end/peak, log10: green at or below 10^lo, red at 10^hi
-EXTENT_LOG = (-3.0, 0.0)
+#: ky colour map; end values below the floor are drawn at it (log axis); the left /
+#: right ends sit this far either side of their corner's column
+EXTENT_CMAP = "viridis"
+EXTENT_FLOOR = 1e-6
+EXTENT_DX = 0.13
 #: 2x-resolution run dirs: 2XRES / 2x_res / res2x anywhere in the path, or the _res2
 #: suffix of corner_gene_scan.py --res-scale 2 and the dashboard's 2x button
 RES2_RE = re.compile(r"(?i)2x_?res|res_?2x|_res2(?!\d)")
@@ -934,10 +937,11 @@ def plot_q_offset(ds, out, written):
 
 
 def mode_ends(par_path: str) -> dict:
-    """{field: max(|f| at the two z ends) / max|f|} on the ballooning grid (nx0 nz0
-    points), last field time; NaN for a field the run does not have."""
+    """{field: (|f| at the left z end, |f| at the right z end) / max|f|} on the
+    ballooning grid (nx0 nz0 points), last field time; NaN for a field the run
+    does not have."""
     field = re.sub(r"parameters_(\d{4})$", r"field_\1", par_path)
-    out = {"field_phi": np.nan, "field_apar": np.nan}
+    out = {"field_phi": (np.nan, np.nan), "field_apar": (np.nan, np.nan)}
     if not os.path.isfile(field) or os.path.getsize(field) == 0:
         return out
     fx = GeneField(field).field_filepath_to_xarray("last", list(out))
@@ -945,17 +949,20 @@ def mode_ends(par_path: str) -> dict:
         if fx is not None and name in fx:
             f = np.abs(fx[name].values[-1])
             if f.max() > 0:
-                out[name] = float(max(f[0], f[-1]) / f.max())
+                out[name] = (float(f[0] / f.max()), float(f[-1] / f.max()))
     return out
 
 
 def plot_mode_extent(ds, out, written, tol=EXTENT_TOL):
-    """|phi| and |Apar| end/peak per corner and ky as two tables, coloured green
-    (decayed) to red (cut off) on a log scale; cells above *tol* bold and outlined,
-    unconverged runs hatched (their eigenfunction is the last snapshot, not a
-    converged mode). + data/corners_mode_extent.csv."""
+    """|phi| (top) and |Apar| (bottom) at the two ends of the ballooning domain over
+    their peak, against profile scaling: one column per corner, the left end (<)
+    just left of it and the right end (>) just right, coloured by ky, on one log
+    scale, so a scaling that pushes the mode to the domain edge stands out.
+    Hollow: not converged (the last snapshot, not a settled mode). Dashed: *tol*,
+    above which the mode is cut off and nx0 should grow.
+    + data/corners_mode_extent.csv."""
     ky, n = ds.ky.values, ds.sizes["corner"]
-    ends = {f: np.full((n, ky.size), np.nan) for f in ("field_phi", "field_apar")}
+    ends = {f: np.full((n, ky.size, 2), np.nan) for f in ("field_phi", "field_apar")}
     nx0 = set()
     for i in range(n):
         for j in range(ky.size):
@@ -970,58 +977,76 @@ def plot_mode_extent(ds, out, written, tol=EXTENT_TOL):
             for f in ends:
                 ends[f][i, j] = e[f]
             nx0.add(run_param(path, "nx0"))
-    if all(np.isnan(v).all() for v in ends.values()):
+    # ds lists every ped_grid corner; plot only those with field output
+    rows = [i for i in range(n) if any(np.isfinite(v[i]).any() for v in ends.values())]
+    if not rows:
         print("no field files; corners_mode_extent.png skipped")
         return
-    lo, hi = EXTENT_LOG
-    norm = Normalize(lo, hi)
-    fig, axes = plt.subplots(1, 2, figsize=(17, max(5.5, 0.34 * n + 2.6)), layout="constrained")
+    good = ky[[any(np.isfinite(v[rows, j]).any() for v in ends.values()) for j in range(ky.size)]]
+    norm = LogNorm(good.min(), good.max()) if good.min() > 0 and np.ptp(good) > 0 \
+        else Normalize(good.min() - 0.5, good.max() + 0.5)
+    cmap = plt.get_cmap(EXTENT_CMAP)
+    fig, axes = plt.subplots(2, 1, figsize=(max(11, 0.75 * len(rows) + 4), 9.5), sharex=True,
+                             layout="constrained")
     for ax, (f, sym) in zip(axes, (("field_phi", r"$|\phi|$"), ("field_apar", r"$|A_\parallel|$"))):
         v = ends[f]
-        for i in range(n):
-            for j in range(ky.size):
-                r = v[i, j]
-                fc = GAMMA_CMAP(norm(np.clip(np.log10(r), lo, hi))) if np.isfinite(r) and r > 0 \
-                    else SURFACE
-                bad = np.isfinite(r) and r > tol
-                ax.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=fc, ec=INK if bad else SURFACE,
-                                           lw=1.6 if bad else 2,
-                                           hatch="///" if ds.status.values[i, j] != "ok"
-                                           and np.isfinite(r) else None))
-                text = f"{r:.0e}" if np.isfinite(r) and r > 0 else ("0" if r == 0 else "-")
-                dark = fc != SURFACE and np.mean(to_rgb(fc)) < 0.45
-                ax.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=6.5,
-                        color="white" if dark else INK, fontweight="bold" if bad else "normal")
-        ax.set_xlim(0, ky.size)
-        ax.set_ylim(0, n)
-        ax.set_xticks(np.arange(ky.size) + 0.5, [f"{k:g}" for k in ky], fontsize=8)
-        ax.set_yticks(np.arange(n) + 0.5, [str(l) for l in ds.label.values[::-1]], fontsize=8)
-        ax.set_xlabel(r"$k_y\rho_{ref}$")
-        ax.tick_params(length=0)
-        for sp in ax.spines.values():
-            sp.set_visible(False)
-        n_bad = int((v > tol).sum())
-        ax.set_title(f"{sym} at the z ends / peak, rows {LEGEND_TITLE}\n"
-                     f"{n_bad} cell(s) above {tol:g} (bold, outlined: cut off, grow nx0); "
-                     "hatched: not converged; - no field", loc="left", fontsize=10, color=INK)
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=GAMMA_CMAP)
-    cb = fig.colorbar(sm, ax=axes, fraction=0.025, pad=0.02)
-    cb.set_label("log10(end / peak)")
+        for x, i in enumerate(rows):
+            for j, k in enumerate(ky):
+                conv = ds.status.values[i, j] == "ok"
+                c = cmap(norm(k))
+                for side, (dx, mk) in enumerate(((-EXTENT_DX, "<"), (EXTENT_DX, ">"))):
+                    r = v[i, j, side]
+                    if np.isfinite(r):
+                        ax.plot(x + dx, max(r, EXTENT_FLOOR), mk, ms=7, mec=c, mew=1.4,
+                                mfc=c if conv else SURFACE, zorder=4)
+        ax.axhline(tol, color=INK, ls="--", lw=1, zorder=2)
+        ax.axhspan(tol, 1.5, color="#e34948", alpha=0.07, lw=0, zorder=0)
+        for x in range(1, len(rows)):
+            ax.axvline(x - 0.5, color=GRID, lw=0.8, zorder=1)
+        ax.set_yscale("log")
+        ax.set_ylim(top=1.5)
+        ax.set_ylabel(f"{sym} end / peak")
+        n_bad = int((v[rows] > tol).sum())
+        ax.set_title(f"{sym} at the left (<) and right (>) ends of the ballooning domain / peak;"
+                     f" {n_bad} end(s) above {tol:g} (cut off, grow nx0)", loc="left",
+                     fontsize=10, color=INK)
+        tidy(ax)
+    axes[-1].set_xticks(range(len(rows)), [str(ds.label.values[i]) for i in rows], rotation=35,
+                        ha="right", fontsize=8)
+    axes[-1].set_xlabel(f"profile scaling {LEGEND_TITLE}")
+    axes[-1].set_xlim(-0.6, len(rows) - 0.4)
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, fraction=0.03,
+                      pad=0.02)
+    cb.set_label(r"$k_y\rho_{ref}$")
+    cb.set_ticks(good, labels=[f"{k:g}" for k in good])
+    cb.minorticks_off()
+    handles = [Line2D([], [], ls="none", marker="<", color=MUTED, ms=7, label="left end"),
+               Line2D([], [], ls="none", marker=">", color=MUTED, ms=7, label="right end"),
+               Line2D([], [], ls="none", marker="o", mfc=SURFACE, mec=MUTED, ms=7,
+                      label="hollow: not converged"),
+               Line2D([], [], color=INK, ls="--", lw=1, label=f"cut-off threshold {tol:g}")]
+    axes[-1].legend(handles=handles, frameon=False, fontsize=8, loc="upper center", ncol=4,
+                    bbox_to_anchor=(0.5, -0.32))
     nx0_txt = ", ".join(f"{x:g}" for x in sorted(x for x in nx0 if x is not None)) or "?"
     fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: mode extent along the field line "
-                 f"(nx0 = {nx0_txt})", x=0.02, ha="left", fontsize=12, color=INK)
+                 f"(nx0 = {nx0_txt})\nend values below {EXTENT_FLOOR:g} are drawn at it",
+                 x=0.02, ha="left", fontsize=12, color=INK)
     save(fig, out, "corners_mode_extent.png", written)
 
     path = data_path(out, "corners_mode_extent.csv")
     with open(path, "w") as fh:
         fh.write(",".join(["corner", *ORDER, "ky", "status", "phi_end_over_peak",
-                           "apar_end_over_peak"]) + "\n")
+                           "apar_end_over_peak", "phi_left", "phi_right", "apar_left",
+                           "apar_right"]) + "\n")
         for i, c in enumerate(ds.corner.values):
             for j, k in enumerate(ky):
-                if np.isfinite(ends["field_phi"][i, j]) or np.isfinite(ends["field_apar"][i, j]):
-                    fh.write(",".join([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}",
-                                       str(ds.status.values[i, j]),
-                                       *(f"{ends[f][i, j]:.4g}" for f in ends)]) + "\n")
+                e = {f: ends[f][i, j] for f in ends}
+                if not any(np.isfinite(x).any() for x in e.values()):
+                    continue
+                worst = [np.nanmax(e[f]) if np.isfinite(e[f]).any() else np.nan for f in e]
+                fh.write(",".join([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}",
+                                   str(ds.status.values[i, j]), *(f"{w:.4g}" for w in worst),
+                                   *(f"{x:.4g}" for f in e for x in e[f])]) + "\n")
     written.append(path)
 
 
