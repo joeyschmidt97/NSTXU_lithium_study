@@ -21,6 +21,9 @@ the fit drops axis Te to 0.853 of raw, and raw ni carries a kink):
        ne_ped_scale 0.8, 1.2 on the fit-Te base without the nz rebuild, plus
        the fit-Te base itself as the 1.0 reference
     P  BOUNDS on Pingyu's profiles_* (see below)
+    R  P's crashed Te 1.2 / ne 1.2 corner with bootstrap_mix 0.2: under 0.35
+       the Ip error drifted 1.0% -> 2.9% over iterations 0-3, the amplitude
+       search then stepped 0.99 -> 0.66 and CHEASE's current iteration failed
 
 132543 -- option ladder (profiles are clean and fit ~ raw within 2%; failures are
 a deterministic CHEASE segfault in the magnetic-axis search, flipping on ~1%
@@ -209,6 +212,10 @@ TESTS = {
     "P": dict(shot=132588, dir="P_profiles_bounds", settings=RHOP,
               namelist=dict(NAMELIST, **TENSBND), cases=BOUNDS,
               ref=["Te_ped_scale_1.000"]),
+    "R": dict(shot=132588, dir="R_corner_mix0.2", settings=dict(RHOP, bootstrap_mix=0.2),
+              namelist=dict(NAMELIST, **TENSBND),
+              cases=[c for c in BOUNDS if c[0] == "Te_ped_scale_1.200_ne_ped_scale_1.200"],
+              ref=[]),
 }
 
 # Outcome per case. "accepted" needs both a clean exit and cheaseBS's own
