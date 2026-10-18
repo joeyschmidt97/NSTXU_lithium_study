@@ -1067,12 +1067,67 @@ def one_x(ds, i, var):
     return y, err, conv
 
 
+def parity(ax, pts, var, base, alt):
+    """alt vs base for one variable: each point a corner and ky (number = ky), the
+    1:1 line and a +-10% band."""
+    for q in pts:
+        ax.errorbar(q["x"], q["y"], xerr=q["xerr"], yerr=q["yerr"], fmt="D", ms=7,
+                    mfc=q["color"] if q["filled"] else SURFACE, mec=q["color"], mew=1.6,
+                    color=q["color"], capsize=2, lw=0.8, alpha=0.45 if q["weak"] else 1.0,
+                    zorder=5)
+        ax.annotate(f"{q['k']:g}", (q["x"], q["y"]), xytext=(5, 3), textcoords="offset points",
+                    fontsize=7, color=MUTED)
+    vals = [v for q in pts for v in (q["x"], q["y"])] + [0.0]
+    span = (max(vals) - min(vals)) or 1.0
+    lim = [min(vals) - 0.05 * span, max(vals) + 0.05 * span]
+    xs = np.linspace(*lim, 50)
+    ax.fill_between(xs, 0.9 * xs, 1.1 * xs, color=GRID, lw=0, zorder=1)
+    ax.plot(lim, lim, color=MUTED, lw=0.9, zorder=2)
+    ax.set_xlim(lim)
+    ax.set_ylim(lim)
+    ax.set_aspect("equal")
+    sym = {"gamma": r"\gamma", "omega": r"\omega"}[var]
+    ax.set_xlabel(rf"${sym}$ {base} [$c_{{ref}}/L_{{ref}}$]")
+    ax.set_ylabel(rf"${sym}$ {alt} [$c_{{ref}}/L_{{ref}}$]")
+    ax.set_title(f"{alt} vs {base} {var} (number: ky; band: ±10%)", loc="left", fontsize=10,
+                 color=INK)
+    tidy(ax)
+
+
+def pct_violins(ax, ky, pct, var, base, alt):
+    """% difference (alt - base) / |base| at each ky: a violin (KDE over the corners)
+    where two or more differ, and every corner as its own point on top."""
+    gaps = np.diff(np.unique(ky))
+    width = 0.8 * gaps.min() if gaps.size else 0.2      # one width, so violins compare
+    for k in sorted(pct):
+        vals = np.array([v for v, _, _ in pct[k]])
+        if vals.size >= 2 and np.ptp(vals) > 0:
+            vp = ax.violinplot(vals, positions=[k], widths=width, showextrema=False,
+                               showmedians=True)
+            for body in vp["bodies"]:
+                body.set_facecolor(GRID)
+                body.set_edgecolor(MUTED)
+                body.set_alpha(0.9)
+            vp["cmedians"].set_color(INK)
+        for v, color, weak in pct[k]:
+            ax.plot(k, v, "D", ms=5, color=color, alpha=0.45 if weak else 1.0, zorder=5)
+    ax.axhspan(-10, 10, color=GRID, alpha=0.5, lw=0, zorder=0)
+    ax.axhline(0, color=MUTED, lw=0.8)
+    ax.set_xlabel(r"$k_y\rho_{ref}$")
+    ax.set_ylabel(f"{var}: ({alt} - {base}) / |{base}| [%]")
+    ax.set_title(f"{var} % difference per ky (violin: KDE over corners; band: ±10%)",
+                 loc="left", fontsize=10, color=INK)
+    tidy(ax)
+
+
 def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
               stem="corners_res2", what="2x resolution check"):
     """Each corner with a 2x rerun: its 1x line (converged filled, recorded field
     fit hollow) and the 2x values as diamonds beside them (GENE converged filled,
     live field fit hollow +-1 std, faded unless it passes), joined to the 1x value
-    at the same ky; and 2x gamma vs 1x gamma. + data/corners_res2.csv.
+    at the same ky (top row); the % difference per ky as a violin over the corners,
+    on the same ky axis (middle); 2x vs 1x for gamma and omega (bottom).
+    + data/corners_res2.csv.
 
     *dirs*, *base*, *alt*, *stem* and *what* turn it into any other rerun
     comparison: corners_nz128.png is the nz0 = 128 reruns (alt) against the
@@ -1085,7 +1140,13 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
     names = [c for c in ds.corner.values if any(n == c for n, _ in res)]
     ky = ds.ky.values
     nudge = RES2_NUDGE * (np.ptp(ky) if ky.size > 1 else 1.0)
-    fig, axes = plt.subplots(1, 3, figsize=(17, 5.4), width_ratios=(1, 1, 0.85))
+    fig = plt.figure(figsize=(14, 15.5))
+    gs = fig.add_gridspec(3, 2, height_ratios=(1, 0.75, 1.05))
+    axes = [fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])]
+    pct_axes = [fig.add_subplot(gs[1, n], sharex=axes[n]) for n in range(2)]
+    par_axes = [fig.add_subplot(gs[2, n]) for n in range(2)]
+    pts = {"gamma": [], "omega": []}
+    pct = {"gamma": {}, "omega": {}}
     rows, faded = [], False
     for c in names:
         i = int(np.flatnonzero(ds.corner.values == c)[0])
@@ -1119,14 +1180,16 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
                             mfc=st["color"] if filled else SURFACE, mec=st["color"], mew=1.8,
                             color=st["color"], capsize=3, lw=1, alpha=0.45 if weak else 1.0,
                             zorder=7)
-            g1, e1 = (one["gamma"][0][j], one["gamma"][1][j]) if on_ky else (np.nan, np.nan)
-            if np.isfinite(g1) and np.isfinite(r["gamma"]):
-                axes[2].errorbar(g1, r["gamma"], xerr=e1, yerr=r["gamma_std"], fmt="D", ms=7,
-                                 mfc=st["color"] if r["source"] == "GENE" else SURFACE,
-                                 mec=st["color"], mew=1.6, color=st["color"], capsize=2, lw=0.8,
-                                 alpha=0.45 if weak else 1.0, zorder=5)
-                axes[2].annotate(f"{k:g}", (g1, r["gamma"]), xytext=(5, 3),
-                                 textcoords="offset points", fontsize=7, color=MUTED)
+            rel = {}
+            for var in ("gamma", "omega"):
+                v1, e1 = (one[var][0][j], one[var][1][j]) if on_ky else (np.nan, np.nan)
+                rel[var] = (r[var] - v1) / abs(v1) if np.isfinite(v1) and v1 else np.nan
+                if np.isfinite(v1) and np.isfinite(r[var]):
+                    pts[var].append({"x": v1, "y": r[var], "xerr": e1, "yerr": r[f"{var}_std"],
+                                     "color": st["color"], "filled": r["source"] == "GENE",
+                                     "weak": weak, "k": k})
+                    pct[var].setdefault(k, []).append((100 * rel[var], st["color"], weak))
+            g1 = one["gamma"][0][j] if on_ky else np.nan
             st1 = ds.status.values[i, j] if on_ky else "missing"
             rows.append([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}",
                          st1 if st1 == "ok" or not np.isfinite(g1) else
@@ -1134,8 +1197,7 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
                          *(f"{one[v][0][j]:.6g}" if on_ky else "nan" for v in ("gamma", "omega")),
                          r["source"], *(f"{r[v]:.6g}" for v in ("gamma", "gamma_std",
                                                                "omega", "omega_std")),
-                         f"{(r['gamma'] - g1) / abs(g1):.4g}" if np.isfinite(g1) and g1 else "nan",
-                         r["dir"]])
+                         *(f"{rel[v]:.4g}" for v in ("gamma", "omega")), r["dir"]])
     for ax, var, sym in zip(axes[:2], ("gamma", "omega"), (r"\gamma", r"\omega")):
         ax.axhline(0, color=MUTED, lw=0.8)
         ax.set_xlabel(r"$k_y\rho_{ref}$")
@@ -1145,20 +1207,9 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
                       color=INK)
     axes[1].set_title(f"real frequency: {base} line, {alt} diamonds", loc="left", fontsize=10,
                       color=INK)
-    sc = axes[2]
-    lim = [min(sc.get_xlim()[0], sc.get_ylim()[0], 0),
-           1.05 * max(sc.get_xlim()[1], sc.get_ylim()[1])]
-    xs = np.linspace(*lim, 50)
-    sc.fill_between(xs, 0.9 * xs, 1.1 * xs, color=GRID, lw=0, zorder=1)
-    sc.plot(lim, lim, color=MUTED, lw=0.9, zorder=2)
-    sc.set_xlim(lim)
-    sc.set_ylim(lim)
-    sc.set_aspect("equal")
-    sc.set_xlabel(rf"$\gamma$ {base} [$c_{{ref}}/L_{{ref}}$]")
-    sc.set_ylabel(rf"$\gamma$ {alt} [$c_{{ref}}/L_{{ref}}$]")
-    sc.set_title(f"{alt} vs {base} gamma (number: ky; band: ±10%)", loc="left", fontsize=10,
-                 color=INK)
-    tidy(sc)
+    for n, var in enumerate(("gamma", "omega")):
+        pct_violins(pct_axes[n], ky, pct[var], var, base, alt)
+        parity(par_axes[n], pts[var], var, base, alt)
     handles = [Line2D([], [], lw=1.8, ms=5, **style(point_of(ds, c)),
                       label=str(ds.label.values[list(ds.corner.values).index(c)]))
                for c in names]
@@ -1178,14 +1229,15 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
     fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: {what} "
                  f"({alt} not converged: live field fit)", x=0.02, ha="left", fontsize=12,
                  color=INK)
-    fig.tight_layout(rect=(0, 0, 0.83, 0.95))
+    fig.tight_layout(rect=(0, 0, 0.8, 0.97))
     save(fig, out, f"{stem}.png", written)
 
     path = data_path(out, f"{stem}.csv")
     with open(path, "w") as fh:
         fh.write(",".join(["corner", *ORDER, "ky", f"status_{bk}", f"gamma_{bk}", f"omega_{bk}",
                            f"source_{ak}", f"gamma_{ak}", f"gamma_{ak}_std", f"omega_{ak}",
-                           f"omega_{ak}_std", "gamma_rel_diff", f"dir_{ak}"]) + "\n")
+                           f"omega_{ak}_std", "gamma_rel_diff", "omega_rel_diff",
+                           f"dir_{ak}"]) + "\n")
         for r in rows:
             fh.write(",".join(r) + "\n")
     written.append(path)
