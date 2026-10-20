@@ -1,8 +1,11 @@
 """Regenerate sparse_grid_results/<shot>/x0_<x0>/ from the GENE runs in gene_run_paths.json.
 
 Each (discharge, x0) entry of gene_run_paths.json names where its GENE corners
-and cheaseBS profiles live; this runs plot_corners.run on it and writes the
-PNGs to
+and cheaseBS profiles live. For each, this first fits every ky's field time
+trace (field_omega.run with write=True: the fit and its verdict are appended to
+the omega file, GENE's own line untouched, an earlier fit replaced), then runs
+plot_corners.run on it, so corners_growth_field.png and --field-fits always
+read fresh fits. --no-field-omega skips the fitting. The PNGs go to
 
     sparse_grid_results/<shot>/x0_<x0>/          plots
     sparse_grid_results/<shot>/x0_<x0>/data/     CSVs
@@ -15,6 +18,7 @@ any shot that has it). One entry failing is reported and the rest still run.
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --x0 0.6737
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --x0 0.8447 --no-modes
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --no-field-omega
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --paths my_paths.json
 """
 
@@ -30,6 +34,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PATHS = os.path.join(HERE, "gene_run_paths.json")
 #: plot_corners.run options an entry (or "defaults") may set
 OPTIONS = ("modes", "mode_extent", "field_fits", "spread", "max_params")
+#: on/off switches an entry (or "defaults", or the CLI) may set: the plot_corners
+#: options above, and field_omega, the field fits written before plotting
+SWITCHES = ("field_omega", "modes", "mode_extent", "field_fits")
 #: two x0 are the same scan when closer than this (rho_tor)
 X0_TOL = 1e-4
 
@@ -46,6 +53,7 @@ def load_entries(path: str = PATHS) -> list[dict]:
                         "enabled": e.get("enabled", True), "diag_root": e.get("diag_root"),
                         "ped_root": e.get("ped_root"), "res2_roots": tuple(e.get("res2_roots") or ()),
                         "nz_compare": e.get("nz_compare"), "nz_root": e.get("nz_root"),
+                        "field_omega": e.get("field_omega", defaults.get("field_omega", True)),
                         **{k: e.get(k, defaults.get(k)) for k in OPTIONS}})
     return sorted(out, key=lambda e: (e["shot"], e["x0"]))
 
@@ -73,16 +81,28 @@ def describe(e) -> str:
     if e["nz_compare"]:
         nz = e["nz_root"] or f"{e['diag_root']}_nz{e['nz_compare']}"
         lines.append(f"    nz{e['nz_compare']:<7} {where(os.path.join(nz, e['label']))}")
-    lines.append("    options   " + ", ".join(f"{k}={e[k]}" for k in OPTIONS if e[k] is not None))
+    lines.append("    options   " + ", ".join(f"{k}={e[k]}" for k in ("field_omega", *OPTIONS)
+                                              if e[k] is not None))
     return "\n".join(lines)
 
 
 def update(e, out_root: str = HERE):
-    """plot_corners.run on one entry, into <out_root>/<shot>/x0_<x0>/."""
+    """Field fits (unless field_omega is off), then plot_corners.run on one entry,
+    into <out_root>/<shot>/x0_<x0>/."""
     from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
     d = pc.shot_defaults(e["shot"])
+    diag_root = e["diag_root"] or d["diag_root"]
+    if e["field_omega"]:
+        from NSTXU_lithium_study.scripts.corners.field_omega import field_omega as fo
+        print("--- field fits (field_omega --write)")
+        try:
+            fo.run(diag_root, (e["x0"],), write=True)
+        except Exception:                             # plot what is recorded rather than nothing
+            traceback.print_exc()
+            print("field fits failed; plotting with the fits already in the omega files")
     kw = {k: e[k] for k in OPTIONS if e[k] is not None}
-    return pc.run(e["diag_root"] or d["diag_root"], e["ped_root"] or d["ped_root"],
+    print("--- plots (plot_corners)")
+    return pc.run(diag_root, e["ped_root"] or d["ped_root"],
                   out=os.path.join(out_root, str(e["shot"]), e["label"]), x0=(e["x0"],),
                   shot=e["shot"], res2_roots=e["res2_roots"], nz_compare=e["nz_compare"],
                   nz_root=e["nz_root"], **kw)
@@ -101,7 +121,9 @@ if __name__ == "__main__":
     ap.add_argument("--out-root", default=HERE, help="results root; writes <shot>/x0_<x0>/ under it")
     ap.add_argument("--list", action="store_true",
                     help="print the selected entries and whether their paths exist; plot nothing")
-    for k, what in (("modes", "TPED mode_identifier per ky"),
+    for k, what in (("field_omega", "fit every ky's field trace and append it to its omega file "
+                                    "before plotting (field_omega.py --write)"),
+                    ("modes", "TPED mode_identifier per ky"),
                     ("mode_extent", "corners_mode_extent.png"),
                     ("field_fits", "carry decaying/ambiguous field fits")):
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, default=None,
@@ -113,8 +135,7 @@ if __name__ == "__main__":
     if not entries:
         raise SystemExit(f"no entry in {args.paths} matches --shot {args.shot} --x0 {args.x0}")
     for e in entries:
-        e.update({k: getattr(args, k) for k in ("modes", "mode_extent", "field_fits")
-                  if getattr(args, k) is not None})
+        e.update({k: getattr(args, k) for k in SWITCHES if getattr(args, k) is not None})
     print("\n".join(describe(e) for e in entries))
     if args.list:
         raise SystemExit(0)

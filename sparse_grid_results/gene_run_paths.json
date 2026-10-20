@@ -5,10 +5,12 @@
     "ped_root:   ped_grid cheaseBS cases <tag>/ on scratch (profiles.iterdb, geqdsk) (plot_corners --ped-root).",
     "res2_roots: extra dirs searched for 2x-resolution runs, beside <diag_root> and its _res2 siblings.",
     "nz_compare: nz0 of the comparison runs (corners_nz<N>.png), or null; nz_root: their root, null for <diag_root>_nz<N>.",
-    "Any option key (modes, mode_extent, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
+    "field_omega: fit every ky's field trace and append it to its omega file (field_omega.py --write) before plotting.",
+    "Any option key (field_omega, modes, mode_extent, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
     "enabled: false keeps an entry listed but skipped unless named with --shot and --x0."
   ],
   "defaults": {
+    "field_omega": true,
     "modes": true,
     "mode_extent": true,
     "field_fits": false
