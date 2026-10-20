@@ -1,0 +1,29 @@
+Lmod has detected the following error: These module(s) or extension(s) exist
+but cannot be loaded as requested: "cray-libsci"
+   Try: "module spider cray-libsci" to see how to load the module(s).
+
+
+
+
+The following have been reloaded with a version change:
+  1) PrgEnv-gnu/8.6.0 => PrgEnv-gnu/8.5.0
+  2) cray-dsmml/0.3.1 => cray-dsmml/0.3.0
+  3) cray-fftw/3.3.10.11 => cray-fftw/3.3.10.8
+  4) cray-hdf5-parallel/1.14.3.7 => cray-hdf5-parallel/1.14.3.1
+  5) cray-libsci/25.09.0 => cray-libsci/24.07.0
+  6) cray-mpich/9.0.1 => cray-mpich/8.1.30
+  7) craype/2.7.35 => craype/2.7.32
+  8) gcc-native/14 => gcc-native/13.2
+
+Unloading the cpe module is insufficient to restore the system defaults.
+Please run 'source
+/opt/cray/pe/cpe/25.09/restore_lmod_system_defaults.[csh|sh]'. 
+ 
+Sourcing the above script is not necessary if swapping the cpe module with a
+different version. 
+
+The following have been reloaded with a version change:
+  1) cpe-cuda/25.09 => cpe-cuda/24.07     2) cudatoolkit/13.2 => cudatoolkit/12.9
+
++ ./scanscript --np 3 --ppn 3 '--syscall=srun -l -K -n 3 --gpus-per-task=1 --ntasks-per-node=3 ~/simulators/GENE3_gpu/bin/gene_perlmutter'
++ set +x
