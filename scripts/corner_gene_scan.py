@@ -41,6 +41,15 @@ and records everything in <genedir>/<prefix>_x0_<x0>_manifest.json.
 Te-top Chapman radius) come from SHOTS, and the template too where one is
 recorded. Any of them given explicitly wins. Default 129038.
 
+--gpu runs the GPU build (GENE3_gpu): the template is GPU_TEMPLATE unless
+--template is given, its submit_gpu.cmd is copied instead of submit.cmd (and
+sbatch'ed), and scanscript's --mps is set to n_parallel_sims. Ranks per node
+come from the template's --ntasks-per-node (4, one per A100), so the 8 ky of
+one corner take 2 nodes. Run dirs land beside the template, in GENE3_gpu.
+
+    python corner_gene_scan.py --shot 129015 --gpu --x0 0.8745 --walltime 06:00:00 --submit
+    python corner_gene_scan.py --shot 129015 --gpu --x0 0.8425 --walltime 06:00:00 --submit
+
 --res-scale N multiplies nz0, nv0, nw0 by N, and nx0 too (kept odd: 3 -> 7),
 and n_procs_z, n_procs_v, n_procs_w with them, so each rank holds the same
 slice of z, v and mu and n_procs_sim grows by N^3 (128 -> 1024 for N = 2).
@@ -90,6 +99,11 @@ SHOTS = {
 }
 SHOT = 129038
 
+#: GENE3_gpu problem dir copied per corner with --gpu (any shot: geometry,
+#: profiles, x0, ky and diagdir are all set per corner). A frozen copy of the
+#: 2026-10-19 interactive test (prob01), since scanscript edits prob01 in place.
+GPU_TEMPLATE = "/global/u1/j/joeschm/simulators/GENE3_gpu/NSTX_lithium_gpu_template"
+
 
 def shot_defaults(shot: int = SHOT) -> dict:
     """template, ped_root, diag_root, prefix, x0 and chapman for one discharge.
@@ -133,6 +147,9 @@ TIMELIM_MARGIN = 300
 GEQDSK = "*_CH_COCOS*.geqdsk"
 
 LINKS = ("scanscript", "gene_perlmutter")
+
+#: Submit script read from the template and written to each run dir.
+SUBMIT, GPU_SUBMIT = "submit.cmd", "submit_gpu.cmd"
 
 #: --res-scale: velocity/parallel grid -> the n_procs that splits it, scaled together.
 RES_PROCS = {"nz0": "n_procs_z", "nv0": "n_procs_v", "nw0": "n_procs_w"}
@@ -218,11 +235,15 @@ def read_param(text: str, key: str) -> str:
     return m.group(1).strip().strip("'\"")
 
 
-def corner_submit(template: str, nodes: int, ntasks: int, walltime: str, qos: str) -> str:
+def corner_submit(template: str, nodes: int, ntasks: int, walltime: str, qos: str,
+                  n_parallel: int | None = None) -> str:
+    """The template submit script resized; n_parallel also sets scanscript's --mps."""
     text = re.sub(r"^#SBATCH -t .*$", f"#SBATCH -t {walltime}", template, flags=re.M)
     text = re.sub(r"^#SBATCH -q .*$", f"#SBATCH -q {qos}", text, flags=re.M)
     text = re.sub(r"^#SBATCH -N .*$", f"#SBATCH -N {nodes}", text, flags=re.M)
     text = re.sub(r"--np \d+", f"--np {ntasks}", text)
+    if n_parallel is not None:
+        text = re.sub(r"--mps \d+", f"--mps {n_parallel}", text)
     return re.sub(r"srun (.*?)-n \d+", lambda m: f"srun {m.group(1)}-n {ntasks}", text)
 
 
@@ -258,9 +279,10 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
 
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
           only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
-          walltime=None, kymin=None, overrides=None, res_scale=1, cases=None):
+          walltime=None, kymin=None, overrides=None, res_scale=1, cases=None, gpu=False):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
+    gpu      copy and sbatch the template's submit_gpu.cmd, --mps = n_parallel_sims
     kymin    ky values to scan [KYMIN]
     overrides  {parameter: value} set after everything else (e.g. a resolution
              check: {'nx0': '7', 'nz0': '128'}); each must exist once in the template
@@ -283,7 +305,8 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     genedir = os.path.dirname(os.path.normpath(template))
     with open(os.path.join(template, "parameters")) as fh:
         par_template = fh.read()
-    with open(os.path.join(template, "submit.cmd")) as fh:
+    submit_name = GPU_SUBMIT if gpu else SUBMIT
+    with open(os.path.join(template, submit_name)) as fh:
         sub_template = fh.read()
     overrides = {**resolution_overrides(par_template, res_scale), **(overrides or {})}
     for key, value in overrides.items():          # before n_procs_sim is read for the node count
@@ -301,7 +324,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     prefix = f"{prefix}_{x0_label(x0)}"
 
     manifest = {"template": template, "ped_root": ped_root, "kymin": kymin, "x0": x0,
-                "overrides": overrides, "res_scale": res_scale,
+                "overrides": overrides, "res_scale": res_scale, "gpu": gpu,
                 "walltime": walltime, "qos": qos, "test": test, "timelim": timelim, "nodes": nodes,
                 "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
     skipped = []
@@ -321,10 +344,11 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
                                        n_parallel, timelim, x0, kymin)
         for key, value in overrides.items():
             parameters = set_param(parameters, key, value)
-        submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos)
+        submit_cmd = corner_submit(sub_template, nodes, ntasks, walltime, qos,
+                                   n_parallel if gpu else None)
         if dry_run:
             print(f"--- {label}: would write {run_dir}\n    output to {diagdir}\n")
-            print("=== parameters\n" + parameters + "\n=== submit.cmd\n" + submit_cmd)
+            print(f"=== parameters\n{parameters}\n=== {submit_name}\n{submit_cmd}")
             print(f"{nodes} nodes x {walltime} on {qos} ({ntasks} ranks, {n_parallel} sims); "
                   "nothing written")
             return manifest, skipped
@@ -337,9 +361,9 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         os.makedirs(diagdir, exist_ok=True)
         with open(os.path.join(run_dir, "parameters"), "w") as fh:
             fh.write(parameters)
-        with open(os.path.join(run_dir, "submit.cmd"), "w") as fh:
+        with open(os.path.join(run_dir, submit_name), "w") as fh:
             fh.write(submit_cmd)
-        os.chmod(os.path.join(run_dir, "submit.cmd"), 0o755)
+        os.chmod(os.path.join(run_dir, submit_name), 0o755)
         for link in LINKS:
             src, dst = os.path.join(template, link), os.path.join(run_dir, link)
             if os.path.lexists(dst):
@@ -351,7 +375,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         record = {**p, "case_dir": case_dir, "run_dir": run_dir, "diagdir": diagdir,
                   "geomfile": geomfile, "job_id": None}
         if submit:
-            out = subprocess.run(["sbatch", "submit.cmd"], cwd=run_dir, check=True,
+            out = subprocess.run(["sbatch", submit_name], cwd=run_dir, check=True,
                                  capture_output=True, text=True).stdout
             record["job_id"] = out.strip().split()[-1]
         manifest["runs"][label] = record
@@ -403,6 +427,9 @@ if __name__ == "__main__":
     ap.add_argument("--res-scale", type=int, default=1,
                     help="multiply nx0 (kept odd), nz0, nv0, nw0 and n_procs_z/v/w by this; "
                          "*_res<N> run dirs and diag root")
+    ap.add_argument("--gpu", action="store_true",
+                    help=f"GPU build: template {GPU_TEMPLATE} unless --template, "
+                         f"{GPU_SUBMIT}, --mps = n_parallel_sims")
     ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
     ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
     ap.add_argument("--test", action="store_true",
@@ -410,11 +437,14 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true",
                     help="print one corner's parameters and submit.cmd, write nothing")
     args = ap.parse_args()
+    if args.gpu and args.template is None:
+        args.template = GPU_TEMPLATE
     for key, value in shot_defaults(args.shot).items():
         if key != "chapman" and getattr(args, key) is None:
             setattr(args, key, value)
     _, skipped = build(args.template, args.ped_root, args.diag_root, args.prefix,
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
                        args.walltime, args.kymin,
-                       dict(kv.split("=", 1) for kv in args.set), args.res_scale, args.case)
+                       dict(kv.split("=", 1) for kv in args.set), args.res_scale, args.case,
+                       args.gpu)
     sys.exit(1 if skipped else 0)
