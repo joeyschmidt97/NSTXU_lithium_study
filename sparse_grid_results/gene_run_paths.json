@@ -29,6 +29,30 @@
         "nz_compare": null,
         "nz_root": null
       }
+    },
+    "129015": {
+      "0.842": {
+        "enabled": false,
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129015/corners",
+        "ped_root": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/129015",
+        "res2_roots": [],
+        "nz_compare": null,
+        "nz_root": null
+      },
+      "0.8745": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129015/corners",
+        "ped_root": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/129015",
+        "res2_roots": [],
+        "nz_compare": null,
+        "nz_root": null
+      },
+      "0.9515": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129015/corners",
+        "ped_root": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/129015",
+        "res2_roots": [],
+        "nz_compare": null,
+        "nz_root": null
+      }
     }
   }
 }
