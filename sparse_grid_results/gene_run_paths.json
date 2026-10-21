@@ -13,7 +13,7 @@
     "field_omega": true,
     "modes": true,
     "mode_extent": true,
-    "field_fits": false
+    "field_fits": true
   },
   "runs": {
     "129038": {
@@ -28,13 +28,12 @@
         "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/corners",
         "ped_root": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129038/129038",
         "res2_roots": [],
-        "nz_compare": null,
+        "nz_compare": 64,
         "nz_root": null
       }
     },
     "129015": {
-      "0.842": {
-        "enabled": false,
+      "0.8425": {
         "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129015/corners",
         "ped_root": "/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/129015/129015",
         "res2_roots": [],
