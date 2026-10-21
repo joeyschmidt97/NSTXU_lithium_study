@@ -35,6 +35,7 @@ import itertools
 import json
 import math
 import os
+import re
 import sys
 import traceback
 
@@ -103,6 +104,14 @@ def tag(p) -> str:
     return "_".join("%s%.2f" % (k, p[k]) for k in KNOBS)
 
 
+def parse_tag(label: str) -> dict:
+    """tag inverted: 'Teh1.20_Tew0.80_neh1.00_new1.00' -> {'Teh': 1.2, ...}."""
+    p = {k: float(v) for k, v in re.findall(r"([A-Za-z]+)(\d+(?:\.\d+)?)", label)}
+    if set(p) != set(KNOBS) or tag(p) != label:
+        raise ValueError(f"'{label}' is not a case name like {tag({k: 1.0 for k in KNOBS})}")
+    return p
+
+
 def scale_point(base, p):
     """One apply_mtanh_full per variable with any knob off 1.0."""
     q = base
@@ -147,6 +156,9 @@ def main(argv=None):
                     help="axes the design spans; the rest stay at 1.0")
     ap.add_argument("--pilot", action="store_true",
                     help="centre plus the all-low and all-high corners only")
+    ap.add_argument("--case", nargs="+", default=None, metavar="TAG",
+                    help="run these cases (e.g. Teh0.99_Tew1.05_neh0.98_new1.00) instead "
+                         "of a design; --lo/--hi/--step/--design/--pilot are ignored")
     ap.add_argument("--list", action="store_true",
                     help="print the case list and exit")
     ap.add_argument("--shard", type=int, default=0)
@@ -181,6 +193,8 @@ def main(argv=None):
         lo = {**{k: 1.0 for k in KNOBS}, **{k: grid[0] for k in args.knobs}}
         hi = {**{k: 1.0 for k in KNOBS}, **{k: grid[-1] for k in args.knobs}}
         pts = [{k: 1.0 for k in KNOBS}, lo, hi]
+    if args.case:
+        pts = [parse_tag(c) for c in args.case]
     todo = pts[args.shard::args.nshards]
 
     print("=== pedestal design: %d, axis %s, %s, knobs %s ==="
