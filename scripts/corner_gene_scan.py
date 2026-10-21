@@ -96,6 +96,11 @@ SHOTS = {
              "chapman": {"ne_top": 0.6737, "Te_top": 0.8447, "steep": 0.8535}},
     129015: {"template": None,
              "chapman": {"ne_top": 0.8745, "Te_top": 0.8425, "steep": 0.9515}},
+    # 2026-10-08 fit to the jparallel box REF_profiles_e, 3 decimals; ped_grid ran
+    # with --savedir /pscratch/sd/j/joeschm/ped_grid/132543, hence ped_root.
+    132543: {"template": None,
+             "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
+             "chapman": {"ne_top": 0.845, "Te_top": 0.808, "steep": 0.947}},
 }
 SHOT = 129038
 
@@ -108,14 +113,15 @@ GPU_TEMPLATE = "/global/u1/j/joeschm/simulators/GENE3_gpu/NSTX_lithium_gpu_templ
 def shot_defaults(shot: int = SHOT) -> dict:
     """template, ped_root, diag_root, prefix, x0 and chapman for one discharge.
 
-    ped_root is ped_grid.py's <savedir>/<shot> with savedir cheaseBS_runs/ped_grid/<shot>.
-    x0 is the Te-top Chapman radius.
+    ped_root is ped_grid.py's <savedir>/<shot> with savedir cheaseBS_runs/ped_grid/<shot>,
+    unless SHOTS records another. x0 is the Te-top Chapman radius.
     """
     if shot not in SHOTS:
         raise ValueError(f"no corner defaults for {shot}; known: {sorted(SHOTS)}")
     s = SHOTS[shot]
     return {"template": s["template"],
-            "ped_root": f"/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/{shot}/{shot}",
+            "ped_root": s.get("ped_root",
+                              f"/pscratch/sd/j/joeschm/cheaseBS_runs/ped_grid/{shot}/{shot}"),
             "diag_root": f"/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/{shot}/corners",
             "prefix": f"NSTX_{shot}_corner",
             "x0": (s["chapman"]["Te_top"],),
