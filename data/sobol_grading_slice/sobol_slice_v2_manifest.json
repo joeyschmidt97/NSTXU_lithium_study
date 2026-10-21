@@ -1,0 +1,61 @@
+{
+  "frozen": "2026-10-21",
+  "version": 2,
+  "supersedes": "sobol_slice_v1.csv (b016adc), superseded 2026-10-21 before any run: one kymin per point gave no gamma_max or spectrum, and 192 equilibria was too many",
+  "purpose": "independent grading slice for the VURS campaign; post-draft test",
+  "n_per_shot": 16,
+  "wave_1_points_per_shot": 8,
+  "extension_rule": "Run wave 2 (points 8-15 per shot) only if, after wave 1, the pooled 95% interval half-width on the Stage 1 primary score exceeds the threshold set in the comparison manifest before wave-1 grading (proposed 0.15 on the label-agreement rate). The rule reads interval width only, never which sampler leads.",
+  "shots": [
+    129015,
+    129038,
+    132543,
+    132588
+  ],
+  "radius": "wave 1 at the Te_top Chapman radius; ne_top / steep optional on the same equilibria",
+  "kymin_per_equilibrium": [
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    1.0,
+    1.5,
+    2.0,
+    3.0
+  ],
+  "axes": {
+    "Te_ped_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "Te_width_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "ne_ped_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "ne_width_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    }
+  },
+  "generator": "scipy.stats.qmc.Sobol(d=4, scramble=True) (Owen scrambling)",
+  "seed": "np.random.default_rng(np.random.SeedSequence(20261021, spawn_key=(shot,)))",
+  "scipy": "1.18.0",
+  "numpy": "2.5.0",
+  "csv_sha256": "ff0357d10988cf71db0b27c9aa5908b6c7dca1759282dba188052f0d7818ac91"
+}
