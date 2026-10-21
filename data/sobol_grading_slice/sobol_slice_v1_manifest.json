@@ -1,0 +1,58 @@
+{
+  "frozen": "2026-10-20",
+  "purpose": "independent grading slice for the VURS campaign; post-draft test",
+  "n_per_design": 16,
+  "shots": [
+    129015,
+    129038,
+    132543,
+    132588
+  ],
+  "roles": [
+    "ne_top",
+    "Te_top",
+    "steep"
+  ],
+  "axes": {
+    "Te_ped_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "Te_width_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "ne_ped_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "ne_width_scale": {
+      "bounds": [
+        0.8,
+        1.2
+      ],
+      "scale": "linear"
+    },
+    "kymin": {
+      "bounds": [
+        0.05,
+        2.0
+      ],
+      "scale": "log"
+    }
+  },
+  "generator": "scipy.stats.qmc.Sobol(d=5, scramble=True) (Owen scrambling)",
+  "seed": "np.random.default_rng(np.random.SeedSequence(20261020, spawn_key=(shot, role_index)))",
+  "scipy": "1.18.0",
+  "numpy": "2.5.0",
+  "csv_sha256": "43987f6a1c6b26e491d344c9e5042a4ac592d9bb78e22af5d15d7e6fc470dbf8"
+}
