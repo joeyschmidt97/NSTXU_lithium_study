@@ -85,7 +85,7 @@ import shutil
 import subprocess
 import sys
 
-from NSTXU_lithium_study.scripts.ped_grid import DONE, design, tag
+from NSTXU_lithium_study.scripts.ped_grid import DONE, design, parse_tag, tag
 
 #: Per-discharge defaults behind --shot. template: the GENE problem dir copied per
 #: corner (None until one exists; pass --template). chapman: baseline Chapman radii
@@ -158,14 +158,6 @@ PROC_KEYS = ("n_procs_s", "n_procs_v", "n_procs_w", "n_procs_x", "n_procs_y", "n
 
 def corners():
     return design(list(CORNER_GRID), parts=("corners",))
-
-
-def parse_tag(label: str) -> dict:
-    """ped_grid.tag inverted: 'Teh1.20_Tew0.80_neh1.00_new1.00' -> {'Teh': 1.2, ...}."""
-    p = {k: float(v) for k, v in re.findall(r"([A-Za-z]+)(\d+(?:\.\d+)?)", label)}
-    if set(p) != set(corners()[0]) or tag(p) != label:
-        raise ValueError(f"'{label}' is not a ped_grid case name like {tag(corners()[0])}")
-    return p
 
 
 def resolution_overrides(template: str, scale: int) -> dict:
