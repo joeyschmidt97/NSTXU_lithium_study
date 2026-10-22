@@ -4,7 +4,10 @@
 # The allocation is split into lanes of NODES_PER nodes; each lane takes the
 # next unclaimed run dir, runs its scanscript pinned to its own nodes (srun -w),
 # and moves on, so corners of different lengths still keep every lane busy.
-# Same environment and srun line as the template's submit_gpu.cmd.
+# Same environment as the template's submit_gpu.cmd. Every rank sees all 4 GPUs
+# of its node (--gpus-per-node, --gpu-bind=none) and GENE picks one by local
+# rank: with --gpus-per-task=1 each rank sees only its own GPU and GPU-aware
+# MPI aborts (cuIpcOpenMemHandle: invalid argument) on the first exchange.
 #
 #   salloc -N 4 -C gpu -q interactive -t 04:00:00 -A m2116_g --gpus-per-node=4
 #   bash NSTXU_lithium_study/scripts/interactive_corners.sh ~/simulators/GENE3_gpu/NSTX_129015_corner_x0_0.8425_*/
@@ -29,8 +32,10 @@ NODES_PER=${NODES_PER:-2}      # lane size; 8 ky x 1 GPU each = 2 nodes
 PPN=4                          # one rank per A100
 START_MARGIN=${START_MARGIN:-300}   # s on top of timelim for startup and output
 DONE_LINE="Total wallclock time for GENE"
+FAIL_RE="aborting job|MPICH ERROR|CANCELLED AT|Exited with exit code [1-9]"
 
 param() { sed -n "s/^[ \t]*$2[ \t]*=[ \t]*\([0-9]*\).*/\1/p" "$1/parameters" | head -1; }
+diagdir() { sed -n "s/^[ \t]*diagdir[ \t]*=[ \t]*'\([^']*\)'.*/\1/p" "$1/parameters" | head -1; }
 
 # Seconds left in this allocation (squeue %L: [D-]HH:MM:SS or MM:SS).
 time_left() {
@@ -47,8 +52,17 @@ time_left() {
     echo $((10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$s))
 }
 
-# geneerror.log is moved to .prev before each launch, so a match is this launch's.
-finished() { cat "$1"/interactive.log "$1"/geneerror.log 2>/dev/null | grep -q "$DONE_LINE"; }
+# Logs of this launch: interactive.log (rewritten each launch), and any
+# geneerror.log in the run dir or under diagdir/scanfilesNNNN written after the
+# claim. Finished = GENE's wallclock line and no MPI/srun abort in them.
+finished() {
+    local logs
+    mapfile -t logs < <(find "$1" "$(diagdir "$1")" -maxdepth 2 -name geneerror.log \
+                             -newer "$1/.claim_$SLURM_JOB_ID" 2>/dev/null)
+    logs+=("$1/interactive.log")
+    cat "${logs[@]}" 2>/dev/null | grep -qE "$FAIL_RE" && return 1
+    cat "${logs[@]}" 2>/dev/null | grep -q "$DONE_LINE"
+}
 
 source ~/simulators/GENE3_gpu/env_gpu.sh
 export SLURM_CPU_BIND="cores"
@@ -88,7 +102,7 @@ lane() {
         [ -f "$d/geneerror.log" ] && mv "$d/geneerror.log" "$d/geneerror.log.prev"
         echo "[lane $i $nodes] $(date +%T) start $d ($np ranks, $mps sims)"
         (cd "$d" && ./scanscript --np $np --ppn $PPN --mps $mps \
-            --syscall="srun -l -K -N $n -w $nodes -n $np --gpus-per-task=1 --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter" \
+            --syscall="srun -l -K -N $n -w $nodes -n $np --gpus-per-node=$PPN --gpu-bind=none --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter" \
             > interactive.log 2>&1)
         if finished "$d"; then
             touch "$d/.interactive_ran"
