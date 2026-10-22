@@ -14,10 +14,15 @@
 # claimed in this job is skipped; a new allocation re-claims unfinished dirs.
 # Log per run dir: interactive.log.
 
+# Ranks per run dir come from its parameters (n_parallel_sims x n_procs_sim),
+# so --res-scale or a short --kymin list sizes itself; a dir needing more nodes
+# than a lane has is skipped.
+
 set -u
-NODES_PER=${NODES_PER:-2}      # 8 ky x 1 GPU each = 2 nodes
+NODES_PER=${NODES_PER:-2}      # lane size; 8 ky x 1 GPU each = 2 nodes
 PPN=4                          # one rank per A100
-NP=$((NODES_PER * PPN))        # = n_parallel_sims = --mps
+
+param() { sed -n "s/^[ \t]*$2[ \t]*=[ \t]*\([0-9]*\).*/\1/p" "$1/parameters" | head -1; }
 
 source ~/simulators/GENE3_gpu/env_gpu.sh
 export SLURM_CPU_BIND="cores"
@@ -35,15 +40,22 @@ DIRS=("$@")
 echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
 
 lane() {
-    local i=$1 d nodes
-    nodes=$(IFS=,; echo "${HOSTS[*]:$((i * NODES_PER)):$NODES_PER}")
+    local i=$1 d nodes np n mps
     for d in "${DIRS[@]}"; do
         d=${d%/}
         [ -e "$d/.interactive_ran" ] && continue
+        mps=$(param "$d" n_parallel_sims)
+        np=$((mps * $(param "$d" n_procs_sim)))
+        n=$(((np + PPN - 1) / PPN))
+        if [ "$n" -gt "$NODES_PER" ]; then
+            echo "[lane $i] SKIP $d: $np ranks need $n nodes, lane has $NODES_PER (set NODES_PER)"
+            continue
+        fi
         mkdir "$d/.claim_$SLURM_JOB_ID" 2>/dev/null || continue
-        echo "[lane $i $nodes] $(date +%T) start $d"
-        if (cd "$d" && ./scanscript --np $NP --ppn $PPN --mps $NP \
-                --syscall="srun -l -K -N $NODES_PER -w $nodes -n $NP --gpus-per-task=1 --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter" \
+        nodes=$(IFS=,; echo "${HOSTS[*]:$((i * NODES_PER)):$n}")
+        echo "[lane $i $nodes] $(date +%T) start $d ($np ranks, $mps sims)"
+        if (cd "$d" && ./scanscript --np $np --ppn $PPN --mps $mps \
+                --syscall="srun -l -K -N $n -w $nodes -n $np --gpus-per-task=1 --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter" \
                 > interactive.log 2>&1); then
             touch "$d/.interactive_ran"
             echo "[lane $i] $(date +%T) done  $d"
