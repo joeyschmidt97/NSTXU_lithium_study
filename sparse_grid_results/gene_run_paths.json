@@ -61,24 +61,21 @@
         "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
         "res2_roots": [],
         "nz_compare": null,
-        "nz_root": null,
-        "enabled": false
+        "nz_root": null
       },
       "0.845": {
         "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/corners",
         "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
         "res2_roots": [],
         "nz_compare": null,
-        "nz_root": null,
-        "enabled": false
+        "nz_root": null
       },
       "0.947": {
         "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/corners",
         "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
         "res2_roots": [],
         "nz_compare": null,
-        "nz_root": null,
-        "enabled": false
+        "nz_root": null
       }
     }
   }
