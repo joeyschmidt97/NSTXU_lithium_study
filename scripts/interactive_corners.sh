@@ -52,14 +52,15 @@ time_left() {
     echo $((10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$s))
 }
 
-# Logs of this launch: interactive.log (rewritten each launch), and any
-# geneerror.log in the run dir or under diagdir/scanfilesNNNN written after the
-# claim. Finished = GENE's wallclock line and no MPI/srun abort in them.
+# scanscript points the run dir's diagdir at the scanfilesNNNN it opens, so a
+# diagdir different from the one before launch ($2) holds this launch's
+# geneerror.log; unchanged means scanscript never started GENE. Finished =
+# GENE's wallclock line and no MPI/srun abort in that log or interactive.log.
 finished() {
-    local logs
-    mapfile -t logs < <(find "$1" "$(diagdir "$1")" -maxdepth 2 -name geneerror.log \
-                             -newer "$1/.claim_$SLURM_JOB_ID" 2>/dev/null)
-    logs+=("$1/interactive.log")
+    local dd logs=("$1/interactive.log")
+    dd=$(diagdir "$1")
+    [ "$dd" != "$2" ] || return 1
+    logs+=("$dd/geneerror.log")
     cat "${logs[@]}" 2>/dev/null | grep -qE "$FAIL_RE" && return 1
     cat "${logs[@]}" 2>/dev/null | grep -q "$DONE_LINE"
 }
@@ -80,7 +81,7 @@ DIRS=("$@")
 echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
 
 lane() {
-    local i=$1 d nodes np n mps need left before
+    local i=$1 d nodes np n mps need left before dd0
     for d in "${DIRS[@]}"; do
         d=${d%/}
         [ -e "$d/.interactive_ran" ] && continue
@@ -100,15 +101,16 @@ lane() {
         mkdir "$d/.claim_$SLURM_JOB_ID" 2>/dev/null || continue
         nodes=$(IFS=,; echo "${HOSTS[*]:$((i * NODES_PER)):$n}")
         [ -f "$d/geneerror.log" ] && mv "$d/geneerror.log" "$d/geneerror.log.prev"
+        dd0=$(diagdir "$d")
         echo "[lane $i $nodes] $(date +%T) start $d ($np ranks, $mps sims)"
         (cd "$d" && ./scanscript --np $np --ppn $PPN --mps $mps \
             --syscall="srun -l -K -N $n -w $nodes -n $np --gpus-per-node=$PPN --gpu-bind=none --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter" \
             > interactive.log 2>&1)
-        if finished "$d"; then
+        if finished "$d" "$dd0"; then
             touch "$d/.interactive_ran"
             echo "[lane $i] $(date +%T) done  $d"
         else
-            echo "[lane $i] $(date +%T) NOT FINISHED $d (no '$DONE_LINE'; see interactive.log, geneerror.log)"
+            echo "[lane $i] $(date +%T) NOT FINISHED $d (see interactive.log, $(diagdir "$d")/geneerror.log)"
         fi
     done
 }
