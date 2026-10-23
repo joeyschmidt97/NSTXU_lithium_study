@@ -12,10 +12,17 @@
 #   salloc -N 4 -C gpu -q interactive -t 04:00:00 -A m2116_g --gpus-per-node=4
 #   bash NSTXU_lithium_study/scripts/interactive_corners.sh ~/simulators/GENE3_gpu/NSTX_129015_corner_x0_0.8425_*/
 #
-# A run dir with .interactive_ran is skipped (GENE finished: converged or hit
-# timelim; check the output). Delete it to rerun. A dir another lane has
-# claimed in this job is skipped; a new allocation re-claims unfinished dirs.
-# Log per run dir: interactive.log.
+# A run dir is skipped as done (GENE finished: converged or hit timelim; check
+# the output) when it has .interactive_ran, or when any of its scanfilesNNNN
+# holds a complete scan: an omega_NNNN for every parameters_NNNN and at least
+# n_parallel_sims of them. GENE writes omega only when a run ends, so a scan
+# killed by SLURM or ^C fails this; runs from sbatch or by hand pass it.
+# Delete .interactive_ran and move the complete scanfiles aside to rerun. A dir
+# another lane has claimed in this job is skipped; a new allocation re-claims
+# unfinished dirs. Log per run dir: interactive.log.
+#
+#   LIST_ONLY=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh <dirs>
+# prints which dirs are done and exits; no allocation needed.
 #
 # Finished means GENE printed "Total wallclock time for GENE" during this
 # launch; scanscript exits 0 even when srun was refused, so its exit code
@@ -36,6 +43,23 @@ FAIL_RE="aborting job|MPICH ERROR|CANCELLED AT|Exited with exit code [1-9]"
 
 param() { sed -n "s/^[ \t]*$2[ \t]*=[ \t]*\([0-9]*\).*/\1/p" "$1/parameters" | head -1; }
 diagdir() { sed -n "s/^[ \t]*diagdir[ \t]*=[ \t]*'\([^']*\)'.*/\1/p" "$1/parameters" | head -1; }
+
+# The scanfilesNNNN of run dir $1 holding a complete scan, if any (see header).
+complete_scan() {
+    local s np no mps
+    mps=$(param "$1" n_parallel_sims)
+    for s in "$1"/scanfiles*/; do
+        [ -d "$s" ] || continue
+        np=$(ls "$s" | grep -c '^parameters_[0-9]')
+        no=$(ls "$s" | grep -c '^omega_[0-9]')
+        if [ "$no" -gt 0 ] && [ "$no" -ge "$np" ] && [ "$no" -ge "${mps:-1}" ]; then
+            basename "$s"
+            return 0
+        fi
+    done
+    return 1
+}
+already_done() { [ -e "$1/.interactive_ran" ] || complete_scan "$1" > /dev/null; }
 
 # Seconds left in this allocation (squeue %L: [D-]HH:MM:SS or MM:SS).
 time_left() {
@@ -73,22 +97,30 @@ export MEMORY_PER_CORE=40000
 export MPICH_GPU_SUPPORT_ENABLED=1
 export MPICH_GPU_MANAGED_MEMORY_SUPPORT_ENABLED=1
 
+DIRS=("$@")
+NDONE=0
+for d in "${DIRS[@]}"; do
+    d=${d%/}
+    if [ -e "$d/.interactive_ran" ]; then
+        echo "  done  $d (.interactive_ran)"; NDONE=$((NDONE + 1))
+    elif s=$(complete_scan "$d"); then
+        echo "  done  $d ($s)"; NDONE=$((NDONE + 1))
+    fi
+done
+echo "$NDONE already done (skipped), $((${#DIRS[@]} - NDONE)) to run"
+[ -z "${LIST_ONLY:-}" ] || exit 0
+
 [ -n "${SLURM_JOB_ID:-}" ] || { echo "not inside an allocation; salloc first" >&2; exit 1; }
 mapfile -t HOSTS < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
 NLANES=$((${#HOSTS[@]} / NODES_PER))
 [ "$NLANES" -ge 1 ] || { echo "need >= $NODES_PER nodes, have ${#HOSTS[@]}" >&2; exit 1; }
-DIRS=("$@")
 echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
-DONE=()
-for d in "${DIRS[@]}"; do [ -e "${d%/}/.interactive_ran" ] && DONE+=("${d%/}"); done
-echo "${#DONE[@]} already done (skipped), $((${#DIRS[@]} - ${#DONE[@]})) to run"
-for d in "${DONE[@]}"; do echo "  done  $d"; done
 
 lane() {
     local i=$1 d nodes np n mps need left before dd0
     for d in "${DIRS[@]}"; do
         d=${d%/}
-        [ -e "$d/.interactive_ran" ] && continue
+        already_done "$d" && continue
         need=$(($(param "$d" timelim) + START_MARGIN))
         left=$(time_left)
         if [ "$left" -lt "$need" ]; then
