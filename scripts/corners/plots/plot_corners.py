@@ -42,8 +42,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
     corners_mode_structure.png  (--mode-extent) the corners_mode_scaling.png table layout,
                                 each cell |phi| and |Apar| / peak along the whole
                                 ballooning domain (last field time): the mode structure
-                                per corner and ky at a glance, red outline where an end
-                                is above EXTENT_TOL, grey where not converged
+                                per corner and ky at a glance, outlined in its mode's
+                                colour, dashed where an end is above EXTENT_TOL, grey
+                                where not converged
     corners_res2.png          (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
@@ -995,9 +996,11 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
     """|phi| and |Apar| along the field line per corner and ky, laid out as the
     corners_mode_scaling.png table: each cell its run's ballooning eigenfunction
     over the whole z domain, each field over its own peak (last field time), so a
-    column shows how profile scaling reshapes the mode and a cell outlined red has
-    an end above *tol* (cut off, grow nx0). Grey cell: not converged (the last
-    snapshot, not a settled mode). Corner text: mode (under --modes) and gamma."""
+    column shows how profile scaling reshapes the mode. Border: the cell's mode
+    colour as in corners_mode_scaling.png (under --modes; grey without), dashed
+    when an end is above *tol* (cut off, grow nx0; red dashed if no mode). Grey
+    cell: not converged (the last snapshot, not a settled mode). Corner text:
+    mode (under --modes) and gamma."""
     ky, n = ds.ky.values, ds.sizes["corner"]
     rows = [i for i in range(n) if any((i, j) in profiles for j in range(ky.size))]
     cols = [j for j in range(ky.size) if any((i, j) in profiles for i in rows)]
@@ -1006,9 +1009,10 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
         return
     m = ds["mode"].values if "mode" in ds else np.full((n, ky.size), "", dtype=object)
     gam, status = ds.gamma.values, ds.status.values
-    fig = plt.figure(figsize=(max(9, 1.15 * len(cols) + 3), max(5.5, 0.62 * len(rows) + 2.2)))
-    grid = fig.add_gridspec(len(rows), len(cols), left=0.15, right=0.98, top=0.88, bottom=0.1,
-                            wspace=0.06, hspace=0.08)
+    height = max(5.8, 0.62 * len(rows) + 2.5)        # inches; the bottom 0.85 holds two legend rows
+    fig = plt.figure(figsize=(max(9, 1.15 * len(cols) + 3), height))
+    grid = fig.add_gridspec(len(rows), len(cols), left=0.15, right=0.98, top=0.88,
+                            bottom=0.85 / height, wspace=0.06, hspace=0.08)
     n_cut = 0
     for r, i in enumerate(rows):
         for c, j in enumerate(cols):
@@ -1036,9 +1040,13 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
             ax.set_facecolor(SURFACE if status[i, j] == "ok" else "#ecebe6")
             cut = max(np.nanmax(e) for e in mode_ends(prof).values()) > tol
             n_cut += cut
+            # border: the mode's colour as in corners_mode_scaling.png; dashed = cut off
+            edge = MODE_COLOR.get(m[i, j], MODE_COLOR["unidentified"]) if m[i, j] else (
+                "#e34948" if cut else GRID)
             for sp in ax.spines.values():
-                sp.set_color("#e34948" if cut else GRID)
-                sp.set_linewidth(1.8 if cut else 0.8)
+                sp.set_color(edge)
+                sp.set_linewidth(1.8 if m[i, j] or cut else 0.8)
+                sp.set_linestyle((0, (3, 1.5)) if cut else "-")
             text = MODE_SHORT.get(m[i, j], m[i, j]) if m[i, j] else ""
             if np.isfinite(gam[i, j]):
                 text += f" {gam[i, j]:.3f}"
@@ -1048,12 +1056,14 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
     handles = [Line2D([], [], color=STRUCT_COLOR["field_phi"], lw=1.5, label=r"$|\phi|$ / peak"),
                Line2D([], [], color=STRUCT_COLOR["field_apar"], lw=1.5,
                       label=r"$|A_\parallel|$ / peak"),
-               plt.Rectangle((0, 0), 1, 1, fc=SURFACE, ec="#e34948", lw=1.8,
-                             label=f"end / peak above {tol:g} (cut off, grow nx0)"),
+               plt.Rectangle((0, 0), 1, 1, fc=SURFACE, ec=INK, lw=1.8, ls=(0, (3, 1.5)),
+                             label=f"dashed: end / peak above {tol:g} (cut off, grow nx0)"),
                plt.Rectangle((0, 0), 1, 1, fc="#ecebe6", ec=GRID, label="not converged")]
-    fig.legend(handles=handles, frameon=False, fontsize=8, loc="lower center", ncol=4,
-               bbox_to_anchor=(0.56, 0.0))
-    fig.text(0.56, 0.055, r"$k_y\rho_{ref}$  (each cell: ballooning angle $z/\pi$ over the whole "
+    handles += [plt.Rectangle((0, 0), 1, 1, fc=SURFACE, ec=MODE_COLOR[x], lw=1.8, label=x)
+                for x in MODE_COLOR if (m == x).any()]
+    fig.legend(handles=handles, frameon=False, fontsize=8, loc="lower center",
+               ncol=min(len(handles), 5), bbox_to_anchor=(0.56, 0.0))
+    fig.text(0.56, 0.58 / height, r"$k_y\rho_{ref}$  (each cell: ballooning angle $z/\pi$ over the whole "
              "domain, last field time)", ha="center", fontsize=9, color=INK)
     fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: mode structure along the field line,"
                  f" rows {LEGEND_TITLE}\n{n_cut} cell(s) with an end above {tol:g}; "
