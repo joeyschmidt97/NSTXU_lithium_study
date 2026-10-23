@@ -6,11 +6,13 @@
     "res2_roots: extra dirs searched for 2x-resolution runs, beside <diag_root> and its _res2 siblings.",
     "nz_compare: nz0 of the comparison runs (corners_nz<N>.png), or null; nz_root: their root, null for <diag_root>_nz<N>.",
     "field_omega: fit every ky's field trace and append it to its omega file (field_omega.py --write) before plotting.",
+    "nz_subdir: when nz_compare is set, also run the field fits and every plot on the nz0 = N runs, into x0_<x0>/nz<N>/.",
     "Any option key (field_omega, modes, mode_extent, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
     "enabled: false keeps an entry listed but skipped unless named with --shot and --x0."
   ],
   "defaults": {
     "field_omega": true,
+    "nz_subdir": true,
     "modes": true,
     "mode_extent": true,
     "field_fits": true
