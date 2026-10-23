@@ -46,6 +46,8 @@ control plus four box-scan failures inside the 0.8-1.2 campaign box.
        thermal beta is held and nu* drops ~18x. K's settings, raw profiles.
        cheaseBS holds p_fast at the source value (~22% of p on axis, ~1% in
        the pedestal), so core beta is ~15% low against an exact beta match.
+       Two cases: the full-profile scale, and the same factor with each
+       temperature's separatrix value held (T_sep + lambda^2 (T - T_sep)).
 
 Both shots, from O/P on -- campaign outer bounds on the repo's data/discharges
 (Pingyu's GENE profiles_e/i/z, which NERSC already loaded for 132543 and the
@@ -230,7 +232,9 @@ TESTS = {
               ref=["Te_ped_scale_1.000"]),
     "U": dict(shot=132543, dir="U_nstxu_0.9T", settings=NSTXU_132543,
               namelist=dict(NAMELIST, **TENSBND),
-              cases=[_single("T_scale", LAMBDA_132543 ** 2)],
+              cases=[_single("T_scale", LAMBDA_132543 ** 2),
+                     (tag("T_scale", LAMBDA_132543 ** 2) + "_sep",
+                      [("T_scale", LAMBDA_132543 ** 2, {"clamp_sep": True})])],
               ref=["Te_ped_scale_1.000"]),
     "R": dict(shot=132588, dir="R_corner_mix0.2", settings=dict(RHOP, bootstrap_mix=0.2),
               namelist=dict(NAMELIST, **TENSBND),
