@@ -40,6 +40,12 @@ control plus four box-scan failures inside the 0.8-1.2 campaign box.
     M  campaign outer bounds under K's settings: Te_ped_scale and ne_ped_scale
        at 0.8 and 1.2, plus Te_ped_scale 1.0 as the reference
     O  BOUNDS on Pingyu's profiles_* (see below)
+    U  NSTX-U projection (Hatch, 2026-10-23): B0 0.439 -> 0.9 T, Ip times the
+       same lambda = 2.049 (Ip/B0 held, 1.94 MA under the 2 MA limit), Te, Ti
+       and Tz times lambda^2 = 4.198 over the whole radius at fixed density, so
+       thermal beta is held and nu* drops ~18x. K's settings, raw profiles.
+       cheaseBS holds p_fast at the source value (~22% of p on axis, ~1% in
+       the pedestal), so core beta is ~15% low against an exact beta match.
 
 Both shots, from O/P on -- campaign outer bounds on the repo's data/discharges
 (Pingyu's GENE profiles_e/i/z, which NERSC already loaded for 132543 and the
@@ -75,6 +81,7 @@ wrote to before the rename.
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests Q
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests K
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests M
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests U
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all --campaign profile_base_132588
@@ -145,6 +152,15 @@ BOUNDS = ([("Te_ne_ped_scale_1.000", [("Te_ped_scale", 1.0, {}), ("ne_ped_scale"
               [("Te_ped_scale", a, {}), ("ne_ped_scale", b, {})])
              for a in (0.8, 1.2) for b in (0.8, 1.2)])
 
+# NSTX-U projection of 132543 (test U). lambda = target / source |B0|, source
+# from g132543.00700 (bcentr -0.439262 T). The Ip and Bt overrides go in as
+# multipliers so the EQDSK's own sign convention carries through.
+NSTXU_B0_T = 0.9
+SOURCE_B0_132543_T = 0.439262
+LAMBDA_132543 = NSTXU_B0_T / SOURCE_B0_132543_T
+NSTXU_132543 = dict(RHOP, target_bt_scale_t=LAMBDA_132543,
+                    target_ip_scale_a=LAMBDA_132543)
+
 # name -> dict(shot, dir, settings, namelist, cases, ref)
 #   namelist : entries written into the CHEASE namelist copy
 #   ref      : box-scan case labels overlaid on the comparison as jparallel
@@ -211,6 +227,10 @@ TESTS = {
               ref=["Te_ped_scale_1.000"]),
     "P": dict(shot=132588, dir="P_profiles_bounds", settings=RHOP,
               namelist=dict(NAMELIST, **TENSBND), cases=BOUNDS,
+              ref=["Te_ped_scale_1.000"]),
+    "U": dict(shot=132543, dir="U_nstxu_0.9T", settings=NSTXU_132543,
+              namelist=dict(NAMELIST, **TENSBND),
+              cases=[_single("T_scale", LAMBDA_132543 ** 2)],
               ref=["Te_ped_scale_1.000"]),
     "R": dict(shot=132588, dir="R_corner_mix0.2", settings=dict(RHOP, bootstrap_mix=0.2),
               namelist=dict(NAMELIST, **TENSBND),

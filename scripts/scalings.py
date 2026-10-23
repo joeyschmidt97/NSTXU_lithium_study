@@ -114,11 +114,13 @@ MAX_ITER = 50
 #   mtanh_full : (var, kwarg)  -- kwarg is the apply_mtanh_full keyword scaled
 #   om         : (method,)     -- apply_omt and apply_omne are separate methods,
 #                                 unlike apply_mtanh_full which takes var
+#   t_scale    : ()            -- flat multiply on Te, Ti and Tz, whole radius
 SCALINGS = {
     "Te_ped_scale":   {"apply": "mtanh_full", "var": "Te", "kwarg": "scale_height"},
     "ne_ped_scale":   {"apply": "mtanh_full", "var": "ne", "kwarg": "scale_height"},
     "omt":            {"apply": "om", "method": "apply_omt"},
     "omne":           {"apply": "om", "method": "apply_omne"},
+    "T_scale":        {"apply": "t_scale"},
 }
 
 PLOT_VARS = ("Te", "Ti", "ne", "ni")
@@ -209,7 +211,16 @@ def _apply_om(phys, spec, s, *, window=None, **kw):
         s, rhot_midped=mid, rhot_topped=top, **kw)
 
 
-APPLY = {"mtanh_full": _apply_mtanh_full, "om": _apply_om}
+def _apply_t_scale(phys, spec, s, **kw):
+    """Every temperature times s, whole radius; a/L_T and Te/Ti unchanged.
+
+    The NSTX-U projection knob: with B0 times lambda and s = lambda^2 at fixed
+    density, thermal beta is held and only collisionality moves.
+    """
+    return phys.apply_t_scale(s, **kw)
+
+
+APPLY = {"mtanh_full": _apply_mtanh_full, "om": _apply_om, "t_scale": _apply_t_scale}
 
 
 def scale(phys: DischargePhysics, scaling: str, s: float, **kw) -> DischargePhysics:
