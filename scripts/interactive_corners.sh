@@ -13,16 +13,18 @@
 #   bash NSTXU_lithium_study/scripts/interactive_corners.sh ~/simulators/GENE3_gpu/NSTX_129015_corner_x0_0.8425_*/
 #
 # A run dir is skipped as done (GENE finished: converged or hit timelim; check
-# the output) when it has .interactive_ran, or when any of its scanfilesNNNN
-# holds a complete scan: an omega_NNNN for every parameters_NNNN and at least
+# the output) when it has .interactive_ran, or when any scanfilesNNNN (in the
+# run dir or beside its diagdir on pscratch) holds a complete scan: an omega_NNNN for every parameters_NNNN and at least
 # n_parallel_sims of them. GENE writes omega only when a run ends, so a scan
 # killed by SLURM or ^C fails this; runs from sbatch or by hand pass it.
 # Delete .interactive_ran and move the complete scanfiles aside to rerun. A dir
 # another lane has claimed in this job is skipped; a new allocation re-claims
-# unfinished dirs. Log per run dir: interactive.log.
+# unfinished dirs, and a relaunch in the same allocation (after ^C) releases
+# this job's claims on dirs not done. Log per run dir: interactive.log.
 #
 #   LIST_ONLY=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh <dirs>
-# prints which dirs are done and exits; no allocation needed.
+# prints which dirs are done and exits; no allocation needed. DRY_RUN=1 also
+# prints the scanscript/srun call of each dir still to run, then exits.
 #
 # Finished means GENE printed "Total wallclock time for GENE" during this
 # launch; scanscript exits 0 even when srun was refused, so its exit code
@@ -45,21 +47,37 @@ param() { sed -n "s/^[ \t]*$2[ \t]*=[ \t]*\([0-9]*\).*/\1/p" "$1/parameters" | h
 diagdir() { sed -n "s/^[ \t]*diagdir[ \t]*=[ \t]*'\([^']*\)'.*/\1/p" "$1/parameters" | head -1; }
 
 # The scanfilesNNNN of run dir $1 holding a complete scan, if any (see header).
+# GENE output sits under the diagdir in its parameters (pscratch), which
+# scanscript rewrites to the scanfilesNNNN it opened; its parent holds them all.
 complete_scan() {
-    local s np no mps
+    local s np no mps base
     mps=$(param "$1" n_parallel_sims)
-    for s in "$1"/scanfiles*/; do
+    base=$(diagdir "$1"); base=${base%/}
+    [[ $(basename "$base") =~ ^scanfiles[0-9]+$ ]] && base=$(dirname "$base")
+    for s in "$1"/scanfiles*/ ${base:+"$base"/scanfiles*/}; do
         [ -d "$s" ] || continue
         np=$(ls "$s" | grep -c '^parameters_[0-9]')
         no=$(ls "$s" | grep -c '^omega_[0-9]')
         if [ "$no" -gt 0 ] && [ "$no" -ge "$np" ] && [ "$no" -ge "${mps:-1}" ]; then
-            basename "$s"
+            echo "${s%/}"
             return 0
         fi
     done
     return 1
 }
 already_done() { [ -e "$1/.interactive_ran" ] || complete_scan "$1" > /dev/null; }
+
+# "mps ranks nodes" of run dir $1: n_parallel_sims, x n_procs_sim, over PPN.
+dir_size() {
+    local mps np
+    mps=$(param "$1" n_parallel_sims)
+    np=$((mps * $(param "$1" n_procs_sim)))
+    echo "$mps $np $(((np + PPN - 1) / PPN))"
+}
+# srun line scanscript launches GENE with: $1 nodes $2 (comma list), $3 ranks.
+syscall() {
+    echo "srun -l -K -N $1 -w $2 -n $3 --gpus-per-node=$PPN --gpu-bind=none --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter"
+}
 
 # Seconds left in this allocation (squeue %L: [D-]HH:MM:SS or MM:SS).
 time_left() {
@@ -110,11 +128,36 @@ done
 echo "$NDONE already done (skipped), $((${#DIRS[@]} - NDONE)) to run"
 [ -z "${LIST_ONLY:-}" ] || exit 0
 
+# DRY_RUN=1: the scanscript call each dir still to run would get, then exit.
+# Lanes take dirs as they free up, so the nodes are shown as <lane nodes>.
+if [ -n "${DRY_RUN:-}" ]; then
+    for d in "${DIRS[@]}"; do
+        d=${d%/}
+        already_done "$d" && continue
+        read -r mps np n < <(dir_size "$d")
+        if [ "$n" -gt "$NODES_PER" ]; then
+            echo "  SKIP  $d: $np ranks need $n nodes, lane has $NODES_PER (set NODES_PER)"
+            continue
+        fi
+        echo "  run   $d (timelim $(param "$d" timelim) s, $n nodes)"
+        echo "        cd $d && ./scanscript --np $np --ppn $PPN --mps $mps --syscall=\"$(syscall "$n" "<lane nodes>" "$np")\" > interactive.log 2>&1"
+    done
+    exit 0
+fi
+
 [ -n "${SLURM_JOB_ID:-}" ] || { echo "not inside an allocation; salloc first" >&2; exit 1; }
 mapfile -t HOSTS < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
 NLANES=$((${#HOSTS[@]} / NODES_PER))
 [ "$NLANES" -ge 1 ] || { echo "need >= $NODES_PER nodes, have ${#HOSTS[@]}" >&2; exit 1; }
 echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
+# A claim of this job left by an earlier launch in the same allocation (^C)
+# would skip its dir silently; that launch is gone, so release it.
+for d in "${DIRS[@]}"; do
+    d=${d%/}
+    if [ -d "$d/.claim_$SLURM_JOB_ID" ] && ! already_done "$d"; then
+        rmdir "$d/.claim_$SLURM_JOB_ID" && echo "  released stale claim  $d"
+    fi
+done
 
 lane() {
     local i=$1 d nodes np n mps need left before dd0
@@ -127,9 +170,7 @@ lane() {
             echo "[lane $i] $(date +%T) stop: ${left}s left, next dir needs ${need}s"
             return
         fi
-        mps=$(param "$d" n_parallel_sims)
-        np=$((mps * $(param "$d" n_procs_sim)))
-        n=$(((np + PPN - 1) / PPN))
+        read -r mps np n < <(dir_size "$d")
         if [ "$n" -gt "$NODES_PER" ]; then
             echo "[lane $i] SKIP $d: $np ranks need $n nodes, lane has $NODES_PER (set NODES_PER)"
             continue
@@ -140,8 +181,7 @@ lane() {
         dd0=$(diagdir "$d")
         echo "[lane $i $nodes] $(date +%T) start $d ($np ranks, $mps sims)"
         (cd "$d" && ./scanscript --np $np --ppn $PPN --mps $mps \
-            --syscall="srun -l -K -N $n -w $nodes -n $np --gpus-per-node=$PPN --gpu-bind=none --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter" \
-            > interactive.log 2>&1)
+            --syscall="$(syscall "$n" "$nodes" "$np")" > interactive.log 2>&1)
         if finished "$d" "$dd0"; then
             touch "$d/.interactive_ran"
             echo "[lane $i] $(date +%T) done  $d"
