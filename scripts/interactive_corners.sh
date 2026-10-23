@@ -79,6 +79,10 @@ NLANES=$((${#HOSTS[@]} / NODES_PER))
 [ "$NLANES" -ge 1 ] || { echo "need >= $NODES_PER nodes, have ${#HOSTS[@]}" >&2; exit 1; }
 DIRS=("$@")
 echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
+DONE=()
+for d in "${DIRS[@]}"; do [ -e "${d%/}/.interactive_ran" ] && DONE+=("${d%/}"); done
+echo "${#DONE[@]} already done (skipped), $((${#DIRS[@]} - ${#DONE[@]})) to run"
+for d in "${DONE[@]}"; do echo "  done  $d"; done
 
 lane() {
     local i=$1 d nodes np n mps need left before dd0
