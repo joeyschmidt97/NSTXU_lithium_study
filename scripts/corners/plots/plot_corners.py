@@ -39,6 +39,11 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 (last field time) against profile scaling, coloured by
                                 ky, on one log scale; a large end value means the mode
                                 is cut off and nx0 should grow; + corners_mode_extent.csv
+    corners_mode_structure.png  (--mode-extent) the corners_mode_scaling.png table layout,
+                                each cell |phi| and |Apar| / peak along the whole
+                                ballooning domain (last field time): the mode structure
+                                per corner and ky at a glance, red outline where an end
+                                is above EXTENT_TOL, grey where not converged
     corners_res2.png          (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
@@ -230,6 +235,10 @@ EXTENT_TOL = 0.1
 EXTENT_CMAP = "viridis"
 EXTENT_FLOOR = 1e-6
 EXTENT_DX = 0.13
+#: the fields corners_mode_extent.png and corners_mode_structure.png read, and the
+#: line colour of each in corners_mode_structure.png (palette slots 1 and 2)
+FIELDS = ("field_phi", "field_apar")
+STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 #: 2x-resolution run dirs: 2XRES / 2x_res / res2x anywhere in the path, or the _res2
 #: suffix of corner_gene_scan.py --res-scale 2 and the dashboard's 2x button
 RES2_RE = re.compile(r"(?i)2x_?res|res_?2x|_res2(?!\d)")
@@ -936,47 +945,140 @@ def plot_q_offset(ds, out, written):
     written.append(path)
 
 
-def mode_ends(par_path: str) -> dict:
-    """{field: (|f| at the left z end, |f| at the right z end) / max|f|} on the
-    ballooning grid (nx0 nz0 points), last field time; NaN for a field the run
-    does not have."""
+def mode_profile(par_path: str) -> dict:
+    """{"zgrid": ballooning angle / pi, field: |f| / max|f|} on the ballooning grid
+    (nx0 nz0 points), last field time; a field the run does not have is left out."""
     field = re.sub(r"parameters_(\d{4})$", r"field_\1", par_path)
-    out = {"field_phi": (np.nan, np.nan), "field_apar": (np.nan, np.nan)}
     if not os.path.isfile(field) or os.path.getsize(field) == 0:
-        return out
-    fx = GeneField(field).field_filepath_to_xarray("last", list(out))
-    for name in out:
-        if fx is not None and name in fx:
+        return {}
+    fx = GeneField(field).field_filepath_to_xarray("last", list(FIELDS))
+    if fx is None:
+        return {}
+    out = {"zgrid": fx.zgrid.values}
+    for name in FIELDS:
+        if name in fx:
             f = np.abs(fx[name].values[-1])
             if f.max() > 0:
-                out[name] = (float(f[0] / f.max()), float(f[-1] / f.max()))
+                out[name] = f / f.max()
     return out
 
 
-def plot_mode_extent(ds, out, written, tol=EXTENT_TOL):
+def mode_ends(prof: dict) -> dict:
+    """{field: (|f| at the left z end, |f| at the right z end) / max|f|}; NaN for a
+    field *prof* (mode_profile) does not have."""
+    return {f: (float(prof[f][0]), float(prof[f][-1])) if f in prof else (np.nan, np.nan)
+            for f in FIELDS}
+
+
+def load_profiles(ds) -> tuple[dict, set]:
+    """{(corner index, ky index): mode_profile} for every run with field output,
+    and the nx0 values those runs used. Reads every field file once, for both
+    corners_mode_extent.png and corners_mode_structure.png."""
+    profiles, nx0 = {}, set()
+    for i in range(ds.sizes["corner"]):
+        for j in range(ds.sizes["ky"]):
+            path = str(ds.path.values[i, j])
+            if not path:
+                continue
+            try:
+                prof = mode_profile(path)
+            except Exception as exc:                # one unreadable field never sinks the plot
+                print(f"    field unreadable {path}: {type(exc).__name__}: {exc}")
+                continue
+            if any(f in prof for f in FIELDS):
+                profiles[i, j] = prof
+                nx0.add(run_param(path, "nx0"))
+    return profiles, nx0
+
+
+def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
+    """|phi| and |Apar| along the field line per corner and ky, laid out as the
+    corners_mode_scaling.png table: each cell its run's ballooning eigenfunction
+    over the whole z domain, each field over its own peak (last field time), so a
+    column shows how profile scaling reshapes the mode and a cell outlined red has
+    an end above *tol* (cut off, grow nx0). Grey cell: not converged (the last
+    snapshot, not a settled mode). Corner text: mode (under --modes) and gamma."""
+    ky, n = ds.ky.values, ds.sizes["corner"]
+    rows = [i for i in range(n) if any((i, j) in profiles for j in range(ky.size))]
+    cols = [j for j in range(ky.size) if any((i, j) in profiles for i in rows)]
+    if not rows:
+        print("no field files; corners_mode_structure.png skipped")
+        return
+    m = ds["mode"].values if "mode" in ds else np.full((n, ky.size), "", dtype=object)
+    gam, status = ds.gamma.values, ds.status.values
+    fig = plt.figure(figsize=(max(9, 1.15 * len(cols) + 3), max(5.5, 0.62 * len(rows) + 2.2)))
+    grid = fig.add_gridspec(len(rows), len(cols), left=0.15, right=0.98, top=0.88, bottom=0.1,
+                            wspace=0.06, hspace=0.08)
+    n_cut = 0
+    for r, i in enumerate(rows):
+        for c, j in enumerate(cols):
+            ax = fig.add_subplot(grid[r, c])
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if r == len(rows) - 1:
+                ax.set_xlabel(f"{ky[j]:g}", fontsize=8, color=INK)
+            if c == 0:
+                ax.set_ylabel(str(ds.label.values[i]), fontsize=8, color=INK, rotation=0,
+                              ha="right", va="center")
+            prof = profiles.get((i, j))
+            if prof is None:
+                ax.text(0.5, 0.5, "-", ha="center", va="center", fontsize=7, color=MUTED,
+                        transform=ax.transAxes)
+                for sp in ax.spines.values():
+                    sp.set_color(GRID)
+                continue
+            z = prof["zgrid"]
+            for f, colour in STRUCT_COLOR.items():
+                if f in prof:
+                    ax.plot(z, prof[f], color=colour, lw=0.9)
+            ax.set_xlim(z[0], z[-1])
+            ax.set_ylim(0, 1.08)
+            ax.set_facecolor(SURFACE if status[i, j] == "ok" else "#ecebe6")
+            cut = max(np.nanmax(e) for e in mode_ends(prof).values()) > tol
+            n_cut += cut
+            for sp in ax.spines.values():
+                sp.set_color("#e34948" if cut else GRID)
+                sp.set_linewidth(1.8 if cut else 0.8)
+            text = MODE_SHORT.get(m[i, j], m[i, j]) if m[i, j] else ""
+            if np.isfinite(gam[i, j]):
+                text += f" {gam[i, j]:.3f}"
+            if text:
+                ax.text(0.03, 0.95, text.strip(), ha="left", va="top", fontsize=5.5, color=INK,
+                        transform=ax.transAxes)
+    handles = [Line2D([], [], color=STRUCT_COLOR["field_phi"], lw=1.5, label=r"$|\phi|$ / peak"),
+               Line2D([], [], color=STRUCT_COLOR["field_apar"], lw=1.5,
+                      label=r"$|A_\parallel|$ / peak"),
+               plt.Rectangle((0, 0), 1, 1, fc=SURFACE, ec="#e34948", lw=1.8,
+                             label=f"end / peak above {tol:g} (cut off, grow nx0)"),
+               plt.Rectangle((0, 0), 1, 1, fc="#ecebe6", ec=GRID, label="not converged")]
+    fig.legend(handles=handles, frameon=False, fontsize=8, loc="lower center", ncol=4,
+               bbox_to_anchor=(0.56, 0.0))
+    fig.text(0.56, 0.055, r"$k_y\rho_{ref}$  (each cell: ballooning angle $z/\pi$ over the whole "
+             "domain, last field time)", ha="center", fontsize=9, color=INK)
+    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: mode structure along the field line,"
+                 f" rows {LEGEND_TITLE}\n{n_cut} cell(s) with an end above {tol:g}; "
+                 "text: mode (under --modes) and gamma", x=0.02, ha="left", fontsize=11,
+                 color=INK)
+    save(fig, out, "corners_mode_structure.png", written)
+
+
+def plot_mode_extent(ds, out, written, tol=EXTENT_TOL, profiles=None, nx0=()):
     """|phi| (top) and |Apar| (bottom) at the two ends of the ballooning domain over
     their peak, against profile scaling: one column per corner, the left end (<)
     just left of it and the right end (>) just right, coloured by ky, on one log
     scale, so a scaling that pushes the mode to the domain edge stands out.
     Hollow: not converged (the last snapshot, not a settled mode). Dashed: *tol*,
     above which the mode is cut off and nx0 should grow.
+    *profiles*, *nx0*: load_profiles(ds), read here when not given.
     + data/corners_mode_extent.csv."""
+    if profiles is None:
+        profiles, nx0 = load_profiles(ds)
     ky, n = ds.ky.values, ds.sizes["corner"]
-    ends = {f: np.full((n, ky.size, 2), np.nan) for f in ("field_phi", "field_apar")}
-    nx0 = set()
-    for i in range(n):
-        for j in range(ky.size):
-            path = str(ds.path.values[i, j])
-            if not path:
-                continue
-            try:
-                e = mode_ends(path)
-            except Exception as exc:                # one unreadable field never sinks the plot
-                print(f"    field unreadable {path}: {type(exc).__name__}: {exc}")
-                continue
-            for f in ends:
-                ends[f][i, j] = e[f]
-            nx0.add(run_param(path, "nx0"))
+    ends = {f: np.full((n, ky.size, 2), np.nan) for f in FIELDS}
+    for (i, j), prof in profiles.items():
+        e = mode_ends(prof)
+        for f in ends:
+            ends[f][i, j] = e[f]
     # ds lists every ped_grid corner; plot only those with field output
     rows = [i for i in range(n) if any(np.isfinite(v[i]).any() for v in ends.values())]
     if not rows:
@@ -1701,7 +1803,9 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         if nz_compare:
             plot_nz_compare(ds, out, written, nz_compare, nz_root)
         if mode_extent:
-            plot_mode_extent(ds, out, written)
+            profiles, nx0 = load_profiles(ds)
+            plot_mode_extent(ds, out, written, profiles=profiles, nx0=nx0)
+            plot_mode_structure(ds, out, written, profiles)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
@@ -1745,7 +1849,8 @@ if __name__ == "__main__":
                          "[<diag-root>_nz<N>]")
     ap.add_argument("--mode-extent", action="store_true",
                     help="corners_mode_extent.png: |phi|, |Apar| at the ballooning z ends over "
-                         "their peak, per corner and ky (reads every field file)")
+                         "their peak, per corner and ky; corners_mode_structure.png: the whole "
+                         "|phi|, |Apar| along z per corner and ky (reads every field file)")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,

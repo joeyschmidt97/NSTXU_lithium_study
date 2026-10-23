@@ -124,7 +124,7 @@ if __name__ == "__main__":
     for k, what in (("field_omega", "fit every ky's field trace and append it to its omega file "
                                     "before plotting (field_omega.py --write)"),
                     ("modes", "TPED mode_identifier per ky"),
-                    ("mode_extent", "corners_mode_extent.png"),
+                    ("mode_extent", "corners_mode_extent.png, corners_mode_structure.png"),
                     ("field_fits", "carry decaying/ambiguous field fits")):
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, default=None,
                         action=argparse.BooleanOptionalAction,
