@@ -1,0 +1,15 @@
+corner,Teh,Tew,neh,new,gamma_max,ky_at_max,Bref,Lref,Tref,alpha_MHD,beta,coll,debye2,dens_c,dens_e,dens_i,dpdx_pm,major_R,minor_r,nref,nu_ei,nustar_e,nustar_i,omn_c,omn_e,omn_i,omt_c,omt_e,omt_i,q0,rhostar,shat,temp_c,temp_e,temp_i
+Teh0.80_Tew0.80_neh0.80_new0.80,0.8,0.8,0.8,0.8,-0.035729,3,0.483703,0.923503,0.0584711,21.2212,0.00239552,0.187459,2.60356e-05,0.030583,1,0.816502,0.186145,1.02609,1,2.37855,87.1155,13.1002,2.19295,21.154,18.9526,18.4578,1.41975,24.743,1.41975,10.5406,0.00246925,4.65042,2.05527,1,2.05527
+Teh0.80_Tew0.80_neh0.80_new1.20,0.8,0.8,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew0.80_neh1.20_new0.80,0.8,0.8,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew0.80_neh1.20_new1.20,0.8,0.8,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh0.80_new0.80,0.8,1.2,0.8,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh0.80_new1.20,0.8,1.2,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh1.20_new0.80,0.8,1.2,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh0.80_Tew1.20_neh1.20_new1.20,0.8,1.2,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew0.80_neh0.80_new0.80,1.2,0.8,0.8,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew0.80_neh0.80_new1.20,1.2,0.8,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew0.80_neh1.20_new0.80,1.2,0.8,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew0.80_neh1.20_new1.20,1.2,0.8,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew1.20_neh0.80_new1.20,1.2,1.2,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+Teh1.20_Tew1.20_neh1.20_new1.20,1.2,1.2,1.2,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
