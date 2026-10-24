@@ -161,8 +161,12 @@ BOUNDS = ([("Te_ne_ped_scale_1.000", [("Te_ped_scale", 1.0, {}), ("ne_ped_scale"
 NSTXU_B0_T = 0.9
 SOURCE_B0_132543_T = 0.439262
 LAMBDA_132543 = NSTXU_B0_T / SOURCE_B0_132543_T
+# initial_amplitude = lambda: at 1.0 iteration 00 solves 4.2x pressure on the
+# source driven current plus a bootstrap halved by the B0 re-footing, and CHEASE
+# loses the magnetic axis (magaxe "BRACKETING NOT SUCCEEDED", 2026-10-23).
 NSTXU_132543 = dict(RHOP, target_bt_scale_t=LAMBDA_132543,
-                    target_ip_scale_a=LAMBDA_132543)
+                    target_ip_scale_a=LAMBDA_132543,
+                    initial_amplitude=LAMBDA_132543)
 
 # name -> dict(shot, dir, settings, namelist, cases, ref)
 #   namelist : entries written into the CHEASE namelist copy
