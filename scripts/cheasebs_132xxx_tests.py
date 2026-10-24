@@ -108,7 +108,7 @@ from NSTXU_lithium_study.scripts.scalings import discharge_root, load, scale, ta
 
 # First path that exists wins, as for the discharge root in scalings.py.
 REPO_CANDIDATES = [
-    "/global/homes/j/joeschm/projects/cheaseBS_tests",
+    "/pscratch/sd/j/joeschm/git_repos/cheaseBS_tests",
     "C:/Users/joesc/git/cheaseBS_tests",
 ]
 CAMPAIGN = "cheasebs_132xxx"
