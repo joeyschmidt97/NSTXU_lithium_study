@@ -101,6 +101,11 @@ SHOTS = {
     132543: {"template": None,
              "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
              "chapman": {"ne_top": 0.845, "Te_top": 0.808, "steep": 0.947}},
+    # 2026-10-25 fit to the ped_grid REF_profiles_e (rhop, TENSBND -1.0), 3 decimals.
+    # The box-scan reference put Te top in the core (0.408); this one does not.
+    132588: {"template": None,
+             "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132588/132588",
+             "chapman": {"ne_top": 0.516, "Te_top": 0.677, "steep": 0.785}},
 }
 SHOT = 129038
 
