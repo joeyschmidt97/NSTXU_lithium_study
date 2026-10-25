@@ -1,0 +1,37 @@
+{
+  "shot": 132588,
+  "axis": [
+    0.8,
+    0.9,
+    1.0,
+    1.1,
+    1.2
+  ],
+  "knobs": {
+    "Teh": [
+      "Te",
+      "scale_height"
+    ],
+    "Tew": [
+      "Te",
+      "scale_width"
+    ],
+    "neh": [
+      "ne",
+      "scale_height"
+    ],
+    "new": [
+      "ne",
+      "scale_width"
+    ]
+  },
+  "cases": [
+    {
+      "tag": "Teh1.20_Tew1.20_neh1.20_new0.80",
+      "Teh": 1.2,
+      "Tew": 1.2,
+      "neh": 1.2,
+      "new": 0.8
+    }
+  ]
+}
