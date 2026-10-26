@@ -61,6 +61,14 @@ never mix with the 1x scan. --set is applied after it and wins.
 --ped-root, e.g. the centre Teh1.00_Tew1.00_neh1.00_new1.00 or an axis
 point) instead of the 16 corners; --only filters the corners.
 
+--baseline runs the measured equilibrium instead: the EFIT g-file and
+profiles_e/i/z in data/discharges/<shot> (what ped_grid fits; no mtanh fit,
+no cheaseBS). They are copied to <shot>/baseline_eq beside the diag root with
+a profiles.iterdb written by TPED, and the one run is tagged base, in
+<prefix>_baseline_x0_<x0>_base/ with output under <shot>/baseline/x0_<x0>/base.
+
+    python corner_gene_scan.py --shot 129015 --gpu --x0 0.8425 --baseline --walltime 01:30:00
+
 A second scan into an existing diagdir lands in the next scanfilesNNNN;
 plot_corners.py merges every scanfiles dir by ky.
 
@@ -158,6 +166,12 @@ TIMELIM_MARGIN = 300
 GEQDSK = "*_CH_COCOS*.geqdsk"
 
 LINKS = ("scanscript", "gene_perlmutter")
+
+#: --baseline: the measured g-file and profiles per shot (scalings.discharge_root),
+#: and the tag its single run gets.
+DATA_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "data", "discharges")
+BASELINE_TAG = "base"
 
 #: Submit script read from the template and written to each run dir.
 SUBMIT, GPU_SUBMIT = "submit.cmd", "submit_gpu.cmd"
@@ -280,12 +294,34 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
     return geomfile, missing
 
 
+def baseline_case(src: str, case_dir: str, dry_run=False) -> str:
+    """Copy the measured g-file and profiles_e/i/z from *src* to *case_dir* and
+    write its profiles.iterdb (TPED profiles_to_iterdb). Returns the g-file name."""
+    gfiles = sorted(os.path.basename(p) for p in glob.glob(os.path.join(src, "g*"))
+                    if os.path.isfile(p))
+    if len(gfiles) != 1:
+        raise SystemExit(f"{src}: need exactly one g-file, found {gfiles}")
+    if dry_run:
+        return gfiles[0]
+    from TPED.projects.discharge_tools.src.writers.iterdb_writer import profiles_to_iterdb
+
+    os.makedirs(case_dir, exist_ok=True)
+    for f in gfiles + [f"profiles_{s}" for s in "eiz"]:
+        if os.path.isfile(os.path.join(src, f)):
+            shutil.copy2(os.path.join(src, f), case_dir)
+    profiles_to_iterdb(case_dir)
+    return gfiles[0]
+
+
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
           only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
-          walltime=None, kymin=None, overrides=None, res_scale=1, cases=None, gpu=False):
+          walltime=None, kymin=None, overrides=None, res_scale=1, cases=None, gpu=False,
+          baseline=None):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
     gpu      copy and sbatch the template's submit_gpu.cmd, --mps = n_parallel_sims
+    baseline measured-data dir (DATA_ROOT/<shot>) to run as one BASELINE_TAG case
+             instead of the corners; copied to <diag_root>/../baseline_eq
     kymin    ky values to scan [KYMIN]
     overrides  {parameter: value} set after everything else (e.g. a resolution
              check: {'nx0': '7', 'nz0': '128'}); each must exist once in the template
@@ -331,12 +367,19 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
                 "walltime": walltime, "qos": qos, "test": test, "timelim": timelim, "nodes": nodes,
                 "ntasks": ntasks, "n_parallel_sims": n_parallel, "runs": {}}
     skipped = []
-    for p in ([parse_tag(c) for c in cases] if cases else corners()):
-        label = tag(p)
+    if baseline:
+        points = [({}, BASELINE_TAG)]
+    else:
+        points = [(p, tag(p)) for p in ([parse_tag(c) for c in cases] if cases else corners())]
+    for p, label in points:
         if only and label not in only:
             continue
-        case_dir = os.path.join(ped_root, label)
-        geomfile, missing = check_case(case_dir)
+        if baseline:
+            case_dir = os.path.join(os.path.dirname(diag_root.rstrip("/")), "baseline_eq")
+            geomfile, missing = baseline_case(baseline, case_dir, dry_run), []
+        else:
+            case_dir = os.path.join(ped_root, label)
+            geomfile, missing = check_case(case_dir)
         if missing:
             skipped.append((label, missing))
             print(f"--- {label}: SKIP, missing {missing}", flush=True)
@@ -433,6 +476,10 @@ if __name__ == "__main__":
     ap.add_argument("--gpu", action="store_true",
                     help=f"GPU build: template {GPU_TEMPLATE} unless --template, "
                          f"{GPU_SUBMIT}, --mps = n_parallel_sims")
+    ap.add_argument("--baseline", action="store_true",
+                    help=f"run the measured g-file and profiles ({DATA_ROOT}/<shot>; no mtanh "
+                         "fit, no cheaseBS) instead of the corners; prefix NSTX_<shot>_baseline, "
+                         "diag root <shot>/baseline")
     ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
     ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
     ap.add_argument("--test", action="store_true",
@@ -442,6 +489,14 @@ if __name__ == "__main__":
     args = ap.parse_args()
     if args.gpu and args.template is None:
         args.template = GPU_TEMPLATE
+    baseline = None
+    if args.baseline:
+        if args.case or args.only:
+            ap.error("--baseline runs one case; drop --case/--only")
+        d = shot_defaults(args.shot)
+        args.prefix = args.prefix or f"NSTX_{args.shot}_baseline"
+        args.diag_root = args.diag_root or os.path.join(os.path.dirname(d["diag_root"]), "baseline")
+        baseline = os.path.join(DATA_ROOT, str(args.shot))
     for key, value in shot_defaults(args.shot).items():
         if key != "chapman" and getattr(args, key) is None:
             setattr(args, key, value)
@@ -449,5 +504,5 @@ if __name__ == "__main__":
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
                        args.walltime, args.kymin,
                        dict(kv.split("=", 1) for kv in args.set), args.res_scale, args.case,
-                       args.gpu)
+                       args.gpu, baseline)
     sys.exit(1 if skipped else 0)
