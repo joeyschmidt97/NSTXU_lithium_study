@@ -72,6 +72,13 @@ the height pair (Teh, neh); line style is the height pair too (solid,
 dashed, dotted, dash-dot) and the marker neh, so the four corners sharing a
 hue never share a line style and no corner is told apart by colour alone.
 
+The reference case, 1.00 on every knob (Teh1.00_Tew1.00_neh1.00_new1.00, run
+with corner_gene_scan.py --case into the same diag root), is read too when it
+is there: listed first as (1, 1, 1, 1) ref, solid black with diamond markers
+on every plot, table and CSV. It is no corner, so the corner statistics leave
+it out: the mode fractions under the growth plot, the knob-level mode mix,
+and the spread and mean of corners_local_params.png.
+
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --out ./corner_plots
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --spread 0.02 --max-params 16
@@ -201,6 +208,10 @@ HEIGHT_LS = {(0.8, 0.8): (0, ()), (0.8, 1.2): (0, (6, 2.5)), (1.2, 0.8): (0, (1.
 NEH_MARKER = {0.8: "o", 1.2: "s"}
 GAMMA_CMAP = LinearSegmentedColormap.from_list("gamma", ["#008300", "#f0efec", "#e34948"])
 INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
+#: The 1.00 scaling on every knob: no corner, the reference state the corners are
+#: read against. Black, solid, diamonds, so it stands apart from every corner hue.
+REF = {k: 1.0 for k in ORDER}
+REF_STYLE = {"color": INK, "ls": (0, ()), "marker": "D"}
 DPI = 150
 #: Which reading of a ky wins when two scanfiles dirs hold it.
 RANK = {"ok": 2, "field": 1, "decaying": 0.5, "ambiguous": 0.5}
@@ -262,8 +273,12 @@ MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-C
 
 # ----------------------------------------------------------------------------- labels, style
 
+def is_ref(p) -> bool:
+    return all(p[k] == REF[k] for k in ORDER)
+
+
 def label(p) -> str:
-    return "(" + ", ".join(f"{p[k]:g}" for k in ORDER) + ")"
+    return "(" + ", ".join(f"{p[k]:g}" for k in ORDER) + ")" + (" ref" if is_ref(p) else "")
 
 
 def ordered(points):
@@ -277,12 +292,19 @@ def shade(hex_color: str, amount: float):
 
 
 def style(p) -> dict:
+    if is_ref(p):
+        return dict(REF_STYLE)
     return {"color": shade(WIDTH_HUES[(p["Tew"], p["new"])], HEIGHT_SHADE[(p["Teh"], p["neh"])]),
             "ls": HEIGHT_LS[(p["Teh"], p["neh"])], "marker": NEH_MARKER[p["neh"]]}
 
 
 def point_of(ds, corner) -> dict:
     return {k: float(ds[k].sel(corner=corner)) for k in ORDER}
+
+
+def corner_rows(ds) -> np.ndarray:
+    """True for the 16 corners, False for the reference."""
+    return ~ds["reference"].values
 
 
 # ----------------------------------------------------------------------------- GENE output
@@ -500,10 +522,11 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
     ds.set_index(corner=["Tew", "new", "Teh", "neh"]).unstack("corner") gives
-    the 4D box.
+    the 4D box. The reference case (REF), when it has GENE output or profiles,
+    comes first with reference = True.
     """
     gene, prof, pts = {}, {}, []
-    for p in ordered(corners()):
+    for p in [REF] + ordered(corners()):
         name = tag(p)
         g = gene_corner(os.path.join(diag_root, x0_label(x0), name), field_fits)
         pr = iterdb_profiles(os.path.join(ped_root, name))
@@ -537,7 +560,8 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
 
     ds = xr.Dataset(coords={"corner": names, "ky": ("ky", ky, {"long_name": "kymin rho_ref"}),
                             **{k: ("corner", [p[k] for p in pts]) for k in ORDER},
-                            "label": ("corner", [label(p) for p in pts])})
+                            "label": ("corner", [label(p) for p in pts]),
+                            "reference": ("corner", [is_ref(p) for p in pts])})
     ds["gamma"] = (("corner", "ky"), [on_ky(n, 0, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["omega"] = (("corner", "ky"), [on_ky(n, 1, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["status"] = (("corner", "ky"), [on_ky(n, 2, "missing") for n in names])
@@ -719,7 +743,8 @@ def mode_strip(ax, ds, weighted):
     """Mode make-up at each ky as stacked bars: the fraction of corners in each
     mode (with a kernel-smoothed fraction over ky as lines), or with *weighted*
     each mode's share of the positive growth summed over corners."""
-    ky, m, g = ds.ky.values, ds["mode"].values, ds.gamma.values
+    rows = corner_rows(ds)                         # the reference is no corner
+    ky, m, g = ds.ky.values, ds["mode"].values[rows], ds.gamma.values[rows]
     found = [x for x in MODE_COLOR if (m == x).any()]
     width = 0.6 * (np.diff(ky).min() if ky.size > 1 else 0.2)
     bottom = np.zeros(ky.size)
@@ -1711,8 +1736,10 @@ def local_params(ds) -> list[str]:
 def varying(ds, spread=SPREAD, max_params=MAX_PARAMS) -> list[tuple[str, float]]:
     """(name, (max-min)/max|value|) of the local parameters above *spread*, largest first."""
     out = []
+    rows = corner_rows(ds)
     for k in local_params(ds):
-        v = ds[k].values[np.isfinite(ds[k].values)]
+        v = ds[k].values[rows]
+        v = v[np.isfinite(v)]
         if v.size < 2:
             continue
         rel = np.ptp(v) / max(abs(v).max(), 1e-300)
@@ -1744,7 +1771,9 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     names = [k for k, _ in picked]
     # % from the mean means nothing when the mean sits near zero, so parameters
     # that change sign across the corners get their own panel in absolute units.
-    crosses = [k for k in names if np.nanmin(ds[k].values) < 0 < np.nanmax(ds[k].values)]
+    rows = corner_rows(ds)                         # mean and sign over the corners only
+    crosses = [k for k in names
+               if np.nanmin(ds[k].values[rows]) < 0 < np.nanmax(ds[k].values[rows])]
     groups = [(r"% from the corner mean", [k for k in names if k not in crosses], True),
               ("value - corner mean", crosses, False)]
     groups = [grp for grp in groups if grp[1]]
@@ -1754,7 +1783,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     fig, axes = plt.subplots(1, len(groups), figsize=(max(10, 1.25 * len(names) + 4), 5.8),
                              width_ratios=[len(grp[1]) + 0.6 for grp in groups], squeeze=False)
     for ax, (ylabel, keys_, pct) in zip(axes[0], groups):
-        mean = [np.nanmean(ds[k].values) for k in keys_]
+        mean = [np.nanmean(ds[k].values[rows]) for k in keys_]
         for i, c in enumerate(ds.corner.values):
             dev = [100 * (ds[k].values[i] / m - 1) if pct else ds[k].values[i] - m
                    for k, m in zip(keys_, mean)]
