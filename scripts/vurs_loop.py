@@ -5,7 +5,8 @@ Each round:
     1. pick   ScanPointPicker (sparse_scanner's five axes: Te/ne ped and width
               scales, kymin) reads every GENE run under <diag-root>/x0_<x0>/,
               field fits included, and suggests --jobs GENE jobs: one set of
-              profile scalings each and a --ky-per-job kymin scanlist
+              profile scalings each and a --ky-per-job kymin scanlist; gamma
+              is floored at 0 (every stable ky reads as 0) unless --no-clip
     2. build  ped_grid --cheasebs --case <tag> for each new equilibrium (one
               process per job, in parallel; a case with DONE.json is reused),
               then corner_gene_scan.build writes one GPU run dir per job, its
@@ -79,10 +80,10 @@ def time_left() -> int | None:
     return int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
 
 
-def pick(diag_x0, n_jobs, ky_per_job, model, seed, hold):
+def pick(diag_x0, n_jobs, ky_per_job, model, seed, hold, clip_min=0.):
     """(run table, job table with snapped tags) for one round."""
     picker = ScanPointPicker(model, DEFAULT_AXES, QoISpec("gamma", "max_over_ky"),
-                             log_axes=["kymin"], seed=seed)
+                             log_axes=["kymin"], clip_min=clip_min, seed=seed)
     picker.fit(diag_x0, hold=hold)
     jobs = picker.suggest_jobs(n_jobs, ky_per_job, "kymin")
     jobs["tag"] = [tag({KNOB[a]: row[a] for a in KNOB}) for _, row in jobs.iterrows()]
@@ -127,6 +128,8 @@ def main(argv=None):
     ap.add_argument("--walltime", default="00:45:00",
                     help="per GENE run, HH:MM:SS; sets timelim [00:45:00]")
     ap.add_argument("--model", choices=("vurs", "vwrs", "gp"), default="vurs")
+    ap.add_argument("--no-clip", action="store_true",
+                    help="fit gamma as it is; default floors it at 0 (stable reads as 0)")
     ap.add_argument("--seed", type=int, default=0, help="round N uses seed + N")
     ap.add_argument("--ped-grid-args", default="",
                     help="extra ped_grid flags for cheaseBS, quoted, e.g. \"--max-iter 40\"")
@@ -169,7 +172,8 @@ def main(argv=None):
     hold = []
     for r in range(1, args.rounds + 1):
         print(f"\n===== round {r}/{args.rounds} =====", flush=True)
-        runs, jobs = pick(diag_x0, n_jobs, ky_per_job, args.model, args.seed + r, hold)
+        runs, jobs = pick(diag_x0, n_jobs, ky_per_job, args.model, args.seed + r, hold,
+                          clip_min=None if args.no_clip else 0.)
         print(f"{len(runs)} point(s) on disk: "
               + ", ".join(f"{n} {s}" for s, n in runs.status.value_counts().items()))
         dup = jobs.tag.duplicated()
