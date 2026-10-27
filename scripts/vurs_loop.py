@@ -164,6 +164,15 @@ def main(argv=None):
 
     left = time_left()
     need = args.rounds * C.walltime_seconds(args.walltime)
+    if args.x0 is not None:
+        x0_source = "--x0"
+    else:
+        names = [k for k, v in d["chapman"].items() if v == x0]
+        x0_source = (f"{names[0]} Chapman radius of {args.shot}" if names
+                     else f"default for {args.shot}") + ", corner_gene_scan.SHOTS; --x0 to change"
+    others = ", ".join(f"{k} {v:g}" for k, v in d["chapman"].items() if v != x0)
+    print(f"x0 = {x0:g} ({x0_source}); fixed for every round: picks from and writes GENE runs "
+          f"at this radius" + (f". Other Chapman radii: {others}" if others else ""))
     print(f"{args.rounds} round(s) x {n_jobs} job(s) x {ky_per_job} kymin, model {args.model}, "
           f"GENE walltime {args.walltime}; picking from {diag_x0}"
           + (f"; {left / 3600:.2f} h left in the allocation" if left is not None else ""))
