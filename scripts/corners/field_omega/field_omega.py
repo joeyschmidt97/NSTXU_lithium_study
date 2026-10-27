@@ -1,5 +1,8 @@
 """Field time-trace growth rates for every ky of the corner scan (TPED GENE_omega_from_field).
 
+Every case dir under <diag-root>/x0_<x0>/ named like a ped_grid tag is fitted:
+the 16 corners, the 1.00 reference and the VURS picks.
+
 GENE writes gamma = omega = 0 into omega_000N when a run hits timelim before
 its growth rate converges (and leaves the file empty if it died earlier).
 For every ky, converged or not, this fits gamma and omega to the last part
@@ -53,8 +56,9 @@ import numpy as np
 
 from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
 from TPED.projects.GENE_sim_reader.src.GENE_omega_data import parse_omega_text
-from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, SHOT, SHOTS, X0, corners,
-                                                         shot_defaults, tag, x0_label)
+from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, SHOT, SHOTS, X0,
+                                                         shot_defaults, x0_label)
+from NSTXU_lithium_study.scripts.ped_grid import parse_tag
 
 #: Fraction of the run's field output the fit uses: its last 30%.
 WINDOW = (0.7, 1.0)
@@ -70,9 +74,21 @@ def omega_files(corner_dir: str) -> list[str]:
 
 
 def corner_targets(diag_root: str, x0) -> tuple[str, list[tuple[str, str]]]:
-    """(root, [(corner tag, omega path)]) for the corner scan at x0."""
+    """(root, [(case tag, omega path)]) for every case dir at x0 named like a tag:
+    the corners, the 1.00 reference and VURS picks."""
     root = os.path.join(diag_root, x0_label(x0))
-    return root, [(tag(p), o) for p in corners() for o in omega_files(os.path.join(root, tag(p)))]
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return root, []
+    cases = []
+    for name in names:
+        try:
+            parse_tag(name)
+        except ValueError:                          # plots/, *_rounds/, anything else
+            continue
+        cases += [(name, o) for o in omega_files(os.path.join(root, name))]
+    return root, cases
 
 
 def path_targets(path: str) -> tuple[str, list[tuple[str, str]]]:
