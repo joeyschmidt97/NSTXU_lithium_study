@@ -29,15 +29,15 @@ corner_gene_scan.TIMELIM_MARGIN), not a SLURM limit: rounds x (cheaseBS +
 walltime) has to fit the allocation. A ky that hits timelim still counts
 through its field fit and std.
 
-Scalings are snapped to ped_grid's two-decimal case names (0.9913 -> 0.99):
-the case name is the equilibrium's identity on disk. The picker reads back the
-values actually run, from the geomfile name, so the model sees the snapped point.
-Two jobs that snap to the same case in one round would share an output dir;
+Every suggested value (scalings and kymin) is rounded to 3 significant figures
+(0.9913 -> 0.991, 0.06512 -> 0.0651), which is what the case name, the cheaseBS
+geomfile name and GENE's input hold, so the point suggested is the point run.
+Two jobs that round to the same case in one round would share an output dir;
 the later one is dropped. A job whose cheaseBS fails is dropped and its points
 held, so later rounds do not suggest it again.
 
 Per round, <genedir>/<prefix>_<x0>_rounds/round<N>/ keeps the run table, the
-picks (as suggested and as snapped) and the ped_grid logs.
+picks (rounded, with their case tags) and the ped_grid logs.
 """
 
 from __future__ import annotations
@@ -81,9 +81,10 @@ def time_left() -> int | None:
 
 
 def pick(diag_x0, n_jobs, ky_per_job, model, seed, hold, clip_min=0.):
-    """(run table, job table with snapped tags) for one round."""
+    """(run table, job table with case tags) for one round."""
     picker = ScanPointPicker(model, DEFAULT_AXES, QoISpec("gamma", "max_over_ky"),
-                             log_axes=["kymin"], clip_min=clip_min, seed=seed)
+                             log_axes=["kymin"], clip_min=clip_min, sig_figs=3,
+                             seed=seed)
     picker.fit(diag_x0, hold=hold)
     jobs = picker.suggest_jobs(n_jobs, ky_per_job, "kymin")
     jobs["tag"] = [tag({KNOB[a]: row[a] for a in KNOB}) for _, row in jobs.iterrows()]
@@ -178,11 +179,11 @@ def main(argv=None):
               + ", ".join(f"{n} {s}" for s, n in runs.status.value_counts().items()))
         dup = jobs.tag.duplicated()
         for t in jobs.tag[dup]:
-            print(f"  job at {t} dropped: snaps onto another job's case this round")
+            print(f"  job at {t} dropped: rounds onto another job's case this round")
         jobs = jobs[~dup].reset_index(drop=True)
         with pd.option_context("display.width", 200, "display.max_colwidth", 80):
-            print(jobs.assign(kymin=[", ".join(f"{k:.4g}" for k in ks) for ks in jobs.kymin])
-                  .round(4).to_string())
+            print(jobs.assign(kymin=[", ".join(f"{k:g}" for k in ks) for ks in jobs.kymin])
+                  .to_string())
         if args.dry_run:
             return 0
 
