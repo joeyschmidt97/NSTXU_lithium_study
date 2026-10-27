@@ -62,6 +62,14 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 each matched to the corner of the same profile
                                 scaling (tag); the line is this scan, at its own nz0
                                 read from its parameters; + corners_nz<N>.csv
+    corners_sampling.png        where the scan has sampled: every case dir under
+                                x0_<x0>/ (corners, reference, VURS picks, which the
+                                other plots leave out) as a corner plot of the four
+                                knobs, points over their kernel density, VURS picks
+                                coloured by the order GENE first wrote them, hollow
+                                when GENE has written nothing yet; beside it the Te
+                                and ne pedestal of every case and the kymin density;
+                                + corners_sampling.csv
 
 Every CSV is written to <out>/data/, beside the plots.
 
@@ -171,7 +179,7 @@ from TPED.projects.discharge_tools.src.filetypes.gfile_data import GFileData
 from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_ROOT, SHOT,
                                                          SHOTS, X0, corners, find_geqdsk,
                                                          shot_defaults, tag, x0_label)
-from NSTXU_lithium_study.scripts.ped_grid import KNOBS
+from NSTXU_lithium_study.scripts.ped_grid import KNOBS, parse_tag
 from NSTXU_lithium_study.scripts.corners.field_omega import field_omega
 
 
@@ -280,6 +288,16 @@ RES2_NUDGE = 0.012
 #: --nz-compare N: the nz0 = N corners are at <diag-root>_nz<N>/x0_<x0>/<tag>/ (e.g.
 #: corners_nz64 beside the nz0 = 128 corners)
 NZ_SUFFIX = "_nz{}"
+#: corners_sampling.png: the corner knob levels (anything else off 1.00 is a VURS
+#: pick), the knob axis range, the Gaussian KDE widths in knob and kymin units, and
+#: the colour map of the VURS sampling order
+CORNER_LEVELS = (0.8, 1.2)
+SAMPLE_LIM = (0.75, 1.25)
+SAMPLE_BW = 0.04
+SAMPLE_KY_BW = 0.05
+SAMPLE_CMAP = "viridis"
+SAMPLE_LINE = "#6250d6"
+KYMIN_RE = re.compile(r"^\s*kymin\s*=\s*([-+\d.eE]+)", re.M)
 #: subfolder of --out that every CSV is written to
 DATA_DIR = "data"
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
@@ -1981,6 +1999,192 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     save(fig, out, "corners_local_table.png", written)
 
 
+# ----------------------------------------------------------------------------- sampling
+
+def sampled_cases(diag_root: str, x0) -> list[dict]:
+    """Every case dir under <diag_root>/x0_<x0>/ named like a ped_grid tag (the
+    corners, the reference, VURS picks), oldest GENE output first: its knobs,
+    kind ('corner', 'ref' or 'sampled'), the kymin of each run and the time of
+    its first parameters file (nan when GENE has written nothing yet)."""
+    root = os.path.join(diag_root, x0_label(x0))
+    cases = []
+    for name in _listdir(root):
+        try:
+            p = parse_tag(name)
+        except ValueError:                          # plots/, *_rounds/, anything else
+            continue
+        runs = gene_runs(os.path.join(root, name))
+        kymin = []
+        for path in runs:
+            try:
+                with open(path) as fh:
+                    m = KYMIN_RE.search(fh.read())
+            except OSError:
+                continue
+            if m:
+                kymin.append(float(m.group(1)))
+        kind = ("ref" if is_ref(p) else
+                "corner" if all(p[k] in CORNER_LEVELS for k in ORDER) else "sampled")
+        cases.append({"tag": name, **p, "kind": kind, "kymin": sorted(kymin),
+                      "time": min((os.path.getmtime(f) for f in runs), default=np.nan)})
+    return sorted(cases, key=lambda c: (np.isnan(c["time"]), c["time"], c["tag"]))
+
+
+def kde(points, grid, bw=SAMPLE_BW):
+    """Gaussian kernel density of *points* (n, d) on *grid* (m, d), peak-normalised."""
+    if not len(points):
+        return np.zeros(len(grid))
+    d2 = ((grid[:, None, :] - points[None, :, :]) / bw) ** 2
+    dens = np.exp(-0.5 * d2.sum(axis=2)).sum(axis=1)
+    return dens / dens.max()
+
+
+def sample_colours(cases):
+    """Per case: grey for corners, black for the reference, the sampling order on
+    SAMPLE_CMAP (dark = first) for VURS picks; and that order's Normalize."""
+    order = [i for i, c in enumerate(cases) if c["kind"] == "sampled"]
+    norm = Normalize(1, max(len(order), 2))
+    cmap = plt.get_cmap(SAMPLE_CMAP)
+    rank = {i: n for n, i in enumerate(order, start=1)}
+    cols = [INK if c["kind"] == "ref" else MUTED if c["kind"] == "corner" else cmap(norm(rank[i]))
+            for i, c in enumerate(cases)]
+    return cols, norm, cmap
+
+
+def plot_sampling(cases, ped_root, x0, shot, out, written):
+    """Where the scan has sampled the four profile scalings at this x0: every
+    knob pair as a scatter over the kernel density of the points GENE has
+    run (lower triangle), each knob's 1D density with a rug (diagonal), the Te
+    and ne pedestals of every sampled case, and the kymin each one ran.
+
+    Corners are grey squares, the reference a black diamond, VURS picks circles
+    coloured by when GENE first wrote them (dark = first), hollow where GENE
+    has written nothing yet; + corners_sampling.csv."""
+    if not cases:
+        print("no case dirs to place; corners_sampling.png skipped")
+        return
+    cols, norm, cmap = sample_colours(cases)
+    ran = np.array([np.isfinite(c["time"]) for c in cases])
+    pts = np.array([[c[k] for k in ORDER] for c in cases])
+    marker = {"corner": "s", "ref": "D", "sampled": "o"}
+    n = len(ORDER)
+    fig = plt.figure(figsize=(14, 13))
+    gs = fig.add_gridspec(n, n, hspace=0.3, wspace=0.15)
+    grid1 = np.linspace(*SAMPLE_LIM, 200)
+    gx, gy = np.meshgrid(grid1, grid1)
+    for i in range(n):
+        for j in range(i + 1):
+            ax = fig.add_subplot(gs[i, j])
+            if i == j:                              # 1D density: all GENE runs, and VURS alone
+                dens = kde(pts[ran][:, [i]], grid1[:, None])
+                ax.fill_between(grid1, dens, color=GRID, lw=0)
+                vurs = ran & np.array([c["kind"] == "sampled" for c in cases])
+                if vurs.any():
+                    ax.plot(grid1, kde(pts[vurs][:, [i]], grid1[:, None]),
+                            color=SAMPLE_LINE, lw=1.6)
+                for v, col in zip(pts[:, i], cols):
+                    ax.plot([v, v], [0, 0.08], color=col, lw=1.2)
+                ax.set_ylim(0, 1.05)
+                ax.set_yticks([])
+            else:                                   # knob pair: density + points
+                dens = kde(pts[ran][:, [j, i]], np.column_stack([gx.ravel(), gy.ravel()]))
+                ax.contourf(gx, gy, dens.reshape(gx.shape), levels=np.linspace(0.05, 1, 7),
+                            cmap=LinearSegmentedColormap.from_list("kde", [SURFACE, "#b9b7ad"]),
+                            zorder=0)
+                for c, v, col, r in zip(cases, pts, cols, ran):
+                    ax.plot(v[j], v[i], marker[c["kind"]], ms=6 if c["kind"] != "sampled" else 5,
+                            mfc=col if r else "none", mec=col, mew=1.2, zorder=3)
+                ax.set_ylim(*SAMPLE_LIM)
+            ax.set_xlim(*SAMPLE_LIM)
+            if i < n - 1:
+                ax.set_xticklabels([])
+            else:
+                ax.set_xlabel(ORDER[j])
+            if j > 0 and i != j:
+                ax.set_yticklabels([])
+            elif i != j:
+                ax.set_ylabel(ORDER[i])
+            tidy(ax)
+
+    # upper triangle: the profiles behind the points, and the kymin each case ran
+    units = {v: u for v, _, u in ITERDB_VARS.values()}
+    prof = {c["tag"]: iterdb_profiles(os.path.join(ped_root, c["tag"])) for c in cases}
+    for row, v in enumerate(("Te", "ne")):
+        ax = fig.add_subplot(gs[row, 2:])
+        lo, hi = np.inf, -np.inf
+        for c, col in zip(cases, cols):
+            pr = (prof[c["tag"]] or {}).get(v)
+            if pr is None:
+                continue
+            r, y = pr
+            ax.plot(r, y, color=col, lw=1.6 if c["kind"] == "ref" else 1.0,
+                    alpha=1.0 if c["kind"] != "corner" else 0.7,
+                    zorder=4 if c["kind"] == "ref" else 3)
+            win = (r >= PED_ZOOM[0]) & (r <= PED_ZOOM[1])
+            if win.any():
+                lo, hi = min(lo, np.nanmin(y[win])), max(hi, np.nanmax(y[win]))
+        ax.axvline(float(x0[0]), color=INK, ls=":", lw=1.4)
+        ax.set_xlim(*PED_ZOOM)
+        if np.isfinite(lo):
+            ax.set_ylim(lo - 0.05 * (hi - lo), hi + 0.05 * (hi - lo))
+        ax.set_title(rf"{v} [{units[v]}] vs $\rho_{{tor}}$, every case (profiles.iterdb)",
+                     loc="left", fontsize=10, color=INK)
+        if not row:
+            ax.set_xticklabels([])
+        tidy(ax)
+    ax = fig.add_subplot(gs[2, 3])
+    kys = [(k, col) for c, col in zip(cases, cols) for k in c["kymin"]]
+    if kys:
+        ky = np.array([k for k, _ in kys])
+        span = np.linspace(ky.min() - 0.1, ky.max() + 0.1, 300)
+        ax.fill_between(span, kde(ky[:, None], span[:, None], SAMPLE_KY_BW), color=GRID, lw=0)
+        for k, col in kys:
+            ax.plot([k, k], [0, 0.1], color=col, lw=1)
+    ax.set_ylim(0, 1.05)
+    ax.set_yticks([])
+    ax.set_xlabel(r"$k_y\rho_{ref}$ run")
+    ax.set_title(f"kymin density (bw {SAMPLE_KY_BW:g})", loc="left", fontsize=9, color=INK)
+    tidy(ax)
+
+    count = {k: sum(c["kind"] == k for c in cases) for k in marker}
+    handles = [Line2D([], [], ls="none", marker="s", color=MUTED, ms=6,
+                      label=f"corner ({count['corner']})"),
+               Line2D([], [], ls="none", marker="D", color=INK, ms=6,
+                      label=f"(1, 1, 1, 1) ref ({count['ref']})"),
+               Line2D([], [], ls="none", marker="o", color=cmap(0.5), ms=6,
+                      label=f"VURS pick ({count['sampled']}), by order"),
+               Line2D([], [], ls="none", marker="o", mfc="none", mec=MUTED, mew=1.2, ms=6,
+                      label=f"no GENE output yet ({int((~ran).sum())})"),
+               Line2D([], [], color=INK, ls=":", lw=1.4, label=f"x0 = {float(x0[0]):g}")]
+    handles.insert(3, Line2D([], [], color=SAMPLE_LINE, lw=1.6, label="VURS picks' density"))
+    handles.insert(4, Line2D([], [], color=GRID, lw=6, label="density of every case run"))
+    key = fig.add_subplot(gs[0, 1])                 # empty upper-triangle cell: the key
+    key.set_axis_off()
+    key.legend(handles=handles, loc="upper left", frameon=False, fontsize=8.5)
+    if count["sampled"]:
+        cax = key.inset_axes((0.05, 0.08, 0.9, 0.06))
+        cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), cax=cax,
+                          orientation="horizontal")
+        cb.set_label("VURS sampling order (first GENE output)", fontsize=8)
+        cb.ax.tick_params(labelsize=7)
+    fig.suptitle(f"NSTX {shot} sampled profile scalings at x0 = {float(x0[0]):g}: "
+                 f"{len(cases)} cases, {int(ran.sum())} with GENE output, "
+                 f"{len(kys)} runs (shading: kernel density, bw {SAMPLE_BW:g})",
+                 x=0.06, y=0.94, ha="left", fontsize=12, color=INK)
+    save(fig, out, "corners_sampling.png", written)
+
+    path = data_path(out, "corners_sampling.csv")
+    with open(path, "w") as fh:
+        fh.write(",".join(["case", *ORDER, "kind", "n_runs", "kymin", "first_output_utc"]) + "\n")
+        for c in cases:
+            when = ("" if np.isnan(c["time"]) else
+                    np.datetime_as_string(np.datetime64(int(c["time"]), "s")))
+            fh.write(",".join([c["tag"], *(f"{c[k]:g}" for k in ORDER), c["kind"],
+                               str(len(c["kymin"])), " ".join(f"{k:g}" for k in c["kymin"]),
+                               when]) + "\n")
+    written.append(path)
+
+
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
         nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL):
@@ -2010,6 +2214,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
+        plot_sampling(sampled_cases(diag_root, x0), ped_root, x0, shot, out, written)
     print("\nwrote\n  " + "\n  ".join(written))
     return ds
 
