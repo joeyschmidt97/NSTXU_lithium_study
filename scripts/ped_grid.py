@@ -101,7 +101,13 @@ def kind(p) -> str:
 
 
 def tag(p) -> str:
-    return "_".join("%s%.2f" % (k, p[k]) for k in KNOBS)
+    """'Teh1.20_Tew0.80_...'; a factor off the 0.01 grid (a VURS pick at 3
+    significant figures, e.g. 0.979) keeps its third decimal."""
+    return "_".join("%s%s" % (k, _factor(p[k])) for k in KNOBS)
+
+
+def _factor(v: float) -> str:
+    return "%.2f" % v if abs(v - round(v, 2)) < 1e-9 else "%.3f" % v
 
 
 def parse_tag(label: str) -> dict:
