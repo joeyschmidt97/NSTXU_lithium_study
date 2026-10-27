@@ -1,8 +1,10 @@
 """Save TPED quantity_info xarrays of GENE runs into the NSTX_discharge_data repo.
 
-Each GENE run under a diag dir is loaded with TPED (last time slice only, as in
-MGKDB_tools quantity_info_xarray), run through the same analysis chain
-(fingerprints, Epar, kperp, kperp(upar), QL weights), and saved as one netCDF:
+Each GENE run under a diag dir is loaded with TPED (last time slice only) and
+run through TPED's analysis registry (ANALYSES: fingerprints, epar, kperp,
+kperp_upar, ql_weight, mode_identifier, field_omega). The run's tree is
+flattened (sim.flat_xarray: raw parameters/omega/nrg/field/mom/geometry data
+plus every analysis node) and saved as one netCDF:
 
     <out-root>/<shot>/<path of the run relative to the diag dir>/quantity_info_NC_<suffix>.nc
 
@@ -11,10 +13,14 @@ scanfiles0001/parameters_0001 do not overwrite each other. --diag-dir may be an
 x0_<x0> folder (its name is kept in the output path) or any dir above the x0_*
 folders, e.g. .../129038/corners.
 
-Besides the analysis quantities, every scalar from the run's parameters file is
-saved (resolution nx0..nw0, n_procs_*, GENE's &info timing: step_time,
-'number of computed time steps' -> number_of_computed_time_steps, ...), plus
-cost_* variables derived from them (see add_cost).
+Parameters names are made netCDF-safe (GENE's &info 'number of computed time
+steps' -> number_of_computed_time_steps, ...), complex arrays are split into
+<name>_re / <name>_im, and cost_* variables are added (see add_cost). vsp is
+not loaded: it was ~97% of each file and no analysis reads it.
+
+field_omega gives every run a convergence measure: the field_phi fit over the
+last 30% of the run (fit_gamma/fit_omega with *_std, fit_verdict), GENE's state
+(omega_source), a converged flag, and gamma_best/omega_best for training.
 
     python -m NSTXU_lithium_study.scripts.build_discharge_data --shot 129038 --diag-dir /pscratch/.../129038/corners --out-root ~/NSTX_discharge_data --dry-run
     python -m NSTXU_lithium_study.scripts.build_discharge_data --shot 129038 --diag-dir /pscratch/.../129038/corners/x0_0.6737 --out-root ~/NSTX_discharge_data
@@ -29,15 +35,9 @@ import re
 import traceback
 from collections import defaultdict
 
-#: GENE files loaded per run, and what is read from them (MGKDB quantity_info set)
-FILETYPES = ['field', 'nrg', 'omega', 'geometry', 'mom', 'vsp']
-INPUT_QUANTITIES = {
-    'time_criteria': 'last',
-    'species': 'all',
-    'field_quantities': ['field_phi', 'field_apar', 'field_bpar'],
-    'mom_quantities': ['mom_upar', 'mom_tpar', 'mom_tperp'],
-    'nrg_quantities': ['Gamma_ES', 'Gamma_EM', 'Q_ES', 'Q_EM', 'n_mag', 'u_par_mag'],
-}
+#: TPED registry analyses run per run; each preloads the GENE files it declares
+ANALYSES = ['fingerprints', 'epar', 'kperp', 'kperp_upar', 'ql_weight',
+            'mode_identifier', 'field_omega']
 #: a run counts as stopped by its wall-clock limit past this fraction of timelim
 TIMELIM_FRAC = 0.98
 
@@ -59,23 +59,32 @@ def out_path(out_root: str, shot: int, subdir: str, param_file: str) -> str:
     return os.path.join(out_root, str(shot), subdir, f'quantity_info_NC_{suffix}.nc')
 
 
-def parameter_scalars(param_ds):
-    """Every 0-d parameter as a netCDF-safe variable: spaces in GENE's &info keys
-    become underscores, bools become int8, objects become str."""
+def netcdf_safe(ds, param_names):
+    """ds with every variable writable to netCDF.
+
+    Parameter names: non-word characters become underscores (GENE's &info keys
+    have spaces). bool -> int8, object -> str, longdouble -> float64, complex ->
+    <name>_re and <name>_im. Variable attrs that are not str/number/list become
+    JSON strings."""
+    import json
     import numpy as np
-    out = {}
-    for k, da in param_ds.data_vars.items():
-        if da.ndim:
-            continue
-        name = re.sub(r'\W+', '_', str(k).strip()).strip('_')
+    ds = ds.rename({k: re.sub(r'\W+', '_', str(k).strip()).strip('_')
+                    for k in param_names if k in ds.data_vars})
+    for k in list(ds.data_vars):
+        da = ds[k]
         if da.dtype == bool:
-            da = da.astype('i1')
+            ds[k] = da.astype('i1')
         elif da.dtype == object:
-            da = da.astype(str)
+            ds[k] = da.astype(str)
         elif da.dtype == np.longdouble:
-            da = da.astype(np.float64)
-        out[name] = da
-    return out
+            ds[k] = da.astype(np.float64)
+        elif np.iscomplexobj(da):
+            ds[f'{k}_re'], ds[f'{k}_im'] = da.real, da.imag
+            ds = ds.drop_vars(k)
+            continue
+        ds[k].attrs = {a: (v if isinstance(v, (str, int, float, np.number)) else json.dumps(v, default=str))
+                       for a, v in ds[k].attrs.items()}
+    return ds
 
 
 def add_cost(ds):
@@ -113,42 +122,17 @@ def add_cost(ds):
     return ds
 
 
-def build(param_files: list[str]) -> list:
-    """Load, analyse and sample param_files into netCDF-ready Datasets
-    (attrs['filepath'] names the parameters file each came from)."""
-    import numpy as np
-    from TPED.projects.GENE_sim_reader.src.GENE_sim_data import ParallelGeneMultiSimulations as PGMS
-    from TPED.projects.MGKDB_tools.src.upload.quantity_info_xarray import (
-        sampled_TPED_xarrays, prepare_attrs_for_netcdf)
-    from TPED.projects.GENE_sim_analysis.src.analysis.fingerprints_quantities import fingerprint_analysis
-    from TPED.projects.GENE_sim_analysis.src.analysis.E_par_calc import epar_calc
-    from TPED.projects.GENE_sim_analysis.src.analysis.kperp_calc import kperp_analysis
-    from TPED.projects.GENE_sim_analysis.src.analysis.ql_weight_calc import ql_weight_analysis
-    from TPED.projects.GENE_sim_analysis.src.analysis.kperp_upar_calc import kperp_upar_analysis
+def build(param_file: str):
+    """Load and analyse one run into a netCDF-ready Dataset."""
+    from TPED.projects.GENE_sim_analysis.src.sim_assembler import GeneSimulationPlus
+    from TPED.projects.MGKDB_tools.src.upload.quantity_info_xarray import prepare_attrs_for_netcdf
 
-    sims = PGMS(param_files)
-    sims.return_sim_xarray_list(filetypes_list=FILETYPES, input_quantities=INPUT_QUANTITIES)
-    # the analysis chain and the sampler read the pre-DataTree flat layout
-    flats = [s.flat_xarray for s in sims.list_sim_objects]
-    flats = fingerprint_analysis(flats, species='all')
-    flats = epar_calc(flats)
-    flats = kperp_analysis(flats)
-    flats = kperp_upar_analysis(flats)
-    flats = ql_weight_analysis(flats)
-    sampled = sampled_TPED_xarrays(flats)
-
-    out = []
-    for sim, ds in zip(sims.list_sim_objects, sampled):
-        for name, da in parameter_scalars(sim.tree['parameters'].to_dataset()).items():
-            if name not in ds:
-                ds[name] = da
-        ds = add_cost(ds)
-        for v in ds.data_vars:
-            if ds[v].dtype == np.longdouble:
-                ds[v] = ds[v].astype(np.float64)
-        ds.attrs = prepare_attrs_for_netcdf(ds.attrs)
-        out.append(ds)
-    return out
+    sim = GeneSimulationPlus(param_file)
+    sim.analysis(ANALYSES)
+    ds = netcdf_safe(sim.flat_xarray, list(sim.tree['parameters'].ds.data_vars))
+    ds = add_cost(ds)
+    ds.attrs = prepare_attrs_for_netcdf(ds.attrs)
+    return ds
 
 
 def jobs_from_paths_json(path: str | None, shots, x0s) -> list[tuple[int, str]]:
@@ -186,7 +170,7 @@ if __name__ == '__main__':
         if not jobs:
             raise SystemExit(f'no gene_run_paths.json entry matches --shot {args.shot} --x0 {args.x0}')
 
-    # one load per run folder (a scanfiles dir), so a bad folder costs only itself
+    # grouped by run folder (a scanfiles dir) for reporting; each run loads alone
     groups = defaultdict(list)
     for shot, diag in jobs:
         try:
@@ -210,17 +194,17 @@ if __name__ == '__main__':
     failed = []
     for (shot, sub), items in sorted(groups.items()):
         print(f'\n===== {shot}/{sub} =====')
-        try:
-            dests = {os.path.normpath(f): d for f, d in items}
-            for ds in build([f for f, _ in items]):
-                dest = dests[os.path.normpath(ds.attrs['filepath'])]
+        for f, dest in items:
+            try:
+                ds = build(f)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 ds.to_netcdf(dest)
-                print(f'saved {dest}')
-        except Exception:
-            traceback.print_exc()
-            failed.append(f'{shot}/{sub}')
-    print(f'\nbuilt {len(groups) - len(failed)}/{len(groups)} folders'
-          + (f'; failed: {", ".join(failed)}' if failed else ''))
+                print(f'saved {dest}  [{ds["omega_source"].item()}, fit {ds["fit_verdict"].item()}, '
+                      f'{ds["mode_ID"].item()}]')
+            except Exception:
+                traceback.print_exc()
+                failed.append(f)
+    print(f'\nbuilt {n - len(failed)}/{n} runs'
+          + (''.join(f'\n  failed: {f}' for f in failed) if failed else ''))
     if failed:
         raise SystemExit(1)
