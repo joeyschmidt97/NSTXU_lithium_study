@@ -7,18 +7,23 @@ the omega file, GENE's own line untouched, an earlier fit replaced), then runs
 plot_corners.run on it, so corners_growth_field.png and --field-fits always
 read fresh fits. --no-field-omega skips the fitting. The PNGs go to
 
-    sparse_grid_results/<shot>/x0_<x0>/          plots
-    sparse_grid_results/<shot>/x0_<x0>/data/     CSVs
+    sparse_grid_results/<shot>/x0_<x0>/corners/              the 16 corners (+ 1.00 ref)
+    sparse_grid_results/<shot>/x0_<x0>/batch1_16/, ...       VURS picks, 16 per folder in
+                                                             sampling order, same plots;
+                                                             the last folder fills up
+    sparse_grid_results/<shot>/x0_<x0>/sampling.png          every case, corners and picks
+    .../data/                                                CSVs beside each
 
 An entry with nz_compare = N also gets the same field fits and plots for its
 nz0 = N runs (nz_root, or <diag_root>_nz<N>), so that scan can be inspected on
 its own (--no-nz-subdir skips it):
 
-    sparse_grid_results/<shot>/x0_<x0>/nz<N>/    plots (+ data/)
+    sparse_grid_results/<shot>/x0_<x0>/nz<N>/    the same layout
 
-Then, per discharge, the quick look across radii: each plot in SUMMARY of every
-x0_<x0>/ folder of that discharge side by side (1 x N, smallest x0 left), from
-the PNGs already there, so a radius not replotted this run still shows:
+Then, per discharge, the quick look across radii: each corner plot in SUMMARY
+(and sampling.png) of every x0_<x0>/ folder of that discharge side by side (1 x N,
+smallest x0 left), from the PNGs already there, so a radius not replotted this
+run still shows:
 
     sparse_grid_results/<shot>/summary_<plot>.png
 
@@ -57,9 +62,10 @@ OPTIONS = ("modes", "mode_extent", "field_fits", "spread", "max_params")
 SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "field_fits")
 #: two x0 are the same scan when closer than this (rho_tor)
 X0_TOL = 1e-4
-#: plots put side by side across radii in <shot>/summary_<plot>.png
-SUMMARY = ("corners_growth", "corners_growth_field", "corners_mode_structure",
-           "corners_mode_scaling", "corners_sampling")
+#: plots put side by side across radii in <shot>/summary_<plot>.png, as paths
+#: under x0_<x0>/ without .png
+SUMMARY = ("corners/corners_growth", "corners/corners_growth_field",
+           "corners/corners_mode_structure", "corners/corners_mode_scaling", "sampling")
 SUMMARY_DPI = 100
 
 
@@ -153,7 +159,8 @@ def summarize(shot: int, out_root: str = HERE) -> list[str]:
             continue
     written = []
     for plot in SUMMARY:
-        found = [(x0, os.path.join(shot_dir, name, f"{plot}.png")) for x0, name in sorted(folders)]
+        found = [(x0, os.path.join(shot_dir, name, *f"{plot}.png".split("/")))
+                 for x0, name in sorted(folders)]
         found = [(x0, p) for x0, p in found if os.path.isfile(p)]
         if not found:
             continue
@@ -171,7 +178,7 @@ def summarize(shot: int, out_root: str = HERE) -> list[str]:
             fig.text((left + 20) / w, 1 - 15 / h, f"x0 = {x0:g}", ha="left", va="top",
                      fontsize=20, fontweight="bold")
             left += im.shape[1]
-        path = os.path.join(shot_dir, f"summary_{plot}.png")
+        path = os.path.join(shot_dir, f"summary_{os.path.basename(plot)}.png")
         fig.savefig(path, dpi=SUMMARY_DPI)
         plt.close(fig)
         written.append(path)

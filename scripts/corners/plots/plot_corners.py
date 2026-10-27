@@ -7,7 +7,8 @@ Reads every corner corner_gene_scan.py launched,
     profiles      <ped-root>/<tag>/profiles.iterdb   (what GENE read, prof_type -2)
     q             <ped-root>/<tag>/*_CH_COCOS*.geqdsk (the cheaseBS equilibrium GENE read)
 
-into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
+into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/corners/
+(the same plots for each VURS batch go to <out>/batch<i>_<j>/, see below)
 
     corners_growth.png          gamma and omega vs ky, all corners, GENE-converged ky only
     corners_growth_field.png    the same with the field-fit guess (+-1 std) at every
@@ -62,14 +63,20 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 each matched to the corner of the same profile
                                 scaling (tag); the line is this scan, at its own nz0
                                 read from its parameters; + corners_nz<N>.csv
-    corners_sampling.png        where the scan has sampled: every case dir under
+    sampling.png (in <out>/)    where the scan has sampled: every case dir under
                                 x0_<x0>/ (corners, reference, VURS picks, which the
                                 other plots leave out) as a corner plot of the four
                                 knobs, points over their kernel density, VURS picks
                                 coloured by the order GENE first wrote them, hollow
                                 when GENE has written nothing yet; beside it the Te
                                 and ne pedestal of every case and the kymin density;
-                                + corners_sampling.csv
+                                + sampling.csv
+
+VURS picks (every case dir under x0_<x0>/ off the corner levels and not the
+reference) are plotted in batches of BATCH in the order GENE first wrote them,
+<out>/batch1_16/, <out>/batch17_32/, ...: the same plots as the corners, with
+the reference, one line style per pick. The last batch keeps its name and fills
+up as picks arrive. The 2x and nz0 comparisons are drawn for the corners only.
 
 Every CSV is written to <out>/data/, beside the plots.
 
@@ -224,6 +231,9 @@ HEIGHT_SHADE = {(0.8, 0.8): -0.35, (0.8, 1.2): -0.12, (1.2, 0.8): 0.15, (1.2, 1.
 HEIGHT_LS = {(0.8, 0.8): (0, ()), (0.8, 1.2): (0, (6, 2.5)), (1.2, 0.8): (0, (1.2, 1.8)),
              (1.2, 1.2): (0, (7, 2, 1.5, 2))}
 NEH_MARKER = {0.8: "o", 1.2: "s"}
+#: VURS batches: slot i of a batch takes hue i // 4, shade and line style i % 4 (the
+#: corner scheme), and this marker per hue, so no two picks in a batch look alike.
+SLOT_MARKER = ("o", "s", "^", "v")
 GAMMA_CMAP = LinearSegmentedColormap.from_list("gamma", ["#008300", "#f0efec", "#e34948"])
 INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 #: The 1.00 scaling on every knob: no corner, the reference state the corners are
@@ -288,7 +298,7 @@ RES2_NUDGE = 0.012
 #: --nz-compare N: the nz0 = N corners are at <diag-root>_nz<N>/x0_<x0>/<tag>/ (e.g.
 #: corners_nz64 beside the nz0 = 128 corners)
 NZ_SUFFIX = "_nz{}"
-#: corners_sampling.png: the corner knob levels (anything else off 1.00 is a VURS
+#: sampling.png: the corner knob levels (anything else off 1.00 is a VURS
 #: pick), the knob axis range, the Gaussian KDE widths in knob and kymin units, and
 #: the colour map of the VURS sampling order
 CORNER_LEVELS = (0.8, 1.2)
@@ -298,6 +308,10 @@ SAMPLE_KY_BW = 0.05
 SAMPLE_CMAP = "viridis"
 SAMPLE_LINE = "#6250d6"
 KYMIN_RE = re.compile(r"^\s*kymin\s*=\s*([-+\d.eE]+)", re.M)
+#: --out subfolder of the corner plots; VURS picks go in batch<i>_<j>/ beside it,
+#: BATCH per folder in sampling order (16, as many as the corners)
+CORNER_DIR = "corners"
+BATCH = 16
 #: subfolder of --out that every CSV is written to
 DATA_DIR = "data"
 MODE_SHORT = {"ITG_TEM": "IT", "ETG": "ETG", "KBM": "KBM", "MTM": "MTM", "unidentified": "?"}
@@ -326,15 +340,25 @@ def shade(hex_color: str, amount: float):
     return tuple(c * (1 + amount) if amount < 0 else c + (1 - c) * amount)
 
 
+def is_corner(p) -> bool:
+    return all(p[k] in CORNER_LEVELS for k in ORDER)
+
+
 def style(p) -> dict:
     if is_ref(p):
         return dict(REF_STYLE)
+    if not is_corner(p):                           # a VURS pick: its slot in the batch
+        i = int(p.get("slot", 0))
+        hue = list(WIDTH_HUES.values())[(i // 4) % 4]
+        height = list(HEIGHT_LS)[i % 4]
+        return {"color": shade(hue, HEIGHT_SHADE[height]), "ls": HEIGHT_LS[height],
+                "marker": SLOT_MARKER[(i // 4) % 4]}
     return {"color": shade(WIDTH_HUES[(p["Tew"], p["new"])], HEIGHT_SHADE[(p["Teh"], p["neh"])]),
             "ls": HEIGHT_LS[(p["Teh"], p["neh"])], "marker": NEH_MARKER[p["neh"]]}
 
 
 def point_of(ds, corner) -> dict:
-    return {k: float(ds[k].sel(corner=corner)) for k in ORDER}
+    return {k: float(ds[k].sel(corner=corner)) for k in (*ORDER, "slot")}
 
 
 def corner_rows(ds) -> np.ndarray:
@@ -552,16 +576,21 @@ def integer_crossings(x, y, n):
 # ----------------------------------------------------------------------------- dataset
 
 def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
-                 modes=False, field_fits=False, shot=SHOT) -> xr.Dataset:
+                 modes=False, field_fits=False, shot=SHOT, points=None,
+                 scan="corners") -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
     ds.set_index(corner=["Tew", "new", "Teh", "neh"]).unstack("corner") gives
     the 4D box. The reference case (REF), when it has GENE output or profiles,
     comes first with reference = True.
+
+    points: the cases to read instead of the corners, in that order (a VURS
+    batch), the reference still first; scan names them in titles. slot is each
+    case's place in that order (its style when it is no corner).
     """
     gene, prof, pts = {}, {}, []
-    for p in [REF] + ordered(corners()):
+    for p in [REF] + (ordered(corners()) if points is None else list(points)):
         name = tag(p)
         g = gene_corner(os.path.join(diag_root, x0_label(x0), name), field_fits)
         pr = iterdb_profiles(os.path.join(ped_root, name))
@@ -583,7 +612,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
         if pr is not None:
             prof[name] = pr
         pts.append(p)
-    if not pts:
+    if not pts or (points is not None and all(is_ref(p) for p in pts)):
         raise SystemExit(f"no corner found under {diag_root} or {ped_root}")
 
     names = [tag(p) for p in pts]
@@ -596,6 +625,8 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
     ds = xr.Dataset(coords={"corner": names, "ky": ("ky", ky, {"long_name": "kymin rho_ref"}),
                             **{k: ("corner", [p[k] for p in pts]) for k in ORDER},
                             "label": ("corner", [label(p) for p in pts]),
+                            "slot": ("corner", [sum(not is_ref(q) for q in pts[:i])
+                                                for i in range(len(pts))]),
                             "reference": ("corner", [is_ref(p) for p in pts])})
     ds["gamma"] = (("corner", "ky"), [on_ky(n, 0, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["omega"] = (("corner", "ky"), [on_ky(n, 1, np.nan) for n in names], {"units": "c_ref/L_ref"})
@@ -649,7 +680,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
     ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root,
-                    field_fits=int(field_fits), shot=int(shot))
+                    field_fits=int(field_fits), shot=int(shot), scan=scan)
     if modes and gene:
         print("\nmode_identifier (TPED) per ky:")
         ds = add_modes(ds)
@@ -768,7 +799,7 @@ def plot_growth(ds, out, written, guesses=False):
         handles = [Line2D([], [], lw=1.8, ms=5.5, **style(point_of(ds, c)), label=str(l))
                    for c, l in zip(ds.corner.values, ds.label.values)]
     legend_right(fig, handles, extra)
-    fig.suptitle(f"NSTX {ds.shot} corners, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan}, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
     save(fig, out, name, written)
@@ -875,14 +906,15 @@ def plot_mode_scaling(ds, out, written):
         tab.text(k * 1.9 + 1.6, -1.72, MODE_SHORT.get(mode, mode), fontsize=7, va="center", color=INK,
                  clip_on=False)
 
-    groups = [(k, v) for k in ORDER for v in (0.8, 1.2)]
+    groups = [(k, side) for k in ORDER for side in ("<1", ">1")]
+    side = {g: (ds[g[0]].values < 1) if g[1] == "<1" else (ds[g[0]].values > 1) for g in groups}
     xs = np.array([i + 0.6 * (i // 2) for i in range(len(groups))])
     bottom = np.zeros(len(groups))
-    labelled = [(m[ds[k].values == v] != "").sum() for k, v in groups]
+    labelled = [(m[side[g]] != "").sum() for g in groups]
     rows = []
     for mode in found:
-        frac = np.array([(m[ds[k].values == v] == mode).sum() / max(t, 1)
-                         for (k, v), t in zip(groups, labelled)])
+        frac = np.array([(m[side[g]] == mode).sum() / max(t, 1)
+                         for g, t in zip(groups, labelled)])
         bars.bar(xs, frac, 0.8, bottom=bottom, color=MODE_COLOR[mode], edgecolor=SURFACE,
                  lw=1, label=mode, zorder=3)
         for x, f, b in zip(xs, frac, bottom):
@@ -892,14 +924,17 @@ def plot_mode_scaling(ds, out, written):
                           color="white" if np.mean(to_rgb(MODE_COLOR[mode])) < 0.55 else INK)
         bottom += frac
         rows.append((mode, frac))
-    bars.set_xticks(xs, [f"{k}\n{v:g}" for k, v in groups], fontsize=8)
+    corner_scan = all(is_corner(point_of(ds, c)) or is_ref(point_of(ds, c))
+                      for c in ds.corner.values)
+    level = {"<1": "0.8", ">1": "1.2"} if corner_scan else {"<1": "<1", ">1": ">1"}
+    bars.set_xticks(xs, [f"{k}\n{level[v]}" for k, v in groups], fontsize=8)
     bars.set_ylim(0, 1.02)
     bars.set_ylabel("share of labelled ky")
     bars.set_title("mode mix at each knob level (all other knobs pooled)", loc="left",
                    fontsize=10, color=INK)
     bars.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(bars)
-    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: profile scaling vs mode",
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: profile scaling vs mode",
                  x=0.02, ha="left", fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, out, "corners_mode_scaling.png", written)
@@ -908,7 +943,7 @@ def plot_mode_scaling(ds, out, written):
     with open(path, "w") as fh:
         fh.write("knob,level,labelled_ky," + ",".join(found) + "\n")
         for g_i, ((k, v), t) in enumerate(zip(groups, labelled)):
-            fh.write(f"{k},{v:g},{t}," + ",".join(f"{fr[g_i]:.3f}" for _, fr in rows) + "\n")
+            fh.write(f"{k},{level[v]},{t}," + ",".join(f"{fr[g_i]:.3f}" for _, fr in rows) + "\n")
     written.append(path)
 
 
@@ -985,7 +1020,7 @@ def plot_q_offset(ds, out, written):
                  color=INK)
     sc.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(sc)
-    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: q = m/n overlap", x=0.02, ha="left",
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: q = m/n overlap", x=0.02, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, out, "corners_q_offset.png", written)
@@ -1125,7 +1160,7 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
                ncol=min(len(handles), 5), bbox_to_anchor=(0.56, 0.0))
     fig.text(0.56, 0.58 / height, r"$k_y\rho_{ref}$  (each cell: ballooning angle $z/\pi$ over the whole "
              "domain, last field time)", ha="center", fontsize=9, color=INK)
-    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: mode structure along the field line,"
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: mode structure along the field line,"
                  f" rows {LEGEND_TITLE}\n{n_cut} cell(s) with an end above {tol:g}; "
                  "text: mode (under --modes) and gamma", x=0.02, ha="left", fontsize=11,
                  color=INK)
@@ -1200,7 +1235,7 @@ def plot_mode_extent(ds, out, written, tol=EXTENT_TOL, profiles=None, nx0=()):
     axes[-1].legend(handles=handles, frameon=False, fontsize=8, loc="upper center", ncol=4,
                     bbox_to_anchor=(0.5, -0.32))
     nx0_txt = ", ".join(f"{x:g}" for x in sorted(x for x in nx0 if x is not None)) or "?"
-    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: mode extent along the field line "
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: mode extent along the field line "
                  f"(nx0 = {nx0_txt})\nend values below {EXTENT_FLOOR:g} are drawn at it",
                  x=0.02, ha="left", fontsize=12, color=INK)
     save(fig, out, "corners_mode_extent.png", written)
@@ -1336,7 +1371,7 @@ def plot_vspace_edge(ds, out, written, tol=VSP_TOL):
     fig.legend(handles=handles, frameon=False, fontsize=8, loc="outside lower center", ncol=5)
     grid_txt = "; ".join(f"nv0 = {g[0]:g}, nw0 = {g[1]:g}, lv = {g[2]:g}, lw = {g[3]:g}"
                          for g in sorted({g for g in grids.values() if None not in g}))
-    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: f at the velocity-box edges "
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: f at the velocity-box edges "
                  f"(vsp, last time, max over z)\n{grid_txt or 'grid ?'}; values below "
                  f"{EXTENT_FLOOR:g} are drawn at it", x=0.02, ha="left", fontsize=12, color=INK)
     save(fig, out, "corners_vspace_edge.png", written)
@@ -1677,7 +1712,7 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
         extra.append(Line2D([], [], ls="none", marker="x", color=MUTED, ms=7, mew=1.8,
                             label=f"{alt}, no field output yet"))
     legend_right(fig, handles, extra)
-    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: {what} "
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: {what} "
                  f"({alt} not converged: live field fit)", x=0.02, ha="left", fontsize=12,
                  color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.97))
@@ -1766,7 +1801,7 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
                for c, l in zip(ds.corner.values, ds.label.values)]
     legend_right(fig, handles, [Line2D([], [], color=INK, ls=":", lw=1.4,
                                        label=f"x0 = {ds.x0:g}")])
-    fig.suptitle(f"NSTX {ds.shot} corner profiles (profiles.iterdb)"
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} profiles (profiles.iterdb)"
                  + (f", rho_tor {xlim[0]:g}-{xlim[1]:g}" if name.endswith("_ped.png") else ""),
                  x=0.04, ha="left", fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
@@ -2059,9 +2094,9 @@ def plot_sampling(cases, ped_root, x0, shot, out, written):
 
     Corners are grey squares, the reference a black diamond, VURS picks circles
     coloured by when GENE first wrote them (dark = first), hollow where GENE
-    has written nothing yet; + corners_sampling.csv."""
+    has written nothing yet; + sampling.csv."""
     if not cases:
-        print("no case dirs to place; corners_sampling.png skipped")
+        print("no case dirs to place; sampling.png skipped")
         return
     cols, norm, cmap = sample_colours(cases)
     ran = np.array([np.isfinite(c["time"]) for c in cases])
@@ -2171,9 +2206,9 @@ def plot_sampling(cases, ped_root, x0, shot, out, written):
                  f"{len(cases)} cases, {int(ran.sum())} with GENE output, "
                  f"{len(kys)} runs (shading: kernel density, bw {SAMPLE_BW:g})",
                  x=0.06, y=0.94, ha="left", fontsize=12, color=INK)
-    save(fig, out, "corners_sampling.png", written)
+    save(fig, out, "sampling.png", written)
 
-    path = data_path(out, "corners_sampling.csv")
+    path = data_path(out, "sampling.csv")
     with open(path, "w") as fh:
         fh.write(",".join(["case", *ORDER, "kind", "n_runs", "kymin", "first_output_utc"]) + "\n")
         for c in cases:
@@ -2185,38 +2220,75 @@ def plot_sampling(cases, ped_root, x0, shot, out, written):
     written.append(path)
 
 
+def batches(cases, size=BATCH) -> list[tuple[str, list[dict]]]:
+    """The VURS picks of sampled_cases in sampling order, in groups of *size*:
+    [('batch1_16', points), ('batch17_32', points), ...]. A batch is named for
+    its whole range, so the last one keeps its name while it fills up."""
+    picks = [{k: c[k] for k in ORDER} for c in cases if c["kind"] == "sampled"]
+    return [(f"batch{i + 1}_{i + size}", picks[i:i + size]) for i in range(0, len(picks), size)]
+
+
+def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots=(),
+              nz_compare=None, nz_root=None, mode_extent=False, vspace_edge=False,
+              vspace_tol=VSP_TOL):
+    """Every per-scan plot of one dataset (the corners, or a VURS batch) into out/."""
+    os.makedirs(out, exist_ok=True)
+    plot_growth(ds, out, written)
+    plot_growth(ds, out, written, guesses=True)
+    plot_profiles(ds, out, written)
+    plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
+    plot_s_alpha(ds, out, written)
+    plot_local(ds, out, written, spread, max_params)
+    plot_q_offset(ds, out, written)
+    plot_res2(ds, out, written, res2_roots)
+    if nz_compare:
+        plot_nz_compare(ds, out, written, nz_compare, nz_root)
+    if mode_extent:
+        profiles, nx0 = load_profiles(ds)
+        plot_mode_extent(ds, out, written, profiles=profiles, nx0=nx0)
+        plot_mode_structure(ds, out, written, profiles)
+    if vspace_edge:
+        plot_vspace_edge(ds, out, written, vspace_tol)
+    if "mode" in ds:
+        write_modes_csv(ds, out, written)
+        plot_mode_scaling(ds, out, written)
+
+
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
-        nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL):
+        nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH):
+    """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
+    and the sampling plot of all of them into <out>/. Returns the corner dataset
+    (None when there are no corners but batches were plotted)."""
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
-    ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot)
     os.makedirs(out, exist_ok=True)
     written: list[str] = []
+    cases = sampled_cases(diag_root, x0)
+    corner_ds, plotted = None, 0
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)       # all-NaN corners and rows
-        plot_growth(ds, out, written)
-        plot_growth(ds, out, written, guesses=True)
-        plot_profiles(ds, out, written)
-        plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
-        plot_s_alpha(ds, out, written)
-        plot_local(ds, out, written, spread, max_params)
-        plot_q_offset(ds, out, written)
-        plot_res2(ds, out, written, res2_roots)
-        if nz_compare:
-            plot_nz_compare(ds, out, written, nz_compare, nz_root)
-        if mode_extent:
-            profiles, nx0 = load_profiles(ds)
-            plot_mode_extent(ds, out, written, profiles=profiles, nx0=nx0)
-            plot_mode_structure(ds, out, written, profiles)
-        if vspace_edge:
-            plot_vspace_edge(ds, out, written, vspace_tol)
-        if "mode" in ds:
-            write_modes_csv(ds, out, written)
-            plot_mode_scaling(ds, out, written)
-        plot_sampling(sampled_cases(diag_root, x0), ped_root, x0, shot, out, written)
+        for name, pts in [(CORNER_DIR, None)] + batches(cases, batch):
+            print(f"\n===== {name} =====")
+            scan = "corners" if pts is None else f"VURS picks {name[5:].replace('_', '-')}"
+            try:
+                ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, pts, scan)
+            except SystemExit as exc:                  # no corner (or pick) has anything yet
+                print(exc)
+                continue
+            if pts is None:
+                corner_ds = ds
+                plot_scan(ds, os.path.join(out, name), written, spread, max_params, res2_roots,
+                          nz_compare, nz_root, mode_extent, vspace_edge, vspace_tol)
+            else:                                      # 2x and nz0 checks are corner-only
+                plot_scan(ds, os.path.join(out, name), written, spread, max_params,
+                          mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol)
+            plotted += 1
+        plot_sampling(cases, ped_root, x0, shot, out, written)
     print("\nwrote\n  " + "\n  ".join(written))
-    return ds
+    if not plotted:
+        raise SystemExit(f"no corner or VURS pick found under {diag_root} or {ped_root}")
+    return corner_ds
 
 
 if __name__ == "__main__":
