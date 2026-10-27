@@ -29,9 +29,10 @@ corner_gene_scan.TIMELIM_MARGIN), not a SLURM limit: rounds x (cheaseBS +
 walltime) has to fit the allocation. A ky that hits timelim still counts
 through its field fit and std.
 
-Every suggested value (scalings and kymin) is rounded to 3 significant figures
-(0.9913 -> 0.991, 0.06512 -> 0.0651), which is what the case name, the cheaseBS
-geomfile name and GENE's input hold, so the point suggested is the point run.
+Every suggested value (scalings and kymin) is rounded to 3 decimals
+(0.9913 -> 0.991, 1.0338 -> 1.034, 0.06512 -> 0.065), which is what the case
+name, the cheaseBS geomfile name and GENE's input hold, so the point suggested
+is the point run.
 Two jobs that round to the same case in one round would share an output dir;
 the later one is dropped. A job whose cheaseBS fails is dropped and its points
 held, so later rounds do not suggest it again.
@@ -83,7 +84,7 @@ def time_left() -> int | None:
 def pick(diag_x0, n_jobs, ky_per_job, model, seed, hold, clip_min=0.):
     """(run table, job table with case tags) for one round."""
     picker = ScanPointPicker(model, DEFAULT_AXES, QoISpec("gamma", "max_over_ky"),
-                             log_axes=["kymin"], clip_min=clip_min, sig_figs=3,
+                             log_axes=["kymin"], clip_min=clip_min, decimals=3,
                              seed=seed)
     picker.fit(diag_x0, hold=hold)
     jobs = picker.suggest_jobs(n_jobs, ky_per_job, "kymin")

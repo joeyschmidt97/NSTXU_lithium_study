@@ -102,7 +102,7 @@ def kind(p) -> str:
 
 def tag(p) -> str:
     """'Teh1.20_Tew0.80_...'; a factor off the 0.01 grid (a VURS pick at 3
-    significant figures, e.g. 0.979) keeps its third decimal."""
+    decimals, e.g. 1.034) keeps its third decimal."""
     return "_".join("%s%s" % (k, _factor(p[k])) for k in KNOBS)
 
 
