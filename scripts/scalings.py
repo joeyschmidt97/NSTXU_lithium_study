@@ -296,8 +296,12 @@ def namelist_with_ncscal(ncscal: int, dest_dir: str) -> str:
         raise ValueError("no NCSCAL entry in %s to replace" % src)
     os.makedirs(dest_dir, exist_ok=True)
     dest = os.path.join(dest_dir, "chease_namelist_nstx_ncscal%d" % ncscal)
-    with open(dest, "w") as f:
+    # Parallel ped_grid runs (vurs_loop) share dest: write a private copy and
+    # swap it in, so no run ever reads a half-written namelist.
+    tmp = "%s.%d.tmp" % (dest, os.getpid())
+    with open(tmp, "w") as f:
         f.write(new)
+    os.replace(tmp, dest)
     return dest
 
 
