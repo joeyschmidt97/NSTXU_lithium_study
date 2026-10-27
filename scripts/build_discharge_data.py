@@ -14,7 +14,9 @@ x0_<x0> folder (its name is kept in the output path) or any dir above the x0_*
 folders, e.g. .../129038/corners.
 
 Parameters names are made netCDF-safe (GENE's &info 'number of computed time
-steps' -> number_of_computed_time_steps, ...), complex arrays are split into
+steps' -> number_of_computed_time_steps, ...), the corner folder name
+(Teh0.80_Tew0.80_neh0.80_new0.80) becomes Te_ped_scale, Te_width_scale,
+ne_ped_scale, ne_width_scale and attrs['corner_tag'], complex arrays are split into
 <name>_re / <name>_im, and cost_* variables are added (see add_cost). vsp is
 not loaded: it was ~97% of each file and no analysis reads it.
 
@@ -40,6 +42,11 @@ ANALYSES = ['fingerprints', 'epar', 'kperp', 'kperp_upar', 'ql_weight',
             'mode_identifier', 'field_omega']
 #: a run counts as stopped by its wall-clock limit past this fraction of timelim
 TIMELIM_FRAC = 0.98
+#: corner folder names, e.g. Teh0.80_Tew0.80_neh0.80_new0.80 (h = pedestal height, w = width)
+CORNER_TAG = re.compile(r'(?:(?:Te|Ti|ne)[hw]\d+(?:\.\d+)?_?)+')
+CORNER_AXIS = re.compile(r'(Te|Ti|ne)([hw])(\d+(?:\.\d+)?)')
+#: always written, NaN when the path has no corner tag, so runs concatenate
+CORNER_AXES = ['Te_ped_scale', 'Te_width_scale', 'ne_ped_scale', 'ne_width_scale']
 
 
 def find_runs(diag_dir: str, max_depth: int = 4) -> list[tuple[str, str]]:
@@ -87,6 +94,28 @@ def netcdf_safe(ds, param_names):
     return ds
 
 
+def corner_scales(param_file: str) -> tuple[str, dict]:
+    """(corner tag, {<prof>_<ped|width>_scale: value}) from the last folder in
+    param_file's path named like Teh0.80_Tew0.80_neh0.80_new0.80; ('', {})
+    without one."""
+    for part in reversed(os.path.normpath(os.path.dirname(param_file)).split(os.sep)):
+        if CORNER_TAG.fullmatch(part):
+            return part, {f'{p}_{"ped" if hw == "h" else "width"}_scale': float(v)
+                          for p, hw, v in CORNER_AXIS.findall(part)}
+    return '', {}
+
+
+def add_corner(ds, param_file: str):
+    """Corner multipliers as variables (CORNER_AXES always, NaN if absent) and
+    the folder name as attrs['corner_tag']."""
+    import numpy as np
+    tag, scales = corner_scales(param_file)
+    for name in dict.fromkeys(CORNER_AXES + list(scales)):
+        ds[name] = scales.get(name, np.nan)
+    ds.attrs['corner_tag'] = tag
+    return ds
+
+
 def add_cost(ds):
     """cost_* variables from GENE's &info timing and the run's resolution.
 
@@ -131,6 +160,7 @@ def build(param_file: str):
     sim.analysis(ANALYSES)
     ds = netcdf_safe(sim.flat_xarray, list(sim.tree['parameters'].ds.data_vars))
     ds = add_cost(ds)
+    ds = add_corner(ds, param_file)
     ds.attrs = prepare_attrs_for_netcdf(ds.attrs)
     return ds
 
