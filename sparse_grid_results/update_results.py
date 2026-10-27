@@ -16,6 +16,15 @@ its own (--no-nz-subdir skips it):
 
     sparse_grid_results/<shot>/x0_<x0>/nz<N>/    plots (+ data/)
 
+Then, per discharge, the quick look across radii: each plot in SUMMARY of every
+x0_<x0>/ folder of that discharge side by side (1 x N, smallest x0 left), from
+the PNGs already there, so a radius not replotted this run still shows:
+
+    sparse_grid_results/<shot>/summary_<plot>.png
+
+--no-summary skips it; --summary-only rebuilds it from the PNGs on disk and
+plots nothing else (runs anywhere, no /pscratch needed).
+
 Every enabled entry by default; --shot and --x0 pick a subset (an x0 matches
 any shot that has it). One entry failing is reported and the rest still run.
 
@@ -27,6 +36,7 @@ any shot that has it). One entry failing is reported and the rest still run.
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --no-field-omega
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --no-nz-subdir
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --paths my_paths.json
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --summary-only
 """
 
 from __future__ import annotations
@@ -47,6 +57,10 @@ OPTIONS = ("modes", "mode_extent", "field_fits", "spread", "max_params")
 SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "field_fits")
 #: two x0 are the same scan when closer than this (rho_tor)
 X0_TOL = 1e-4
+#: plots put side by side across radii in <shot>/summary_<plot>.png
+SUMMARY = ("corners_growth", "corners_growth_field", "corners_mode_structure",
+           "corners_mode_scaling", "corners_sampling")
+SUMMARY_DPI = 100
 
 
 def load_entries(path: str = PATHS) -> list[dict]:
@@ -125,6 +139,46 @@ def update(e, out_root: str = HERE, nz: bool = False):
                   nz_compare=None if nz else e["nz_compare"], nz_root=e["nz_root"], **kw)
 
 
+def summarize(shot: int, out_root: str = HERE) -> list[str]:
+    """<out_root>/<shot>/summary_<plot>.png for each plot in SUMMARY: that PNG of
+    every x0_<x0>/ folder of the discharge, side by side at its own resolution,
+    smallest x0 left, each titled with its x0. A plot no radius has is skipped."""
+    import matplotlib.pyplot as plt
+    shot_dir = os.path.join(out_root, str(shot))
+    folders = []
+    for name in os.listdir(shot_dir) if os.path.isdir(shot_dir) else ():
+        try:
+            folders.append((float(name.removeprefix("x0_")), name))
+        except ValueError:
+            continue
+    written = []
+    for plot in SUMMARY:
+        found = [(x0, os.path.join(shot_dir, name, f"{plot}.png")) for x0, name in sorted(folders)]
+        found = [(x0, p) for x0, p in found if os.path.isfile(p)]
+        if not found:
+            continue
+        imgs = [(x0, plt.imread(p)) for x0, p in found]
+        title = 60                                  # px above each panel for its x0
+        w = sum(im.shape[1] for _, im in imgs)
+        h = max(im.shape[0] for _, im in imgs) + title
+        fig = plt.figure(figsize=(w / SUMMARY_DPI, h / SUMMARY_DPI), facecolor="white")
+        left = 0
+        for x0, im in imgs:                         # each panel at 1 image px per figure px
+            ax = fig.add_axes((left / w, (h - title - im.shape[0]) / h, im.shape[1] / w,
+                               im.shape[0] / h))
+            ax.imshow(im, interpolation="none")
+            ax.set_axis_off()
+            fig.text((left + 20) / w, 1 - 15 / h, f"x0 = {x0:g}", ha="left", va="top",
+                     fontsize=20, fontweight="bold")
+            left += im.shape[1]
+        path = os.path.join(shot_dir, f"summary_{plot}.png")
+        fig.savefig(path, dpi=SUMMARY_DPI)
+        plt.close(fig)
+        written.append(path)
+        print(f"    {path}  ({', '.join(f'{x0:g}' for x0, _ in imgs)})")
+    return written
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -138,6 +192,11 @@ if __name__ == "__main__":
     ap.add_argument("--out-root", default=HERE, help="results root; writes <shot>/x0_<x0>/ under it")
     ap.add_argument("--list", action="store_true",
                     help="print the selected entries and whether their paths exist; plot nothing")
+    ap.add_argument("--summary", default=True, action=argparse.BooleanOptionalAction,
+                    help="after plotting, <shot>/summary_<plot>.png: each plot of every x0 "
+                         "side by side")
+    ap.add_argument("--summary-only", action="store_true",
+                    help="only rebuild the summaries from the PNGs on disk; plot nothing else")
     for k, what in (("field_omega", "fit every ky's field trace and append it to its omega file "
                                     "before plotting (field_omega.py --write)"),
                     ("nz_subdir", "full field fits and plots for the nz_compare runs, "
@@ -158,6 +217,12 @@ if __name__ == "__main__":
     print("\n".join(describe(e) for e in entries))
     if args.list:
         raise SystemExit(0)
+    shots = sorted({e["shot"] for e in entries})
+    if args.summary_only:
+        for shot in shots:
+            print(f"\n===== {shot} summary =====")
+            summarize(shot, args.out_root)
+        raise SystemExit(0)
 
     jobs = [(e, False) for e in entries]
     jobs += [(e, True) for e in entries if e["nz_compare"] and e["nz_subdir"]]
@@ -170,6 +235,10 @@ if __name__ == "__main__":
         except (Exception, SystemExit) as exc:        # load_dataset exits when nothing is found
             traceback.print_exc() if isinstance(exc, Exception) else print(exc)
             failed.append(name)
+    if args.summary:
+        for shot in shots:
+            print(f"\n===== {shot} summary =====")
+            summarize(shot, args.out_root)
     done = len(jobs) - len(failed)
     print(f"\nupdated {done}/{len(jobs)}" + (f"; failed: {', '.join(failed)}" if failed else ""))
     if failed:
