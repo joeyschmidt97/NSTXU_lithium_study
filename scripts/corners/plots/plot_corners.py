@@ -45,6 +45,15 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/
                                 per corner and ky at a glance, outlined in its mode's
                                 colour, dashed where an end is above EXTENT_TOL, grey
                                 where not converged
+    corners_vspace_edge.png     (--vspace-edge) has f decayed by the edges of the velocity
+                                box? GENE's vsp <|f|^2>^1/2 (per species, over x and ky)
+                                at v_par = -lv (<) and +lv (>) (left) and at the top mu
+                                point, mu ~ lw (right), over its peak (last vsp time, max
+                                over z), against profile scaling, coloured by ky, one row
+                                per species; a large edge value means f is cut off by the
+                                box: grow lv (or nv0) for v_par, lw (or nw0) for mu;
+                                + corners_vspace_edge.csv (per-species ratios, pass/fail
+                                against --vspace-tol)
     corners_res2.png          (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
@@ -155,6 +164,7 @@ from matplotlib.lines import Line2D
 
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
 from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
+from TPED.projects.GENE_sim_reader.src.GENE_vsp_data import GeneVsp
 from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
 from TPED.projects.utils.read_iterdb import read_iterdb
 from TPED.projects.discharge_tools.src.filetypes.gfile_data import GFileData
@@ -247,6 +257,13 @@ EXTENT_TOL = 0.1
 EXTENT_CMAP = "viridis"
 EXTENT_FLOOR = 1e-6
 EXTENT_DX = 0.13
+#: corners_vspace_edge.png: edge / peak of <|f|^2>^1/2 above this fails (--vspace-tol).
+#: Tighter than EXTENT_TOL: F0 itself is down to exp(-lv^2) ~ 1e-4 at the default lv = 3,
+#: so a perturbation still at 1% of its peak there is carried by the box edge. A working
+#: threshold like EXTENT_TOL; tighten it if marginal runs change gamma when lv/lw grow.
+VSP_TOL = 1e-2
+#: the vsp quantity read (TPED GeneVsp name, species suffix added): <|f|^2>^1/2
+VSP_QUANT = "vsp_f2_mag"
 #: the fields corners_mode_extent.png and corners_mode_structure.png read, and the
 #: line colour of each in corners_mode_structure.png (palette slots 1 and 2)
 FIELDS = ("field_phi", "field_apar")
@@ -1187,6 +1204,149 @@ def plot_mode_extent(ds, out, written, tol=EXTENT_TOL, profiles=None, nx0=()):
     written.append(path)
 
 
+def vspace_edges(par_path: str) -> tuple[dict, tuple]:
+    """({species: (|f| at v_par = -lv, at v_par = +lv, at the top mu point) / max|f|},
+    (nv0, nw0, lv, lw)) of one run from its vsp file (TPED GeneVsp, <|f|^2>^1/2 summed
+    over x and ky, on (mu, v_par, z)), last vsp time; each edge value is its max over z
+    and along the edge. GENE's v_par grid is equidistant on [-lv, lv] ends included, so
+    its ends are the box edges; the top mu point is the box's lw end. ({}, ()) without
+    a vsp file."""
+    vsp = re.sub(r"parameters_(\d{4})$", r"vsp_\1", par_path)
+    if not os.path.isfile(vsp) or os.path.getsize(vsp) == 0:
+        return {}, ()
+    reader = GeneVsp(vsp)
+    vx = reader.vsp_filepath_to_xarray("last", "all", VSP_QUANT)
+    if vx is None:
+        return {}, ()
+    out = {}
+    for name in vx.data_vars:
+        f = np.abs(vx[name].values[-1])                 # (nw, nv, nz)
+        peak = f.max()
+        if peak > 0:
+            out[name.removeprefix(VSP_QUANT + "_")] = (float(f[:, 0].max() / peak),
+                                                       float(f[:, -1].max() / peak),
+                                                       float(f[-1].max() / peak))
+    return out, tuple(reader.param_dict.get(k) for k in ("nv0", "nw0", "lv", "lw"))
+
+
+def load_vspace_edges(ds) -> tuple[dict, dict]:
+    """{(corner index, ky index): vspace_edges ratios} and {(i, j): (nv0, nw0, lv, lw)}
+    for every run with a vsp file."""
+    edges, grids = {}, {}
+    for i in range(ds.sizes["corner"]):
+        for j in range(ds.sizes["ky"]):
+            path = str(ds.path.values[i, j])
+            if not path:
+                continue
+            try:
+                e, g = vspace_edges(path)
+            except Exception as exc:                # one unreadable vsp never sinks the plot
+                print(f"    vsp unreadable {path}: {type(exc).__name__}: {exc}")
+                continue
+            if e:
+                edges[i, j], grids[i, j] = e, g
+    return edges, grids
+
+
+def plot_vspace_edge(ds, out, written, tol=VSP_TOL):
+    """The velocity-space analog of corners_mode_extent.png: GENE's <|f|^2>^1/2 at the
+    edges of the (v_par, mu) box over its peak, per species (rows), against profile
+    scaling: left, v_par = -lv (<) just left of each corner's column and +lv (>) just
+    right; right, the top mu point (^). Coloured by ky, one log scale. Hollow: not
+    converged. Dashed: *tol*, above which f is cut off by the box (grow lv or nv0 for
+    v_par, lw or nw0 for mu). + data/corners_vspace_edge.csv with pass/fail per run."""
+    edges, grids = load_vspace_edges(ds)
+    if not edges:
+        print("no vsp files; corners_vspace_edge.png skipped (istep_vsp = 0?)")
+        return
+    ky = ds.ky.values
+    species = list(dict.fromkeys(s for e in edges.values() for s in e))
+    rows = sorted({i for i, _ in edges})
+    good = np.array(sorted({ky[j] for _, j in edges}))
+    norm = LogNorm(good.min(), good.max()) if good.min() > 0 and np.ptp(good) > 0 \
+        else Normalize(good.min() - 0.5, good.max() + 0.5)
+    cmap = plt.get_cmap(EXTENT_CMAP)
+    fig, axes = plt.subplots(len(species), 2, figsize=(max(14, 1.3 * len(rows) + 6),
+                                                       3.6 * len(species) + 2.2),
+                             sharex=True, sharey=True, squeeze=False, layout="constrained")
+    # left column: the v_par ends (index 0, 1 of a vspace_edges tuple); right: top mu (2)
+    panels = ((((0, -EXTENT_DX, "<"), (1, EXTENT_DX, ">")), r"$v_\parallel = \mp l_v$",
+               "lv or nv0"),
+              (((2, 0.0, "^"),), r"top $\mu$ ($\approx l_w$)", "lw or nw0"))
+    for s, spec in enumerate(species):
+        for ax, (sides, edge, grow) in zip(axes[s], panels):
+            n_bad = 0
+            for x, i in enumerate(rows):
+                for j, k in enumerate(ky):
+                    e = edges.get((i, j), {}).get(spec)
+                    if e is None:
+                        continue
+                    c = cmap(norm(k))
+                    conv = ds.status.values[i, j] == "ok"
+                    for idx, dx, mk in sides:
+                        ax.plot(x + dx, max(e[idx], EXTENT_FLOOR), mk, ms=7, mec=c, mew=1.4,
+                                mfc=c if conv else SURFACE, zorder=4)
+                    n_bad += max(e[idx] for idx, *_ in sides) > tol
+            ax.axhline(tol, color=INK, ls="--", lw=1, zorder=2)
+            ax.axhspan(tol, 1.5, color="#e34948", alpha=0.07, lw=0, zorder=0)
+            for x in range(1, len(rows)):
+                ax.axvline(x - 0.5, color=GRID, lw=0.8, zorder=1)
+            ax.set_yscale("log")
+            ax.set_ylim(top=1.5)
+            ax.set_title(f"{spec}: |f| at {edge} / peak; {n_bad} run(s) above {tol:g} "
+                         f"(grow {grow})", loc="left", fontsize=10, color=INK)
+            tidy(ax)
+        axes[s, 0].set_ylabel(r"$\langle|f|^2\rangle^{1/2}$ edge / peak")
+    for ax in axes[-1]:
+        ax.set_xticks(range(len(rows)), [str(ds.label.values[i]) for i in rows], rotation=35,
+                      ha="right", fontsize=8)
+        ax.set_xlabel(f"profile scaling {LEGEND_TITLE}")
+        ax.set_xlim(-0.6, len(rows) - 0.4)
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, fraction=0.03,
+                      pad=0.02)
+    cb.set_label(r"$k_y\rho_{ref}$")
+    cb.set_ticks(good, labels=[f"{k:g}" for k in good])
+    cb.minorticks_off()
+    handles = [Line2D([], [], ls="none", marker="<", color=MUTED, ms=7,
+                      label=r"$v_\parallel = -l_v$"),
+               Line2D([], [], ls="none", marker=">", color=MUTED, ms=7,
+                      label=r"$v_\parallel = +l_v$"),
+               Line2D([], [], ls="none", marker="^", color=MUTED, ms=7, label=r"top $\mu$"),
+               Line2D([], [], ls="none", marker="o", mfc=SURFACE, mec=MUTED, ms=7,
+                      label="hollow: not converged"),
+               Line2D([], [], color=INK, ls="--", lw=1, label=f"threshold {tol:g}")]
+    fig.legend(handles=handles, frameon=False, fontsize=8, loc="outside lower center", ncol=5)
+    grid_txt = "; ".join(f"nv0 = {g[0]:g}, nw0 = {g[1]:g}, lv = {g[2]:g}, lw = {g[3]:g}"
+                         for g in sorted({g for g in grids.values() if None not in g}))
+    fig.suptitle(f"NSTX {ds.shot} corners at x0 = {ds.x0:g}: f at the velocity-box edges "
+                 f"(vsp, last time, max over z)\n{grid_txt or 'grid ?'}; values below "
+                 f"{EXTENT_FLOOR:g} are drawn at it", x=0.02, ha="left", fontsize=12, color=INK)
+    save(fig, out, "corners_vspace_edge.png", written)
+
+    path = data_path(out, "corners_vspace_edge.csv")
+    per = [f"{sp}_{q}" for sp in species
+           for q in ("vpar_edge", "mu_edge", "vpar_minus", "vpar_plus")]
+    n_fail = 0
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky", "status", "nv0", "nw0", "lv", "lw", *per,
+                           "vpar_edge_worst", "mu_edge_worst", "vspace_pass"]) + "\n")
+        for (i, j), e in sorted(edges.items()):
+            vals = []
+            for sp in species:
+                m, p, mu = e.get(sp, (np.nan,) * 3)
+                vals += [max(m, p), mu, m, p]
+            vpar, mu = np.nanmax(vals[0::4]), np.nanmax(vals[1::4])
+            ok = vpar <= tol and mu <= tol
+            n_fail += not ok
+            fh.write(",".join([str(ds.corner.values[i]), *(f"{ds[x].values[i]:g}" for x in ORDER),
+                               f"{ky[j]:g}", str(ds.status.values[i, j]),
+                               *("" if g is None else f"{g:g}" for g in grids[i, j]),
+                               *(f"{v:.4g}" for v in vals), f"{vpar:.4g}", f"{mu:.4g}",
+                               "pass" if ok else "fail"]) + "\n")
+    written.append(path)
+    print(f"vspace edge: {n_fail}/{len(edges)} run(s) above {tol:g}")
+
+
 def _listdir(d):
     try:
         return os.listdir(d)
@@ -1823,7 +1983,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
-        nz_root=None, mode_extent=False):
+        nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL):
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot)
@@ -1845,6 +2005,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             profiles, nx0 = load_profiles(ds)
             plot_mode_extent(ds, out, written, profiles=profiles, nx0=nx0)
             plot_mode_structure(ds, out, written, profiles)
+        if vspace_edge:
+            plot_vspace_edge(ds, out, written, vspace_tol)
         if "mode" in ds:
             write_modes_csv(ds, out, written)
             plot_mode_scaling(ds, out, written)
@@ -1890,6 +2052,12 @@ if __name__ == "__main__":
                     help="corners_mode_extent.png: |phi|, |Apar| at the ballooning z ends over "
                          "their peak, per corner and ky; corners_mode_structure.png: the whole "
                          "|phi|, |Apar| along z per corner and ky (reads every field file)")
+    ap.add_argument("--vspace-edge", action="store_true",
+                    help="corners_vspace_edge.png: <|f|^2>^1/2 at the v_par = +-lv and top-mu "
+                         "edges of the velocity box over its peak, per species, corner and ky "
+                         "(reads every vsp file; needs istep_vsp > 0)")
+    ap.add_argument("--vspace-tol", type=float, default=VSP_TOL,
+                    help="edge / peak above which --vspace-edge marks a run as failing")
     ap.add_argument("--spread", type=float, default=SPREAD,
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
@@ -1898,4 +2066,5 @@ if __name__ == "__main__":
     d = shot_defaults(args.shot)
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
-        args.res2_root, args.nz_compare, args.nz_root, args.mode_extent)
+        args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
+        args.vspace_tol)
