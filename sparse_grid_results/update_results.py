@@ -80,6 +80,7 @@ def load_entries(path: str = PATHS) -> list[dict]:
             out.append({"shot": int(shot), "x0": float(x0), "label": f"x0_{float(x0):g}",
                         "enabled": e.get("enabled", True), "diag_root": e.get("diag_root"),
                         "ped_root": e.get("ped_root"), "res2_roots": tuple(e.get("res2_roots") or ()),
+                        "extra_roots": tuple(e.get("extra_roots") or ()),
                         "nz_compare": e.get("nz_compare"), "nz_root": e.get("nz_root"),
                         "field_omega": e.get("field_omega", defaults.get("field_omega", True)),
                         "nz_subdir": e.get("nz_subdir", defaults.get("nz_subdir", True)),
@@ -111,6 +112,7 @@ def describe(e) -> str:
     dirs = os.path.join(e["diag_root"] or "", e["label"])
     lines = [f"{e['shot']} {e['label']}" + ("" if e["enabled"] else "  (disabled)"),
              f"    GENE      {where(dirs)}", f"    profiles  {where(e['ped_root'])}"]
+    lines += [f"    ky        {where(os.path.join(p, e['label']))}" for p in e["extra_roots"]]
     lines += [f"    res2      {where(p)}" for p in e["res2_roots"]]
     if e["nz_compare"]:
         lines.append(f"    nz{e['nz_compare']:<7} {where(os.path.join(nz_root(e), e['label']))}")
@@ -122,7 +124,9 @@ def describe(e) -> str:
 def update(e, out_root: str = HERE, nz: bool = False):
     """Field fits (unless field_omega is off), then plot_corners.run on one entry,
     into <out_root>/<shot>/x0_<x0>/. nz=True does the same for the entry's
-    nz_compare runs, into <out_root>/<shot>/x0_<x0>/nz<N>/."""
+    nz_compare runs, into <out_root>/<shot>/x0_<x0>/nz<N>/. The field fits and plots
+    cover every ky_roots root (diag_root, its _ky* siblings, extra_roots); the nz
+    runs get only their own root's _ky* siblings."""
     from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
     d = pc.shot_defaults(e["shot"])
     diag_root = e["diag_root"] or d["diag_root"]
@@ -130,19 +134,23 @@ def update(e, out_root: str = HERE, nz: bool = False):
     if nz:
         diag_root = nz_root({**e, "diag_root": diag_root})
         out = os.path.join(out, f"nz{e['nz_compare']}")
+    extra = () if nz else e["extra_roots"]
     if e["field_omega"]:
         from NSTXU_lithium_study.scripts.corners.field_omega import field_omega as fo
         print("--- field fits (field_omega --write)")
-        try:
-            fo.run(diag_root, (e["x0"],), write=True)
-        except Exception:                             # plot what is recorded rather than nothing
-            traceback.print_exc()
-            print("field fits failed; plotting with the fits already in the omega files")
+        for root in pc.ky_roots(diag_root, extra):    # an extra-ky scan needs its fits too
+            try:
+                fo.run(root, (e["x0"],), write=True)
+            except Exception:                         # plot what is recorded rather than nothing
+                traceback.print_exc()
+                print(f"field fits failed under {root}; plotting with the fits already "
+                      "in the omega files")
     kw = {k: e[k] for k in OPTIONS if e[k] is not None}
     print("--- plots (plot_corners)")
     return pc.run(diag_root, e["ped_root"] or d["ped_root"], out=out, x0=(e["x0"],),
                   shot=e["shot"], res2_roots=() if nz else e["res2_roots"],
-                  nz_compare=None if nz else e["nz_compare"], nz_root=e["nz_root"], **kw)
+                  nz_compare=None if nz else e["nz_compare"], nz_root=e["nz_root"],
+                  extra_roots=extra, **kw)
 
 
 def summarize(shot: int, out_root: str = HERE) -> list[str]:

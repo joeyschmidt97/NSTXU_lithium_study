@@ -302,6 +302,11 @@ RES2_NUDGE = 0.012
 #: --nz-compare N: the nz0 = N corners are at <diag-root>_nz<N>/x0_<x0>/<tag>/ (e.g.
 #: corners_nz64 beside the nz0 = 128 corners)
 NZ_SUFFIX = "_nz{}"
+#: extra-ky scans (corner_gene_scan --diag-root <diag-root>_kyhi, _kylo, ...) beside
+#: the corners: their <tag>/scanfilesNNNN merge by ky with the corner's own. Only
+#: this suffix: _nz64, _res2, _test siblings are other grids and must never mix in.
+KY_SUFFIX = "_ky"
+NOT_KY_RE = re.compile(r"(?i)_nz\d+|_test|2x_?res|res_?2x|_res2(?!\d)")
 #: sampling.png: the corner knob levels (anything else off 1.00 is a VURS
 #: pick), the knob axis range, the Gaussian KDE widths in knob and kymin units, and
 #: the colour map of the VURS sampling order
@@ -445,10 +450,24 @@ def alpha_mhd(pr: dict) -> float:
     return pr.get("q0", np.nan) ** 2 * pr.get("major_R", np.nan) * dpdx
 
 
-def gene_corner(corner_dir: str, field_fits: bool = False):
+def ky_roots(diag_root: str, extra_roots=()) -> list[str]:
+    """diag_root, its <diag_root>_ky* siblings (extra-ky scans; no _nz/_res2/_test
+    grid), then extra_roots: every root whose x0_<x0>/<tag>/ holds this scan's runs."""
+    parent, base = os.path.split(diag_root.rstrip("/\\"))
+    roots = [diag_root] + [os.path.join(parent, d) for d in sorted(_listdir(parent))
+                           if d.startswith(base + KY_SUFFIX) and not NOT_KY_RE.search(d[len(base):])
+                           and os.path.isdir(os.path.join(parent, d))]
+    return roots + [r for r in extra_roots if r not in roots]
+
+
+def gene_corner(corner_dir, field_fits: bool = False):
     """({kymin: (gamma, omega, status, gamma_std, omega_std, parameters path,
-    *FIT_KEYS, field verdict, n0)}, local parameters) of one corner, or None."""
-    runs = gene_runs(corner_dir)
+    *FIT_KEYS, field verdict, n0)}, local parameters) of one corner, or None.
+
+    corner_dir may be a list: the same corner under several roots (ky_roots),
+    read in that order, so a ky run in two roots keeps the better one as below."""
+    dirs = [corner_dir] if isinstance(corner_dir, str) else list(corner_dir)
+    runs = [r for d in dirs for r in gene_runs(d)]
     if not runs:
         return None
     by_ky: dict[float, tuple] = {}
@@ -581,7 +600,7 @@ def integer_crossings(x, y, n):
 
 def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                  modes=False, field_fits=False, shot=SHOT, points=None,
-                 scan="corners") -> xr.Dataset:
+                 scan="corners", extra_roots=()) -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
@@ -592,11 +611,16 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
     points: the cases to read instead of the corners, in that order (a VURS
     batch), the reference still first; scan names them in titles. slot is each
     case's place in that order (its style when it is no corner).
+
+    GENE runs are read from every ky_roots(diag_root, extra_roots) root, merged by ky.
     """
     gene, prof, pts = {}, {}, []
+    roots = ky_roots(diag_root, extra_roots)
+    if len(roots) > 1:
+        print("GENE roots: " + ", ".join(os.path.basename(r.rstrip("/\\")) for r in roots))
     for p in [REF] + (ordered(corners()) if points is None else list(points)):
         name = tag(p)
-        g = gene_corner(os.path.join(diag_root, x0_label(x0), name), field_fits)
+        g = gene_corner([os.path.join(r, x0_label(x0), name) for r in roots], field_fits)
         pr = iterdb_profiles(os.path.join(ped_root, name))
         q = q_profile(os.path.join(ped_root, name))
         if q is not None:
@@ -610,7 +634,10 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
             print(f"--- {name}: no profiles.iterdb (GENE only)")
         if g is not None:
             st = {k: v[2] for k, v in sorted(g[0].items())}
+            used = [os.path.basename(r.rstrip("/\\")) for r in roots
+                    if any(v[5].startswith(os.path.join(r, "")) for v in g[0].values())]
             print(f"--- {name}: {sum(s == 'ok' for s in st.values())}/{len(st)} ky converged"
+                  + (f" (from {', '.join(used)})" if len(roots) > 1 else "")
                   + "".join(f"; ky={k:g} {s}" for k, s in st.items() if s != "ok"))
             gene[name] = g
         if pr is not None:
@@ -684,6 +711,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
     ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root,
+                    gene_roots="; ".join(roots),
                     field_fits=int(field_fits), shot=int(shot), scan=scan)
     if modes and gene:
         print("\nmode_identifier (TPED) per ky:")
@@ -2307,10 +2335,12 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
 
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
-        nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH):
+        nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH,
+        extra_roots=()):
     """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
     and the sampling plot of all of them into <out>/. Returns the corner dataset
-    (None when there are no corners but batches were plotted)."""
+    (None when there are no corners but batches were plotted). GENE runs come from
+    diag_root, its _ky* siblings and extra_roots (ky_roots)."""
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     os.makedirs(out, exist_ok=True)
@@ -2323,7 +2353,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             print(f"\n===== {name} =====")
             scan = "corners" if pts is None else f"VURS picks {name[5:].replace('_', '-')}"
             try:
-                ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, pts, scan)
+                ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, pts, scan,
+                                  extra_roots)
             except SystemExit as exc:                  # no corner (or pick) has anything yet
                 print(exc)
                 continue
@@ -2370,6 +2401,9 @@ if __name__ == "__main__":
     ap.add_argument("--res2-root", nargs="+", default=(),
                     help="more dirs to search for 2x-resolution runs (2XRES / _res2 in the "
                          "path) [<diag-root> and its _res2 siblings]")
+    ap.add_argument("--extra-root", nargs="+", default=(),
+                    help="more GENE roots whose x0_<x0>/<tag>/ runs merge by ky with the "
+                         "corners [<diag-root>_ky* siblings]")
     ap.add_argument("--nz-compare", type=int, default=None, metavar="N",
                     help="compare each corner with its nz0 = N run of the same profile "
                          "scaling (corners_nz<N>.png) [off]")
@@ -2395,4 +2429,4 @@ if __name__ == "__main__":
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
-        args.vspace_tol)
+        args.vspace_tol, extra_roots=args.extra_root)

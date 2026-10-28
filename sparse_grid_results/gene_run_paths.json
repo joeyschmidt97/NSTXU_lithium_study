@@ -3,6 +3,7 @@
     "GENE run paths behind update_results.py, one entry per discharge and x0 (rho_tor, as in the x0_<x0> folder name).",
     "diag_root:  GENE output root; corners are read from <diag_root>/x0_<x0>/<tag>/scanfilesNNNN (plot_corners --diag-root).",
     "ped_root:   ped_grid cheaseBS cases <tag>/ on scratch (profiles.iterdb, geqdsk) (plot_corners --ped-root).",
+    "extra_roots: more GENE roots whose x0_<x0>/<tag>/scanfilesNNNN merge by ky with the corners (optional). <diag_root>_ky* siblings (e.g. corners_kyhi, corners_kylo from corner_gene_scan --diag-root) are always read; _nz/_res2/_test siblings never.",
     "res2_roots: extra dirs searched for 2x-resolution runs, beside <diag_root> and its _res2 siblings.",
     "nz_compare: nz0 of the comparison runs (corners_nz<N>.png), or null; nz_root: their root, null for <diag_root>_nz<N>.",
     "field_omega: fit every ky's field trace and append it to its omega file (field_omega.py --write) before plotting.",
