@@ -176,6 +176,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, LogNorm, Normalize, to_rgb
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter
 
 from TPED.projects.GENE_sim_reader.src.GENE_sim_data import GeneSimulation
 from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
@@ -286,6 +287,9 @@ VSP_QUANT = "vsp_f2_mag"
 #: line colour of each in corners_mode_structure.png (palette slots 1 and 2)
 FIELDS = ("field_phi", "field_apar")
 STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
+#: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
+STRUCT_BOX_IN = 0.95
+STRUCT_MAX_W = 18
 #: 2x-resolution run dirs: 2XRES / 2x_res / res2x anywhere in the path, or the _res2
 #: suffix of corner_gene_scan.py --res-scale 2 and the dashboard's 2x button
 RES2_RE = re.compile(r"(?i)2x_?res|res_?2x|_res2(?!\d)")
@@ -1087,45 +1091,94 @@ def load_profiles(ds) -> tuple[dict, set]:
     return profiles, nx0
 
 
+def dodge(x, w) -> np.ndarray:
+    """Centres for boxes of width *w* at sorted positions *x*, moved as little as
+    possible so none overlap: touching boxes form a group, spaced *w* apart and
+    centred on the mean of their positions, until no two groups overlap."""
+    groups = [[v] for v in x]                     # each group: its members' positions
+    def first(g):
+        return np.mean(g) - w * (len(g) - 1) / 2
+    merged = True
+    while merged:
+        merged = False
+        for k in range(len(groups) - 1):
+            if first(groups[k]) + w * len(groups[k]) > first(groups[k + 1]) + 1e-12:
+                groups[k:k + 2] = [groups[k] + groups[k + 1]]
+                merged = True
+                break
+    return np.array([first(g) + w * q for g in groups for q in range(len(g))])
+
+
 def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
-    """|phi| and |Apar| along the field line per corner and ky, laid out as the
-    corners_mode_scaling.png table: each cell its run's ballooning eigenfunction
-    over the whole z domain, each field over its own peak (last field time), so a
-    column shows how profile scaling reshapes the mode. Border: the cell's mode
-    colour as in corners_mode_scaling.png (under --modes; grey without), dashed
-    when an end is above *tol* (cut off, grow nx0; red dashed if no mode). Grey
-    cell: not converged (the last snapshot, not a settled mode). Corner text:
-    mode (under --modes) and gamma."""
+    """|phi| and |Apar| along the field line per case and ky: one row per case,
+    each run's ballooning eigenfunction a small box centred at its kymin on one
+    log ky axis, so a case only draws the ky it ran (VURS picks each run their own
+    set) and a row shows how the mode changes with ky. Each field over its own
+    peak, last field time, whole z domain. Boxes are STRUCT_BOX_IN wide; where two
+    ky of a row sit closer the boxes are pushed apart, and a caret under each box
+    marks its true kymin (a leader joins them). Border: the cell's mode colour as
+    in corners_mode_scaling.png (under --modes; grey without), dashed when an end
+    is above *tol* (cut off, grow nx0; red dashed if no mode). Grey box: not
+    converged (the last snapshot, not a settled mode). Corner text: mode (under
+    --modes) and gamma."""
     ky, n = ds.ky.values, ds.sizes["corner"]
     rows = [i for i in range(n) if any((i, j) in profiles for j in range(ky.size))]
-    cols = [j for j in range(ky.size) if any((i, j) in profiles for i in rows)]
     if not rows:
         print("no field files; corners_mode_structure.png skipped")
         return
     m = ds["mode"].values if "mode" in ds else np.full((n, ky.size), "", dtype=object)
     gam, status = ds.gamma.values, ds.status.values
+
+    # kymin of each box in decades; boxes too close in a row are pushed apart (dodge)
+    lk = {i: np.log10([ky[j] for j in range(ky.size) if (i, j) in profiles]) for i in rows}
+    gaps = [g for x in lk.values() for g in np.diff(x)]
+    span = max(np.ptp(np.concatenate(list(lk.values()))), 0.3)
+    left, right = 0.15, 0.98
+    # wide enough that the closest pair sits STRUCT_BOX_IN apart, within the cap
+    width = float(np.clip((span / min(gaps, default=span) + 1) * STRUCT_BOX_IN / (right - left) + 0.5,
+                          9, STRUCT_MAX_W))
+    ax_in = width * (right - left)
+    box = STRUCT_BOX_IN * (span + 0.1) / (ax_in - STRUCT_BOX_IN)   # one box, in decades
+    at = {i: dodge(x, 1.06 * box) for i, x in lk.items()}           # box centres
+    lo = min(x.min() for x in at.values()) - box / 2 - 0.05
+    hi = max(x.max() for x in at.values()) + box / 2 + 0.05
     height = max(5.8, 0.62 * len(rows) + 2.5)        # inches; the bottom 0.85 holds two legend rows
-    fig = plt.figure(figsize=(max(9, 1.15 * len(cols) + 3), height))
-    grid = fig.add_gridspec(len(rows), len(cols), left=0.15, right=0.98, top=0.88,
-                            bottom=0.85 / height, wspace=0.06, hspace=0.08)
+    fig = plt.figure(figsize=(width, height))
+    bottom = 0.85 / height + 0.04
+    base = fig.add_axes((left, bottom, right - left, 1 - 0.95 / height - bottom))
+    base.set_xscale("log")
+    base.set_xlim(10 ** lo, 10 ** hi)
+    base.set_ylim(len(rows), 0)
+    base.set_yticks([r + 0.5 for r in range(len(rows))],
+                    [str(ds.label.values[i]) for i in rows], fontsize=8, color=INK)
+    base.tick_params(axis="y", length=0)
+    base.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    base.xaxis.set_minor_formatter(FuncFormatter(
+        lambda v, _: f"{v:g}" if round(v / 10 ** np.floor(np.log10(v))) in (2, 3, 5) else ""))
+    base.tick_params(axis="x", which="both", labelsize=8, colors=INK)
+    base.grid(axis="x", which="both", color=GRID, lw=0.6)
+    for r in range(1, len(rows)):
+        base.axhline(r, color=GRID, lw=0.6)
+    for side in ("top", "right", "left"):
+        base.spines[side].set_visible(False)
+    base.set_xlabel(r"$k_y\rho_{ref}$  (each box at its kymin: ballooning angle $z/\pi$ over the "
+                    "whole domain, last field time)", fontsize=9, color=INK)
+
     n_cut = 0
     for r, i in enumerate(rows):
-        for c, j in enumerate(cols):
-            ax = fig.add_subplot(grid[r, c])
+        js = [j for j in range(ky.size) if (i, j) in profiles]
+        for q, j in enumerate(js):
+            x, xb = lk[i][q], at[i][q]
+            # caret at the true kymin under the box, with a leader when the box was pushed
+            base.plot(10 ** x, r + 0.985, "^", ms=3.5, color=MUTED, zorder=1, clip_on=False)
+            if abs(xb - x) > 0.01:
+                base.plot([10 ** xb, 10 ** x], [r + 0.93, r + 0.97], color=MUTED, lw=0.6)
+            u = (xb - lo) / (hi - lo)
+            ax = base.inset_axes((u - box / (hi - lo) / 2, 1 - (r + 0.93) / len(rows),
+                                  box / (hi - lo), 0.86 / len(rows)))
             ax.set_xticks([])
             ax.set_yticks([])
-            if r == len(rows) - 1:
-                ax.set_xlabel(f"{ky[j]:g}", fontsize=8, color=INK)
-            if c == 0:
-                ax.set_ylabel(str(ds.label.values[i]), fontsize=8, color=INK, rotation=0,
-                              ha="right", va="center")
-            prof = profiles.get((i, j))
-            if prof is None:
-                ax.text(0.5, 0.5, "-", ha="center", va="center", fontsize=7, color=MUTED,
-                        transform=ax.transAxes)
-                for sp in ax.spines.values():
-                    sp.set_color(GRID)
-                continue
+            prof = profiles[i, j]
             z = prof["zgrid"]
             for f, colour in STRUCT_COLOR.items():
                 if f in prof:
@@ -1158,10 +1211,8 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
                 for x in MODE_COLOR if (m == x).any()]
     fig.legend(handles=handles, frameon=False, fontsize=8, loc="lower center",
                ncol=min(len(handles), 5), bbox_to_anchor=(0.56, 0.0))
-    fig.text(0.56, 0.58 / height, r"$k_y\rho_{ref}$  (each cell: ballooning angle $z/\pi$ over the whole "
-             "domain, last field time)", ha="center", fontsize=9, color=INK)
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: mode structure along the field line,"
-                 f" rows {LEGEND_TITLE}\n{n_cut} cell(s) with an end above {tol:g}; "
+                 f" rows {LEGEND_TITLE}\n{n_cut} box(es) with an end above {tol:g}; "
                  "text: mode (under --modes) and gamma", x=0.02, ha="left", fontsize=11,
                  color=INK)
     save(fig, out, "corners_mode_structure.png", written)
