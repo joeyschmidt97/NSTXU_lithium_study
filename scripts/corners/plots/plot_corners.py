@@ -290,6 +290,15 @@ STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 #: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
 STRUCT_BOX_IN = 0.95
 STRUCT_MAX_W = 18
+#: corners_mode_structure.png resolution block: the 5D grid of each run, one cell
+#: per key (STRUCT_RES_IN wide), shaded by its rank among every run in the plot on
+#: the reference palette's ordinal blue ramp (steps 250-700: the lightest still
+#: clears 2:1 on the surface); RES_SAME when the plot has one value of that key.
+RES_KEYS = ("nx0", "nky0", "nz0", "nv0", "nw0")
+STRUCT_RES_IN = 0.36
+RES_RAMP = ("#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab",
+            "#184f95", "#104281", "#0d366b")
+RES_SAME = "#e4e3df"
 #: 2x-resolution run dirs: 2XRES / 2x_res / res2x anywhere in the path, or the _res2
 #: suffix of corner_gene_scan.py --res-scale 2 and the dashboard's 2x button
 RES2_RE = re.compile(r"(?i)2x_?res|res_?2x|_res2(?!\d)")
@@ -1137,6 +1146,31 @@ def dodge(x, w) -> np.ndarray:
     return np.array([first(g) + w * q for g in groups for q in range(len(g))])
 
 
+def res_colors(values) -> dict:
+    """{value: colour} for one resolution key: the distinct values ranked, lowest
+    on the light end of RES_RAMP, highest on the dark end; RES_SAME for one value."""
+    vals = sorted({v for v in values if v is not None})
+    if len(vals) < 2:
+        return {v: RES_SAME for v in vals}
+    return {v: RES_RAMP[round(k * (len(RES_RAMP) - 1) / (len(vals) - 1))]
+            for k, v in enumerate(vals)}
+
+
+def structure_rows(ds, profiles) -> list[tuple]:
+    """(corner index, ky indices, RES_KEYS values) per row of corners_mode_structure.png:
+    one row per case, split into one row per grid when its runs differ (an extra-ky
+    scan at another resolution), rows of a case in order of their lowest ky."""
+    rows = []
+    for i in range(ds.sizes["corner"]):
+        groups: dict[tuple, list[int]] = {}
+        for j in range(ds.sizes["ky"]):
+            if (i, j) in profiles:
+                path = str(ds.path.values[i, j])
+                groups.setdefault(tuple(run_param(path, k) for k in RES_KEYS), []).append(j)
+        rows += sorted(((i, js, res) for res, js in groups.items()), key=lambda t: t[1][0])
+    return rows
+
+
 def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
     """|phi| and |Apar| along the field line per case and ky: one row per case,
     each run's ballooning eigenfunction a small box centred at its kymin on one
@@ -1148,55 +1182,94 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
     in corners_mode_scaling.png (under --modes; grey without), dashed when an end
     is above *tol* (cut off, grow nx0; red dashed if no mode). Grey box: not
     converged (the last snapshot, not a settled mode). Corner text: mode (under
-    --modes) and gamma."""
-    ky, n = ds.ky.values, ds.sizes["corner"]
-    rows = [i for i in range(n) if any((i, j) in profiles for j in range(ky.size))]
+    --modes) and gamma.
+
+    Left of each row, its grid (RES_KEYS), each key shaded by rank among all runs
+    in the plot (res_colors), so a coarse run stands out. A case whose runs used
+    different grids splits into one row per grid (structure_rows); each of those
+    rows is boxed, block and runs, so the runs on each grid read at a glance."""
+    ky = ds.ky.values
+    rows = structure_rows(ds, profiles)
     if not rows:
         print("no field files; corners_mode_structure.png skipped")
         return
+    n = ds.sizes["corner"]
     m = ds["mode"].values if "mode" in ds else np.full((n, ky.size), "", dtype=object)
     gam, status = ds.gamma.values, ds.status.values
+    split = {i for i, _, _ in rows if sum(i == i2 for i2, _, _ in rows) > 1}
+    shades = [res_colors(res[k] for _, _, res in rows) for k in range(len(RES_KEYS))]
 
     # kymin of each box in decades; boxes too close in a row are pushed apart (dodge)
-    lk = {i: np.log10([ky[j] for j in range(ky.size) if (i, j) in profiles]) for i in rows}
+    lk = {r: np.log10([ky[j] for j in js]) for r, (_, js, _) in enumerate(rows)}
     gaps = [g for x in lk.values() for g in np.diff(x)]
     span = max(np.ptp(np.concatenate(list(lk.values()))), 0.3)
-    left, right = 0.15, 0.98
-    # wide enough that the closest pair sits STRUCT_BOX_IN apart, within the cap
-    width = float(np.clip((span / min(gaps, default=span) + 1) * STRUCT_BOX_IN / (right - left) + 0.5,
-                          9, STRUCT_MAX_W))
-    ax_in = width * (right - left)
+    # the eigenfunction axes as before the block (0.15-0.98 of w0), the block added
+    # between the row labels and them
+    w0 = float(np.clip((span / min(gaps, default=span) + 1) * STRUCT_BOX_IN / 0.83 + 0.5,
+                       9, STRUCT_MAX_W))
+    blk_in = STRUCT_RES_IN * len(RES_KEYS)
+    width = w0 + blk_in + 0.15
+    label_in, ax_in = 0.15 * w0, 0.83 * w0
+    left = (label_in + blk_in + 0.15) / width
+    right = left + ax_in / width
     box = STRUCT_BOX_IN * (span + 0.1) / (ax_in - STRUCT_BOX_IN)   # one box, in decades
-    at = {i: dodge(x, 1.06 * box) for i, x in lk.items()}           # box centres
+    at = {r: dodge(x, 1.06 * box) for r, x in lk.items()}           # box centres
     lo = min(x.min() for x in at.values()) - box / 2 - 0.05
     hi = max(x.max() for x in at.values()) + box / 2 + 0.05
     height = max(5.8, 0.62 * len(rows) + 2.5)        # inches; the bottom 0.85 holds two legend rows
     fig = plt.figure(figsize=(width, height))
     bottom = 0.85 / height + 0.04
-    base = fig.add_axes((left, bottom, right - left, 1 - 0.95 / height - bottom))
+    top = 1 - 1.3 / height                            # three title lines, then the RES_KEYS heads
+    base = fig.add_axes((left, bottom, right - left, top - bottom))
     base.set_xscale("log")
     base.set_xlim(10 ** lo, 10 ** hi)
     base.set_ylim(len(rows), 0)
-    base.set_yticks([r + 0.5 for r in range(len(rows))],
-                    [str(ds.label.values[i]) for i in rows], fontsize=8, color=INK)
+    base.set_yticks([])
+
+    # resolution block: row labels on its left, the RES_KEYS as column heads
+    blk = fig.add_axes((label_in / width, bottom, blk_in / width, top - bottom))
+    blk.set_xlim(0, len(RES_KEYS))
+    blk.set_ylim(len(rows), 0)
+    blk.set_yticks([r + 0.5 for r in range(len(rows))],
+                   [str(ds.label.values[i]) if r == 0 or rows[r - 1][0] != i else ""
+                    for r, (i, _, _) in enumerate(rows)], fontsize=8, color=INK)
+    blk.set_xticks([k + 0.5 for k in range(len(RES_KEYS))], RES_KEYS, fontsize=7, color=INK)
+    blk.xaxis.tick_top()
+    blk.tick_params(length=0)
+    for sp in blk.spines.values():
+        sp.set_visible(False)
+    for r, (i, js, res) in enumerate(rows):
+        for k, v in enumerate(res):
+            c = shades[k].get(v, SURFACE)
+            blk.add_patch(plt.Rectangle((k + 0.06, r + 0.12), 0.88, 0.76, fc=c, ec="none"))
+            dark = c in RES_RAMP[4:]
+            blk.text(k + 0.5, r + 0.5, "–" if v is None else f"{v:g}", ha="center", va="center",
+                     fontsize=6.5, color="white" if dark else INK)
+        if i in split:                                # box block and runs of this grid
+            blk.add_patch(plt.Rectangle((0.01, r + 0.04), len(RES_KEYS) - 0.02, 0.92, fc="none",
+                                        ec=INK, lw=1.0))
+            x0b, x1b = 10 ** (at[r].min() - box / 2 - 0.02), 10 ** (at[r].max() + box / 2 + 0.02)
+            base.add_patch(plt.Rectangle((x0b, r + 0.04), x1b - x0b, 0.92, fc="none", ec=INK,
+                                         lw=1.0, zorder=0.5))
     base.tick_params(axis="y", length=0)
     base.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
     base.xaxis.set_minor_formatter(FuncFormatter(
         lambda v, _: f"{v:g}" if round(v / 10 ** np.floor(np.log10(v))) in (2, 3, 5) else ""))
     base.tick_params(axis="x", which="both", labelsize=8, colors=INK)
     base.grid(axis="x", which="both", color=GRID, lw=0.6)
-    for r in range(1, len(rows)):
-        base.axhline(r, color=GRID, lw=0.6)
+    for r in range(1, len(rows)):                     # dotted between rows of one case
+        same = rows[r][0] == rows[r - 1][0]
+        for a in (base, blk):
+            a.axhline(r, color=GRID, lw=0.6, ls=(0, (1, 2)) if same else "-")
     for side in ("top", "right", "left"):
         base.spines[side].set_visible(False)
     base.set_xlabel(r"$k_y\rho_{ref}$  (each box at its kymin: ballooning angle $z/\pi$ over the "
                     "whole domain, last field time)", fontsize=9, color=INK)
 
     n_cut = 0
-    for r, i in enumerate(rows):
-        js = [j for j in range(ky.size) if (i, j) in profiles]
+    for r, (i, js, _) in enumerate(rows):
         for q, j in enumerate(js):
-            x, xb = lk[i][q], at[i][q]
+            x, xb = lk[r][q], at[r][q]
             # caret at the true kymin under the box, with a leader when the box was pushed
             base.plot(10 ** x, r + 0.985, "^", ms=3.5, color=MUTED, zorder=1, clip_on=False)
             if abs(xb - x) > 0.01:
@@ -1241,7 +1314,9 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
                ncol=min(len(handles), 5), bbox_to_anchor=(0.56, 0.0))
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: mode structure along the field line,"
                  f" rows {LEGEND_TITLE}\n{n_cut} box(es) with an end above {tol:g}; "
-                 "text: mode (under --modes) and gamma", x=0.02, ha="left", fontsize=11,
+                 "text: mode (under --modes) and gamma\nleft: each row's grid, darker = "
+                 "higher among the runs here (grey: one value), boxed where a case's runs "
+                 "differ", x=0.02, ha="left", fontsize=11,
                  color=INK)
     save(fig, out, "corners_mode_structure.png", written)
 
