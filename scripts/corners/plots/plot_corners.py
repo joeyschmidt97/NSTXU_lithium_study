@@ -290,11 +290,12 @@ STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 #: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
 STRUCT_BOX_IN = 0.95
 STRUCT_MAX_W = 18
-#: corners_mode_structure.png resolution block: the 5D grid of each run, one cell
-#: per key (STRUCT_RES_IN wide), shaded by its rank among every run in the plot on
-#: the reference palette's ordinal blue ramp (steps 250-700: the lightest still
-#: clears 2:1 on the surface); RES_SAME when the plot has one value of that key.
-RES_KEYS = ("nx0", "nky0", "nz0", "nv0", "nw0")
+#: corners_mode_structure.png resolution block: the grid of each run (nky0 left out,
+#: always 1 in a linear run) and its velocity box lv, lw (the vspace-edge check's
+#: knobs), one cell per key (STRUCT_RES_IN wide), shaded by its rank among every run
+#: in the plot on the reference palette's ordinal blue ramp (steps 250-700: the
+#: lightest still clears 2:1 on the surface); RES_SAME when the plot has one value.
+RES_KEYS = ("nx0", "nz0", "nv0", "nw0", "lv", "lw")
 STRUCT_RES_IN = 0.36
 RES_RAMP = ("#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab",
             "#184f95", "#104281", "#0d366b")
