@@ -1,0 +1,154 @@
+&parallelization
+n_procs_s = 3
+n_procs_v = 1
+n_procs_w = -1
+n_procs_x = 1
+n_procs_y = 1
+n_procs_z = -1
+
+n_parallel_sims = 2
+n_procs_sim = -1
+/
+
+&box
+n_spec =   3   
+nx0    =   128  !5,9
+nky0   =   64
+nz0    =   64  !64,128
+nv0    =   36  !36,72   
+nw0    =   16  !32,64
+!12,24,48,96
+
+kymin = 4.0  !8,8,160
+
+
+lv    =   3.00000    
+lw    =   9	      
+lx    =   16          
+adapt_lx = F
+x0    =    0.862    !scanlist:0.55,0.6
+/
+
+&in_out
+diagdir = '/pscratch/sd/l/luke0818/NSTX_ETG/132543/scanfiles0011' 
+
+
+
+
+read_checkpoint = T
+write_checkpoint = T
+
+istep_field  =     500
+istep_mom    =     500
+istep_nrg    =      100
+istep_vsp    =    2000
+istep_schpt  =       5000
+istep_energy =     500
+!istep_energy3d =     50
+
+!write_std = T
+
+iterdb_file     = '/global/homes/l/luke0818/gene_p/NSTXU/132543/NSTXU132543.iterdb'
+/
+
+&general 
+nblocks = 1
+perf_vec = 1 1 1 1 1 1 2 1 2
+
+
+calc_dt = T 
+nonlinear = T
+comp_type = 'IV'
+
+
+arakawa_zv =   F
+
+timescheme = 'RK4'
+
+timelim    =      43000
+simtimelim = 30
+
+beta       =   -1
+debye2     =   -1
+collision_op = 'landau'
+coll         =  -1   
+coll_cons_model  = 'xu_rosenbluth'
+init_cond = 'alm'
+bpar = T !F,T
+hyp_z =   -8.000   
+hyp_v =   0.0000    
+
+/
+
+&external_contr
+ExBrate    =   -1111 !0,-1111    
+/
+
+
+&geometry
+magn_geometry = 'tracer_efit'  
+geomdir = '/global/homes/l/luke0818/gene_p/NSTXU/132543/'
+geomfile = 'g132543.00700' 
+edge_opt =   12.0000000    
+dpdx_term= 'full_drift'
+dpdx_pm  =   -2   
+mag_prof = T
+/
+
+
+
+
+
+&species
+name   = 'i'
+mass   =    1.0000000    
+charge =  1
+prof_type = -2   
+/
+
+&species
+name   = 'C'
+mass   =    6.0000000
+charge =  6
+prof_type = -2   
+/
+
+
+&species
+name   = 'e'
+mass   =   0.27240000E-03
+charge = -1
+prof_type = -2   
+/
+
+
+&units
+Bref =   -1    
+Tref =   -1
+nref =   -1
+Lref =   -1
+mref =   2.0  
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+&scan
+scan_dims = 2
+par_in_dir = '/pscratch/sd/l/luke0818/NSTX_ETG/132543/scanfiles0011/in_par'
+/

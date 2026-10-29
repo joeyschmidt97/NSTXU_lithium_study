@@ -1,5 +1,5 @@
 corner,Teh,Tew,neh,new,ky,status,gamma,gamma_std,omega,omega_std,mode,mode_De_Xe,mode_Xi_Xe,mode_QEM_e,mode_Epar_norm,mode_parity_apar,mode_parity_phi,mode_w_wstar
-Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,0.1,zero,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,0.1,field,0.034413,0.00365,-0.440705,0.00338,MTM,0.110411,0.0770024,13.3782,0.263307,0.947031,0.122534,-1.04007
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,0.3,ok,0.26,nan,-1.303,nan,MTM,0.00641592,0.0579924,4.98542,0.248992,0.961919,0.138283,-1.02503
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,0.5,ok,0.607,nan,-1.963,nan,MTM,0.017751,0.0882367,2.74075,0.271429,0.937839,0.223252,-0.926541
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,0.7,ok,0.918,nan,-2.495,nan,MTM,0.019736,0.0920237,2.28335,0.295506,0.913748,0.281299,-0.841176

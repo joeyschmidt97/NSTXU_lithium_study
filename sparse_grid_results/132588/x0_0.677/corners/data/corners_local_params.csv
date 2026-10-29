@@ -1,5 +1,5 @@
 corner,Teh,Tew,neh,new,gamma_max,ky_at_max,Bref,Lref,Tref,alpha_MHD,beta,coll,debye2,dens_c,dens_e,dens_i,dpdx_pm,major_R,minor_r,nref,nu_ei,nustar_e,nustar_i,omn_c,omn_e,omn_i,omt_c,omt_e,omt_i,q0,rhostar,shat,temp_c,temp_e,temp_i
-Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,nan,nan,0.355497,1.10073,0.928047,13.0877,0.178357,0.00265527,5.55018e-06,0.080842,1,0.514948,1.09733,0.940836,1,6.0268,2.20424,0.150187,0.113615,1.69631,2.24749,2.76666,1.39837,0.985925,1.39837,3.56046,0.01123,0.949956,0.966811,1,0.966811
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,-0.123463,3,0.355497,1.10073,0.928047,13.0877,0.178357,0.00265527,5.55018e-06,0.080842,1,0.514948,1.09733,0.940836,1,6.0268,2.20424,0.150187,0.113615,1.69631,2.24749,2.76666,1.39837,0.985925,1.39837,3.56046,0.01123,0.949956,0.966811,1,0.966811
 Teh0.80_Tew0.80_neh0.80_new0.80,0.8,0.8,0.8,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
 Teh0.80_Tew0.80_neh0.80_new1.20,0.8,0.8,0.8,1.2,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
 Teh0.80_Tew0.80_neh1.20_new0.80,0.8,0.8,1.2,0.8,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
