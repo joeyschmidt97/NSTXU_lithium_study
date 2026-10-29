@@ -191,6 +191,13 @@ def summarize(shot: int, out_root: str = HERE) -> list[str]:
         plt.close(fig)
         written.append(path)
         print(f"    {path}  ({', '.join(f'{x0:g}' for x0, _ in imgs)})")
+    # a summary of a plot no longer in SUMMARY (e.g. summary_corners_sampling.png from
+    # before sampling.png moved out of corners/) would sit there stale
+    keep = {f"summary_{os.path.basename(p)}.png" for p in SUMMARY}
+    for name in os.listdir(shot_dir) if os.path.isdir(shot_dir) else ():
+        if name.startswith("summary_") and name.endswith(".png") and name not in keep:
+            os.remove(os.path.join(shot_dir, name))
+            print(f"    removed stale {name}")
     return written
 
 
