@@ -21,6 +21,7 @@ nothing is ever pending.
     python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --rounds 4 \\
         --walltime 00:45:00 --ped-grid-args "<the flags the corners were built with>"
     python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --dry-run   # round 1 pick only
+    python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --kymin-range 0.5 10 --dry-run
 
 --jobs defaults to one per lane (allocation nodes / NODES_PER), so each round
 is one wave. --ky-per-job must equal NODES_PER * 4 (one GPU per ky), which is
@@ -81,9 +82,9 @@ def time_left() -> int | None:
     return int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
 
 
-def pick(diag_x0, n_jobs, ky_per_job, model, seed, hold, clip_min=0.):
+def pick(diag_x0, n_jobs, ky_per_job, model, seed, hold, clip_min=0., axes=DEFAULT_AXES):
     """(run table, job table with case tags) for one round."""
-    picker = ScanPointPicker(model, DEFAULT_AXES, QoISpec("gamma", "max_over_ky"),
+    picker = ScanPointPicker(model, axes, QoISpec("gamma", "max_over_ky"),
                              log_axes=["kymin"], clip_min=clip_min, decimals=3,
                              seed=seed)
     picker.fit(diag_x0, hold=hold)
@@ -133,6 +134,8 @@ def main(argv=None):
     ap.add_argument("--no-clip", action="store_true",
                     help="fit gamma as it is; default floors it at 0 (stable reads as 0)")
     ap.add_argument("--seed", type=int, default=0, help="round N uses seed + N")
+    ap.add_argument("--kymin-range", type=float, nargs=2, default=None, metavar=("LO", "HI"),
+                    help=f"kymin bounds the picker suggests within [{DEFAULT_AXES['kymin']}]")
     ap.add_argument("--ped-grid-args", default="",
                     help="extra ped_grid flags for cheaseBS, quoted, e.g. \"--max-iter 40\"")
     ap.add_argument("--template", default=C.GPU_TEMPLATE)
@@ -161,6 +164,9 @@ def main(argv=None):
     rounds_dir = os.path.join(os.path.dirname(os.path.normpath(args.template)),
                               f"{prefix}_{C.x0_label((x0,))}_rounds")
     ped_args = shlex.split(args.ped_grid_args)
+    if args.kymin_range and not 0 < args.kymin_range[0] < args.kymin_range[1]:
+        ap.error("--kymin-range needs 0 < LO < HI (kymin is a log axis)")
+    axes = {**DEFAULT_AXES, **({"kymin": tuple(args.kymin_range)} if args.kymin_range else {})}
 
     left = time_left()
     need = args.rounds * C.walltime_seconds(args.walltime)
@@ -173,7 +179,8 @@ def main(argv=None):
     others = ", ".join(f"{k} {v:g}" for k, v in d["chapman"].items() if v != x0)
     print(f"x0 = {x0:g} ({x0_source}); fixed for every round: picks from and writes GENE runs "
           f"at this radius" + (f". Other Chapman radii: {others}" if others else ""))
-    print(f"{args.rounds} round(s) x {n_jobs} job(s) x {ky_per_job} kymin, model {args.model}, "
+    print(f"{args.rounds} round(s) x {n_jobs} job(s) x {ky_per_job} kymin in "
+          f"[{axes['kymin'][0]:g}, {axes['kymin'][1]:g}], model {args.model}, "
           f"GENE walltime {args.walltime}; picking from {diag_x0}"
           + (f"; {left / 3600:.2f} h left in the allocation" if left is not None else ""))
     if left is not None and need > left:
@@ -184,7 +191,7 @@ def main(argv=None):
     for r in range(1, args.rounds + 1):
         print(f"\n===== round {r}/{args.rounds} =====", flush=True)
         runs, jobs = pick(diag_x0, n_jobs, ky_per_job, args.model, args.seed + r, hold,
-                          clip_min=None if args.no_clip else 0.)
+                          clip_min=None if args.no_clip else 0., axes=axes)
         print(f"{len(runs)} point(s) on disk: "
               + ", ".join(f"{n} {s}" for s, n in runs.status.value_counts().items()))
         dup = jobs.tag.duplicated()
