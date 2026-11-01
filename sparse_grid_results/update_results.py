@@ -55,17 +55,18 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PATHS = os.path.join(HERE, "gene_run_paths.json")
 #: plot_corners.run options an entry (or "defaults") may set
-OPTIONS = ("modes", "mode_extent", "field_fits", "spread", "max_params")
+OPTIONS = ("modes", "mode_extent", "outliers", "field_fits", "spread", "max_params")
 #: on/off switches an entry (or "defaults", or the CLI) may set: the plot_corners
 #: options above, field_omega, the field fits written before plotting, and
 #: nz_subdir, the full plot set for the nz_compare runs in x0_<x0>/nz<N>/
-SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "field_fits")
+SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "outliers", "field_fits")
 #: two x0 are the same scan when closer than this (rho_tor)
 X0_TOL = 1e-4
 #: plots put side by side across radii in <shot>/summary_<plot>.png, as paths
 #: under x0_<x0>/ without .png
 SUMMARY = ("corners/corners_growth", "corners/corners_growth_field",
-           "corners/corners_mode_structure", "corners/corners_mode_scaling", "sampling")
+           "corners/corners_mode_structure", "corners/corners_mode_scaling",
+           "corners/corners_outlier", "sampling")
 SUMMARY_DPI = 100
 
 
@@ -225,6 +226,7 @@ if __name__ == "__main__":
                                   "in x0_<x0>/nz<N>/"),
                     ("modes", "TPED mode_identifier per ky"),
                     ("mode_extent", "corners_mode_extent.png, corners_mode_structure.png"),
+                    ("outliers", "corners_outlier.png: TPED outlier analysis per ky"),
                     ("field_fits", "carry decaying/ambiguous field fits")):
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, default=None,
                         action=argparse.BooleanOptionalAction,

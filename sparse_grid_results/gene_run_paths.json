@@ -8,7 +8,8 @@
     "nz_compare: nz0 of the comparison runs (corners_nz<N>.png), or null; nz_root: their root, null for <diag_root>_nz<N>.",
     "field_omega: fit every ky's field trace and append it to its omega file (field_omega.py --write) before plotting.",
     "nz_subdir: when nz_compare is set, also run the field fits and every plot on the nz0 = N runs, into x0_<x0>/nz<N>/.",
-    "Any option key (field_omega, modes, mode_extent, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
+    "outliers: corners_outlier.png, TPED's outlier analysis per corner and ky (grid-scale oscillation, gamma < 0, D/chi_e, chi_i/chi_e, x0).",
+    "Any option key (field_omega, modes, mode_extent, outliers, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
     "enabled: false keeps an entry listed but skipped unless named with --shot and --x0."
   ],
   "defaults": {
@@ -16,6 +17,7 @@
     "nz_subdir": true,
     "modes": true,
     "mode_extent": true,
+    "outliers": true,
     "field_fits": true
   },
   "runs": {
