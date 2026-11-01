@@ -55,7 +55,15 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
                                 box: grow lv (or nv0) for v_par, lw (or nw0) for mu;
                                 + corners_vspace_edge.csv (per-species ratios, pass/fail
                                 against --vspace-tol)
-    corners_res2.png          (when 2x-resolution runs exist) the 1x corner beside
+    corners_outlier.png         (--outliers) TPED's outlier analysis per corner and ky
+                                (GENE_sim_analysis analyses/outlier.py): as a table, red
+                                where any criterion trips, each cell its near-Nyquist
+                                phi power fraction and the criteria that tripped (grid
+                                = grid-scale oscillation along z, gamma < 0, D/chi_e,
+                                chi_i/chi_e, x0); beside it that fraction vs ky per
+                                corner, every run read, converged or not, with the
+                                threshold drawn; + corners_outlier.csv
+    corners_res2.png         (when 2x-resolution runs exist) the 1x corner beside
                                 its 2x rerun: gamma and omega vs ky, and 2x gamma vs
                                 1x gamma; + corners_res2.csv
     corners_nz<N>.png           (--nz-compare N) the same comparison against the
@@ -109,6 +117,7 @@ and the spread and mean of corners_local_params.png.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --modes
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.8447 --modes --field-fits
+    python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --shot 132588 --x0 0.677 --outliers
 
 Two growth plots, always:
 
@@ -283,6 +292,19 @@ EXTENT_DX = 0.13
 VSP_TOL = 1e-2
 #: the vsp quantity read (TPED GeneVsp name, species suffix added): <|f|^2>^1/2
 VSP_QUANT = "vsp_f2_mag"
+#: --outliers: thresholds of TPED's outlier analysis, as David's KBM_for_ASTRA criteria
+#: set them (TPED QL_models/surrogate/mixing_length_kernel.py); the near-Nyquist
+#: fraction keeps TPED's own default (OUTLIER_NYQ)
+OUTLIER_KW = {"max_D_over_Chi": 2.0, "max_Chii_over_Chie": 5.0, "max_x0": 0.994}
+OUTLIER_NYQ = 0.5
+#: its criteria in cell order, and the short label a tripped one gets in its cell
+OUTLIER_FLAGS = {"flag_grid_oscillation": "grid", "flag_gamma_negative": "γ<0",
+                 "flag_D_over_Chi": "D/χe", "flag_Chii_over_Chie": "χi/χe", "flag_x0": "x0"}
+#: corners_outlier.png cell fills: no criterion tripped, any tripped (GAMMA_CMAP's
+#: green and red ends lightened 80% and 35% toward white, so the text stays INK)
+OUTLIER_FILL = {False: "#cce6cc", True: "#ed8988"}
+#: near-Nyquist fractions below this are drawn at it (log axis)
+OUTLIER_FLOOR = 1e-8
 #: the fields corners_mode_extent.png and corners_mode_structure.png read, and the
 #: line colour of each in corners_mode_structure.png (palette slots 1 and 2)
 FIELDS = ("field_phi", "field_apar")
@@ -554,6 +576,65 @@ def add_modes(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def outlier_check(par_path: str) -> dict:
+    """TPED's outlier analysis on one scan member: every criterion's flag, the
+    overall 'outlier', the near-Nyquist phi power fraction and the two transport
+    ratios it judged (fingerprints D_e/Chi_e, Chi_i/Chi_e)."""
+    from TPED.projects.GENE_sim_analysis.src.sim_assembler import GeneSimulationPlus
+    tped_log = logging.getLogger("TPED")
+    level = tped_log.level
+    tped_log.setLevel(logging.CRITICAL)             # a missing file is reported once, below
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim = GeneSimulationPlus(par_path)
+            node = sim.analysis.outlier(**OUTLIER_KW, max_nyquist_fraction=OUTLIER_NYQ)
+    finally:
+        tped_log.setLevel(level)
+    out = {k: bool(node.ds[k].values) for k in (*OUTLIER_FLAGS, "outlier")}
+    out["nyquist_fraction"] = float(node.ds["nyquist_fraction"].values)
+    fp = sim.tree["fingerprints"].ds
+    out["D_over_Chi_e"] = float(fp["D-Chi_e"].values)
+    out["Chii_over_Chie"] = float(fp["Chi_i"].values) / float(fp["Chi_e"].values)
+    return out
+
+
+def add_outliers(ds: xr.Dataset) -> xr.Dataset:
+    """outlier (corner, ky), each criterion's flag and the numbers behind them, for
+    every ky with GENE output, converged or not: a grid-scale oscillation is as
+    much a reason a run never converged as a sign a converged one is wrong."""
+    flags = [*OUTLIER_FLAGS, "outlier"]
+    nums = ["nyquist_fraction", "D_over_Chi_e", "Chii_over_Chie"]
+    # checked: the analysis ran; a flag without it reads False and is drawn as no data
+    checked = np.zeros(ds.gamma.shape, dtype=bool)
+    vals = {c: np.zeros(ds.gamma.shape, dtype=bool) for c in flags}
+    vals.update({c: np.full(ds.gamma.shape, np.nan) for c in nums})
+    for i, c in enumerate(ds.corner.values):
+        for j, ky in enumerate(ds.ky.values):
+            path = str(ds.path.values[i, j])
+            if not path:
+                continue
+            try:
+                res = outlier_check(path)
+            except Exception as exc:              # missing nrg/field: no verdict, no crash
+                msg = str(exc).split(" load_errors")[0].splitlines()[0][:160]
+                print(f"    {c} ky={ky:g}: no outlier check ({type(exc).__name__}: {msg})")
+                continue
+            checked[i, j] = True
+            for col in flags + nums:
+                vals[col][i, j] = res[col]
+        hits = [f"{ky:g} " + "+".join(OUTLIER_FLAGS[f] for f in OUTLIER_FLAGS if vals[f][i, j])
+                for j, ky in enumerate(ds.ky.values) if vals["outlier"][i, j]]
+        print(f"--- {c}: {int(checked[i].sum())} checked, "
+              + (", ".join(hits) if hits else "no outliers"))
+    ds["outlier_checked"] = (("corner", "ky"), checked)
+    for col in flags:
+        ds[col if col == "outlier" else f"outlier_{col}"] = (("corner", "ky"), vals[col])
+    for col in nums:
+        ds[f"outlier_{col}"] = (("corner", "ky"), vals[col])
+    ds["outlier"].attrs.update({**OUTLIER_KW, "max_nyquist_fraction": OUTLIER_NYQ})
+    return ds
+
+
 def write_modes_csv(ds, out, written):
     path = data_path(out, "corners_modes.csv")
     cols = ["status", "gamma", "gamma_std", "omega", "omega_std", "mode",
@@ -610,7 +691,7 @@ def integer_crossings(x, y, n):
 
 def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                  modes=False, field_fits=False, shot=SHOT, points=None,
-                 scan="corners", extra_roots=()) -> xr.Dataset:
+                 scan="corners", extra_roots=(), outliers=False) -> xr.Dataset:
     """Every corner with GENE output or profiles, as one Dataset (corner, ky, rho_tor).
 
     corner is the ped_grid tag; Tew/new/Teh/neh ride along as coordinates, so
@@ -726,6 +807,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
     if modes and gene:
         print("\nmode_identifier (TPED) per ky:")
         ds = add_modes(ds)
+    if outliers and gene:
+        print("\noutlier (TPED) per ky:")
+        ds = add_outliers(ds)
     return ds
 
 
@@ -1078,6 +1162,97 @@ def plot_q_offset(ds, out, written):
                 for col in cols:
                     v = ds[col].values[i, j] if ds[col].ndim == 2 else ds[col].values[i]
                     row.append(str(v) if ds[col].dtype.kind in "OUS" else f"{v:.6g}")
+                fh.write(",".join([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}"] + row)
+                         + "\n")
+    written.append(path)
+
+
+def plot_outliers(ds, out, written):
+    """TPED's outlier verdict per corner and ky as a table (red where any criterion
+    trips, the near-Nyquist fraction and the tripped criteria in the cell), and the
+    near-Nyquist fraction vs ky per corner beside it; + corners_outlier.csv."""
+    checked, bad = ds.outlier_checked.values, ds.outlier.values
+    if not checked.any():
+        print("no run passed the outlier analysis; corners_outlier.png skipped")
+        return
+    nyq, st, ky = ds.outlier_nyquist_fraction.values, ds.status.values, ds.ky.values
+    st_short = {"ok": "", "field": "field", "zero": "0/0", "empty": "empty",
+                "decaying": "dec", "ambiguous": "amb"}
+    n = ds.sizes["corner"]
+    fig, (tab, sc) = plt.subplots(1, 2, figsize=(18, max(5.5, 0.34 * n + 2.2)),
+                                  width_ratios=(1.15, 1))
+    for i in range(n):
+        for j in range(ky.size):
+            if not checked[i, j]:
+                tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=SURFACE, ec=SURFACE, lw=2))
+                tab.text(j + 0.5, n - 0.5 - i, "-", ha="center", va="center", fontsize=6.5,
+                         color=MUTED)
+                continue
+            tab.add_patch(plt.Rectangle((j, n - 1 - i), 1, 1, fc=OUTLIER_FILL[bool(bad[i, j])],
+                                        ec=SURFACE, lw=2))
+            tripped = "+".join(lab for f, lab in OUTLIER_FLAGS.items()
+                               if ds[f"outlier_{f}"].values[i, j])
+            text = "\n".join(x for x in (f"{nyq[i, j]:.1e}", tripped, st_short.get(st[i, j], st[i, j]))
+                             if x)
+            tab.text(j + 0.5, n - 0.5 - i, text, ha="center", va="center", fontsize=6,
+                     linespacing=1.05, color=INK)
+    tab.set_xlim(0, ky.size)
+    tab.set_ylim(0, n)
+    tab.set_xticks(np.arange(ky.size) + 0.5, [f"{k:g}" for k in ky], fontsize=8)
+    tab.set_yticks(np.arange(n) + 0.5, [str(l) for l in ds.label.values[::-1]], fontsize=8)
+    tab.set_xlabel(r"$k_y\rho_{ref}$")
+    tab.tick_params(length=0)
+    for sp in tab.spines.values():
+        sp.set_visible(False)
+    tab.set_title(f"TPED outlier per corner and ky, rows {LEGEND_TITLE}; red = outlier\n"
+                  "cell: near-Nyquist fraction, tripped criteria, GENE status if not "
+                  "converged", loc="left", fontsize=10, color=INK)
+    crit = (f"grid: fraction > {OUTLIER_NYQ:g}   γ<0: GENE gamma < 0   "
+            f"D/χe > {OUTLIER_KW['max_D_over_Chi']:g}   "
+            f"χi/χe > {OUTLIER_KW['max_Chii_over_Chie']:g}   x0 > {OUTLIER_KW['max_x0']:g}")
+    tab.text(0, -1.3, crit, fontsize=7.5, va="center", color=INK, clip_on=False)
+
+    # every checked run, converged (filled) or not (hollow), in its corner's style
+    for i, c in enumerate(ds.corner.values):
+        sty = style(point_of(ds, c))
+        ok = checked[i]
+        if not ok.any():
+            continue
+        y = np.maximum(nyq[i], OUTLIER_FLOOR)
+        sc.plot(ky[ok], y[ok], color=sty["color"], ls=sty["ls"], lw=1.3, zorder=2)
+        conv = ok & (st[i] == "ok")
+        sc.plot(ky[conv], y[conv], sty["marker"], color=sty["color"], ms=5, zorder=3)
+        sc.plot(ky[ok & ~conv], y[ok & ~conv], sty["marker"], color=sty["color"], mfc="none",
+                ms=5, zorder=3)
+    sc.axhline(OUTLIER_NYQ, color="#e34948", ls=(0, (5, 3)), lw=1.2, zorder=1)
+    sc.text(ky.min(), OUTLIER_NYQ * 1.3, f"outlier threshold {OUTLIER_NYQ:g}", fontsize=7.5,
+            color="#e34948")
+    sc.set_yscale("log")
+    sc.set_xscale("log")
+    sc.set_xticks(ky, [f"{k:g}" for k in ky])
+    sc.minorticks_off()
+    sc.set_xlabel(r"$k_y\rho_{ref}$")
+    sc.set_ylabel("fraction of phi power above 0.9 x Nyquist in z")
+    sc.set_title("near-Nyquist fraction (last field time, whole ballooning domain)\n"
+                 "filled = GENE converged, hollow = not", loc="left", fontsize=10, color=INK)
+    tidy(sc)
+    legend_right(fig, corner_handles(ds))
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: outlier check "
+                 f"({int(bad.sum())} of {int(checked.sum())} runs flagged)", x=0.02, ha="left",
+                 fontsize=12, color=INK)
+    fig.tight_layout(rect=(0, 0.02, 0.87, 0.95))
+    save(fig, out, "corners_outlier.png", written)
+
+    path = data_path(out, "corners_outlier.csv")
+    cols = ["status", "gamma", "outlier_checked", "outlier",
+            *(f"outlier_{f}" for f in OUTLIER_FLAGS),
+            "outlier_nyquist_fraction", "outlier_D_over_Chi_e", "outlier_Chii_over_Chie"]
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky"] + cols) + "\n")
+        for i, c in enumerate(ds.corner.values):
+            for j, k in enumerate(ky):
+                row = [str(ds[col].values[i, j]) if ds[col].dtype.kind in "OUSb"
+                       else f"{ds[col].values[i, j]:.6g}" for col in cols]
                 fh.write(",".join([c, *(f"{ds[x].values[i]:g}" for x in ORDER), f"{k:g}"] + row)
                          + "\n")
     written.append(path)
@@ -2404,6 +2579,8 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
         plot_mode_structure(ds, out, written, profiles)
     if vspace_edge:
         plot_vspace_edge(ds, out, written, vspace_tol)
+    if "outlier" in ds:
+        plot_outliers(ds, out, written)
     if "mode" in ds:
         write_modes_csv(ds, out, written)
         plot_mode_scaling(ds, out, written)
@@ -2412,7 +2589,7 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
         nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH,
-        extra_roots=()):
+        extra_roots=(), outliers=False):
     """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
     and the sampling plot of all of them into <out>/. Returns the corner dataset
     (None when there are no corners but batches were plotted). GENE runs come from
@@ -2430,7 +2607,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             scan = "corners" if pts is None else f"VURS picks {name[5:].replace('_', '-')}"
             try:
                 ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, pts, scan,
-                                  extra_roots)
+                                  extra_roots, outliers)
             except SystemExit as exc:                  # no corner (or pick) has anything yet
                 print(exc)
                 continue
@@ -2494,6 +2671,10 @@ if __name__ == "__main__":
                     help="corners_vspace_edge.png: <|f|^2>^1/2 at the v_par = +-lv and top-mu "
                          "edges of the velocity box over its peak, per species, corner and ky "
                          "(reads every vsp file; needs istep_vsp > 0)")
+    ap.add_argument("--outliers", action="store_true",
+                    help="corners_outlier.png: TPED's outlier analysis per corner and ky "
+                         "(grid-scale oscillation along z, gamma < 0, D/chi_e, chi_i/chi_e, x0; "
+                         "reads nrg and field, every run converged or not)")
     ap.add_argument("--vspace-tol", type=float, default=VSP_TOL,
                     help="edge / peak above which --vspace-edge marks a run as failing")
     ap.add_argument("--spread", type=float, default=SPREAD,
@@ -2505,4 +2686,4 @@ if __name__ == "__main__":
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
-        args.vspace_tol, extra_roots=args.extra_root)
+        args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers)
