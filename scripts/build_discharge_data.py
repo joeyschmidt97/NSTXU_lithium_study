@@ -159,6 +159,11 @@ def build(param_file: str):
     sim = GeneSimulationPlus(param_file)
     sim.analysis(ANALYSES)
     ds = netcdf_safe(sim.flat_xarray, list(sim.tree['parameters'].ds.data_vars))
+    # The omega node has gamma_std/omega_std only where GENE wrote 0/0; give
+    # every run the field-fit std so all files share one variable set.
+    for name in ('gamma_std', 'omega_std'):
+        if name not in ds:
+            ds[name] = ds[f'fit_{name}']
     ds = add_cost(ds)
     ds = add_corner(ds, param_file)
     ds.attrs = prepare_attrs_for_netcdf(ds.attrs)
