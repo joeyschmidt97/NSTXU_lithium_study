@@ -35,10 +35,26 @@
 # Ranks per run dir come from its parameters (n_parallel_sims x n_procs_sim),
 # so --res-scale or a short --kymin list sizes itself; a dir needing more nodes
 # than a lane has is skipped.
+#
+# GPU packing (LANES_PER_GPU=L > 0): every A100 is L lanes instead of nodes
+# being split into NODES_PER-node lanes, so an allocation of N nodes runs
+# N x 4 x L run dirs at once, any mix of shots, radii and scalings. A packed
+# dir runs all its ranks on its lane's one GPU: its srun step is --overlap
+# (steps share the node), sees one device through CUDA_VISIBLE_DEVICES, and
+# gets 128 / (4 L) hardware threads split over its ranks. L = 3 with 3-ky
+# dirs puts 9 GENE ranks on each A100. MPS=1 starts the CUDA MPS daemon on
+# every node first, so those ranks share the GPU concurrently instead of
+# time-slicing it. A packed dir with more than MAX_PACKED_RANKS ranks is skipped.
+#
+#   LANES_PER_GPU=3 MPS=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh <dirs>
 
 set -u
 NODES_PER=${NODES_PER:-2}      # lane size; 8 ky x 1 GPU each = 2 nodes
 PPN=4                          # one rank per A100
+LANES_PER_GPU=${LANES_PER_GPU:-0}       # > 0: GPU packing mode (header)
+MPS=${MPS:-0}
+MAX_PACKED_RANKS=${MAX_PACKED_RANKS:-16}
+HW_THREADS=128                 # per Perlmutter GPU node
 START_MARGIN=${START_MARGIN:-300}   # s on top of timelim for startup and output
 DONE_LINE="Total wallclock time for GENE"
 FAIL_RE="aborting job|MPICH ERROR|CANCELLED AT|Exited with exit code [1-9]"
@@ -77,6 +93,13 @@ dir_size() {
 # srun line scanscript launches GENE with: $1 nodes $2 (comma list), $3 ranks.
 syscall() {
     echo "srun -l -K -N $1 -w $2 -n $3 --gpus-per-node=$PPN --gpu-bind=none --ntasks-per-node=$PPN -c 32 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter"
+}
+# Packed: node $1, ranks $2, GPU index $3; env runs inside the task, after
+# Slurm sets CUDA_VISIBLE_DEVICES, so GENE sees only that GPU (as device 0).
+syscall_packed() {
+    local c=$((HW_THREADS / (PPN * LANES_PER_GPU) / $2))
+    [ "$c" -ge 1 ] || c=1
+    echo "srun -l -K --overlap -N 1 -w $1 -n $2 -c $c --gpus-per-node=$PPN --gpu-bind=none env CUDA_VISIBLE_DEVICES=$3 $HOME/simulators/GENE3_gpu/bin/gene_perlmutter"
 }
 
 # Seconds left in this allocation (squeue %L: [D-]HH:MM:SS or MM:SS).
@@ -135,6 +158,15 @@ if [ -n "${DRY_RUN:-}" ]; then
         d=${d%/}
         already_done "$d" && continue
         read -r mps np n < <(dir_size "$d")
+        if [ "$LANES_PER_GPU" -gt 0 ]; then
+            if [ "$np" -gt "$MAX_PACKED_RANKS" ]; then
+                echo "  SKIP  $d: $np ranks, packed lanes take <= $MAX_PACKED_RANKS"
+                continue
+            fi
+            echo "  run   $d (timelim $(param "$d" timelim) s, $np ranks on one GPU)"
+            echo "        cd $d && ./scanscript --np $np --ppn $np --mps $mps --syscall=\"$(syscall_packed "<node>" "$np" "<gpu>")\" > interactive.log 2>&1"
+            continue
+        fi
         if [ "$n" -gt "$NODES_PER" ]; then
             echo "  SKIP  $d: $np ranks need $n nodes, lane has $NODES_PER (set NODES_PER)"
             continue
@@ -147,9 +179,26 @@ fi
 
 [ -n "${SLURM_JOB_ID:-}" ] || { echo "not inside an allocation; salloc first" >&2; exit 1; }
 mapfile -t HOSTS < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
-NLANES=$((${#HOSTS[@]} / NODES_PER))
-[ "$NLANES" -ge 1 ] || { echo "need >= $NODES_PER nodes, have ${#HOSTS[@]}" >&2; exit 1; }
-echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
+if [ "$LANES_PER_GPU" -gt 0 ]; then
+    NLANES=$((${#HOSTS[@]} * PPN * LANES_PER_GPU))
+    echo "${#DIRS[@]} run dirs, $NLANES packed lane(s), $LANES_PER_GPU per GPU: ${HOSTS[*]}"
+    if [ "$MPS" = 1 ]; then
+        # One daemon per node, held in a background step that sleeps: Slurm kills
+        # a step's processes when it ends, daemon included. Killed on exit.
+        MPS_PIDS=()
+        for h in "${HOSTS[@]}"; do
+            srun --overlap -N 1 -n 1 -w "$h" --gpus-per-node=$PPN --gpu-bind=none bash -c \
+                "nvidia-cuda-mps-control -d && echo '  MPS daemon up on $h' && exec sleep infinity" &
+            MPS_PIDS+=($!)
+        done
+        trap 'kill "${MPS_PIDS[@]}" 2>/dev/null' EXIT
+        sleep 10
+    fi
+else
+    NLANES=$((${#HOSTS[@]} / NODES_PER))
+    [ "$NLANES" -ge 1 ] || { echo "need >= $NODES_PER nodes, have ${#HOSTS[@]}" >&2; exit 1; }
+    echo "${#DIRS[@]} run dirs, $NLANES lane(s) of $NODES_PER nodes: ${HOSTS[*]}"
+fi
 # A claim of this job left by an earlier launch in the same allocation (^C)
 # would skip its dir silently; that launch is gone, so release it.
 for d in "${DIRS[@]}"; do
@@ -160,7 +209,7 @@ for d in "${DIRS[@]}"; do
 done
 
 lane() {
-    local i=$1 d nodes np n mps need left before dd0
+    local i=$1 d nodes gpu np n mps need left before dd0
     for d in "${DIRS[@]}"; do
         d=${d%/}
         already_done "$d" && continue
@@ -171,17 +220,31 @@ lane() {
             return
         fi
         read -r mps np n < <(dir_size "$d")
-        if [ "$n" -gt "$NODES_PER" ]; then
+        if [ "$LANES_PER_GPU" -gt 0 ]; then
+            if [ "$np" -gt "$MAX_PACKED_RANKS" ]; then
+                echo "[lane $i] SKIP $d: $np ranks, packed lanes take <= $MAX_PACKED_RANKS"
+                continue
+            fi
+        elif [ "$n" -gt "$NODES_PER" ]; then
             echo "[lane $i] SKIP $d: $np ranks need $n nodes, lane has $NODES_PER (set NODES_PER)"
             continue
         fi
         mkdir "$d/.claim_$SLURM_JOB_ID" 2>/dev/null || continue
-        nodes=$(IFS=,; echo "${HOSTS[*]:$((i * NODES_PER)):$n}")
         [ -f "$d/geneerror.log" ] && mv "$d/geneerror.log" "$d/geneerror.log.prev"
         dd0=$(diagdir "$d")
-        echo "[lane $i $nodes] $(date +%T) start $d ($np ranks, $mps sims)"
-        (cd "$d" && ./scanscript --np $np --ppn $PPN --mps $mps \
-            --syscall="$(syscall "$n" "$nodes" "$np")" > interactive.log 2>&1)
+        if [ "$LANES_PER_GPU" -gt 0 ]; then
+            # lane i: node i / (4 L), GPU (i / L) mod 4
+            nodes=${HOSTS[$((i / (PPN * LANES_PER_GPU)))]}
+            gpu=$(((i / LANES_PER_GPU) % PPN))
+            echo "[lane $i $nodes gpu $gpu] $(date +%T) start $d ($np ranks, $mps sims)"
+            (cd "$d" && ./scanscript --np $np --ppn $np --mps $mps \
+                --syscall="$(syscall_packed "$nodes" "$np" "$gpu")" > interactive.log 2>&1)
+        else
+            nodes=$(IFS=,; echo "${HOSTS[*]:$((i * NODES_PER)):$n}")
+            echo "[lane $i $nodes] $(date +%T) start $d ($np ranks, $mps sims)"
+            (cd "$d" && ./scanscript --np $np --ppn $PPN --mps $mps \
+                --syscall="$(syscall "$n" "$nodes" "$np")" > interactive.log 2>&1)
+        fi
         if finished "$d" "$dd0"; then
             touch "$d/.interactive_ran"
             echo "[lane $i] $(date +%T) done  $d"
