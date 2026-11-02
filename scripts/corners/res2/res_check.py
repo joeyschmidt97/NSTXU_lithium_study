@@ -34,7 +34,11 @@ cannot change what an old code means.
 then, in each allocation:
 
     salloc -N 4 -C gpu -q interactive -t 04:00:00 -A m2116_g --gpus-per-node=4
-    NODES_PER=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh ~/simulators/GENE3_gpu/NSTX_*_rc<code>_*/
+    LANES_PER_GPU=3 MPS=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh ~/simulators/GENE3_gpu/NSTX_*_rc<code>_*/
+
+LANES_PER_GPU=3 packs three run dirs (nine ky ranks) onto each A100, any mix of
+shots, radii and scalings: 4 nodes run 48 dirs at once. Without it
+(NODES_PER=1) each dir holds a whole node.
 
 Compare with plot_corners --diag-root .../<shot>/rescheck_<code>/<grid>x2 --x0 <x0>.
 """
@@ -165,6 +169,6 @@ if __name__ == "__main__":
         print(f"  SKIPPED {grid} {shot} x0 {x0:g} {label}: {why}")
     print(f"\nbatch {code} -> {path}\nrun (again in each new allocation until all are done):\n"
           "  salloc -N 4 -C gpu -q interactive -t 04:00:00 -A m2116_g --gpus-per-node=4\n"
-          "  NODES_PER=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh "
+          "  LANES_PER_GPU=3 MPS=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh "
           f"~/simulators/GENE3_gpu/NSTX_*_rc{code}_*/")
     sys.exit(1 if skipped else 0)
