@@ -17,6 +17,12 @@ were rerun, so each 1x line has its own 2x diamonds and nothing else:
     sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/rescheck_<grid>x2.png
     sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/data/rescheck_<grid>x2.csv
     sparse_grid_results/rescheck_<code>.csv        every row of the batch, one table
+    sparse_grid_results/<shot>/summary_rescheck_<code>.png
+
+The summary has one column per radius (smallest x0 left), gamma over omega: every
+rerun scaling at that radius on the same axes in its plot_corners colour, its 1x
+line and its 2x points beside it, one marker per doubled grid (dodged in ky), the
+gamma change over --tol written next to the point.
 
 A 2x ky GENE did not converge (timelim reached: these are spot checks) is read
 from a live field_omega fit of its field file, hollow +-1 std, faded unless the
@@ -42,6 +48,8 @@ import warnings
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 from NSTXU_lithium_study.scripts import corner_gene_scan as C
 from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
@@ -57,6 +65,9 @@ DIR_RE = re.compile(r"(?P<shot>\d+)[/\\]rescheck_(?P<code>[0-9a-z]+)[/\\](?P<gri
                     r"[/\\]x0_(?P<x0>\d+(?:\.\d+)?)[/\\](?P<tag>" + pc.TAG_RE.pattern + r")$")
 #: |gamma 2x - gamma 1x| / |gamma 1x| above this is flagged in the table
 TOL = 0.1
+#: summary marker per doubled grid
+GRID_MARKER = {"nx0": "D", "nv0": "^", "nw0": "s", "nz0": "v"}
+FLAG_COLOR = "#e34948"
 SUMMARY_KEYS = ("shot", "x0", "grid", "corner", "ky", "status_1x", "gamma_1x", "omega_1x",
                 "source_2x", "gamma_2x", "gamma_2x_std", "omega_2x", "omega_2x_std",
                 "gamma_rel_diff", "omega_rel_diff", "dir_2x")
@@ -139,6 +150,81 @@ def summary_rows(path: str, shot: int, x0: float, grid: str, alt: str) -> list[d
              **{k: r[k.replace("_2x", f"_{ak}")] for k in SUMMARY_KEYS[3:]}} for r in rows]
 
 
+def plot_summary(shot, panels, code, out, written, tol=TOL):
+    """<out>/summary_rescheck_<code>.png from *panels* = [(x0, 1x Dataset, its
+    summary rows)]: one column per radius, gamma (top) and omega (bottom)."""
+    panels = sorted(panels, key=lambda p: p[0])
+    grids = sorted({r["grid"] for _, _, rows in panels for r in rows})
+    fig, axes = plt.subplots(2, len(panels), figsize=(4.6 * len(panels) + 3, 8.5), squeeze=False)
+    handles, faded, missing = {}, False, False
+    for col, (x0, ds, rows) in enumerate(panels):
+        ky = ds.ky.values
+        nudge = 2 * pc.RES2_NUDGE * (np.ptp(ky) if ky.size > 1 else 1.0)
+        names = list(ds.corner.values)
+        for c in [c for c in names if any(r["corner"] == c for r in rows)]:
+            i = names.index(c)
+            st = pc.style(pc.point_of(ds, c))
+            lab = str(ds.label.values[i])
+            handles.setdefault(lab, Line2D([], [], lw=1.8, ms=5, **st, label=lab))
+            for row, var in enumerate(("gamma", "omega")):
+                ax = axes[row, col]
+                y, err, conv = pc.one_x(ds, i, var)
+                ok = np.isfinite(y)
+                ax.plot(ky[ok], y[ok], lw=1.2, color=st["color"], ls=st["ls"], alpha=0.7, zorder=3)
+                ax.plot(ky[ok & conv], y[ok & conv], st["marker"], ms=4, color=st["color"], zorder=4)
+                g = ok & ~conv
+                ax.errorbar(ky[g], y[g], yerr=err[g], fmt=st["marker"], ms=4, mfc=pc.SURFACE,
+                            mec=st["color"], color=st["color"], capsize=2, lw=0.8, zorder=4)
+            for r in (r for r in rows if r["corner"] == c):
+                k = float(r["ky"])
+                x2 = k + nudge * (1 + grids.index(r["grid"]))
+                filled = r["source_2x"] == "GENE"
+                weak = r["source_2x"] not in ("GENE", "pass")
+                for row, var in enumerate(("gamma", "omega")):
+                    ax = axes[row, col]
+                    v1, v2, e2 = (float(r[f"{var}_1x"]), float(r[f"{var}_2x"]),
+                                  float(r[f"{var}_2x_std"]))
+                    if not np.isfinite(v2):
+                        missing = True
+                        ax.plot(x2, 0, "x", color=st["color"], ms=7, mew=1.6, zorder=6)
+                        continue
+                    faded |= weak
+                    if np.isfinite(v1):
+                        ax.plot([k, x2], [v1, v2], ":", color=st["color"], lw=1, zorder=4)
+                    ax.errorbar(x2, v2, yerr=e2, fmt=GRID_MARKER[r["grid"]], ms=7,
+                                mfc=st["color"] if filled else pc.SURFACE, mec=st["color"],
+                                mew=1.6, color=st["color"], capsize=2, lw=0.9,
+                                alpha=0.45 if weak else 1.0, zorder=7)
+                    rel = float(r[f"{var}_rel_diff"])
+                    if var == "gamma" and np.isfinite(rel) and abs(rel) > tol:
+                        ax.annotate(f"{100 * rel:+.0f}%", (x2, v2), xytext=(4, 4),
+                                    textcoords="offset points", fontsize=7, color=FLAG_COLOR)
+        for row, sym in enumerate((r"\gamma", r"\omega")):
+            ax = axes[row, col]
+            ax.axhline(0, color=pc.MUTED, lw=0.8)
+            ax.set_xlabel(r"$k_y\rho_{ref}$")
+            if col == 0:
+                ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
+            pc.tidy(ax)
+        axes[0, col].set_title(f"x0 = {x0:g}", loc="left", fontsize=10, color=pc.INK)
+    extra = [Line2D([], [], ls="none", marker=GRID_MARKER[g], color=pc.MUTED, ms=7,
+                    label=f"{g}x2, GENE converged") for g in grids]
+    extra.append(Line2D([], [], ls="none", marker="o", mfc=pc.SURFACE, mec=pc.MUTED, mew=1.6,
+                        ms=7, label="2x field fit, passing ±1σ"))
+    if faded:
+        extra.append(Line2D([], [], ls="none", marker="o", mfc=pc.SURFACE, mec=pc.MUTED,
+                            mew=1.6, ms=7, alpha=0.45, label="2x field fit, ambiguous/decaying"))
+    if missing:
+        extra.append(Line2D([], [], ls="none", marker="x", color=pc.MUTED, ms=7, mew=1.6,
+                            label="2x, no field output yet"))
+    pc.legend_right(fig, handles.values(), extra)
+    fig.suptitle(f"NSTX {shot} res check {code}: 1x line, 2x markers beside it "
+                 f"(red: gamma change > {100 * tol:g}%)", x=0.02, ha="left", fontsize=12,
+                 color=pc.INK)
+    fig.tight_layout(rect=(0, 0, 0.8, 0.95))
+    pc.save(fig, out, f"summary_rescheck_{code}.png", written)
+
+
 def print_table(rows, tol=TOL):
     print(f"\n{'shot':>6} {'x0':>7} {'grid':4} {'corner':33} {'ky':>5} {'gamma 1x':>9} "
           f"{'gamma 2x':>16} {'change':>7}  source 2x")
@@ -178,7 +264,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     entries = load_entries()
-    written, summary = [], []
+    written, summary, panels = [], [], {}
     by_radius: dict[tuple, dict] = {}
     for (shot, x0, grid), dirs in found.items():
         by_radius.setdefault((shot, x0), {})[grid] = dirs
@@ -200,6 +286,7 @@ if __name__ == "__main__":
             out = os.path.join(args.results, str(shot), C.x0_label((x0,)),
                                f"rescheck_{args.code}")
             os.makedirs(out, exist_ok=True)
+            first = len(summary)
             for grid, dirs in sorted(per_grid.items()):
                 alt = f"{grid}x2"
                 n1 = grid_value([p for t in dirs if t in ds.corner.values
@@ -212,6 +299,11 @@ if __name__ == "__main__":
                 for path in written[n:]:
                     if path.endswith(".csv"):
                         summary += summary_rows(path, shot, x0, grid, alt)
+            if len(summary) > first:
+                panels.setdefault(shot, []).append((x0, ds, summary[first:]))
+        for shot, p in sorted(panels.items()):
+            plot_summary(shot, p, args.code, os.path.join(args.results, str(shot)), written,
+                         args.tol)
 
     if summary:
         path = os.path.join(args.results, f"rescheck_{args.code}.csv")
