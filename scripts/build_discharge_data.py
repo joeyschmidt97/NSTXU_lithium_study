@@ -1,4 +1,4 @@
-"""Save TPED quantity_info xarrays of GENE runs into the NSTX_discharge_data repo.
+"""Save TPED quantity_info xarrays of GENE runs into a data repo.
 
 Each GENE run under a diag dir is loaded with TPED (last time slice only) and
 run through TPED's analysis registry (ANALYSES: fingerprints, epar, kperp,
@@ -6,14 +6,18 @@ kperp_upar, ql_weight, mode_identifier, field_omega). The run's tree is
 flattened (sim.flat_xarray: raw parameters/omega/nrg/field/mom/geometry data
 plus every analysis node) and saved as one netCDF:
 
-    <out-root>/<shot>/<path of the run relative to the diag dir>/quantity_info_NC_<suffix>.nc
+    <out-root>/<shot>/<path of the run below its shot folder>/quantity_info_NC_<suffix>.nc
+    e.g. 129038/corners_kyhi/x0_0.6737/Teh0.80_Tew0.80_neh0.80_new0.80/scanfiles0000/
 
-The relative path is kept so scanfiles0000/parameters_0001 and
-scanfiles0001/parameters_0001 do not overwrite each other. --diag-dir may be an
-x0_<x0> folder (its name is kept in the output path) or any dir above the x0_*
-folders, e.g. .../129038/corners.
+The shot is the run's nearest 6-digit folder (SHOT_DIR), so --diag-dir may be
+the lithium_study dir holding every discharge, one shot, one root (corners,
+corners_kyhi, ...), one x0_<x0> folder or one corner, and a run lands at the
+same path whichever is given. TPED's finder skips folders starting with X.
+Every run found is saved, nz/res2/test roots included; their root folder keeps
+them apart. --shot filters, and names the shot of runs with no shot folder.
 
-Parameters names are made netCDF-safe (GENE's &info 'number of computed time
+Location variables: shot, x0 (from x0_<x0>, NaN without one) and run_root (the
+folder below the shot, e.g. corners_kyhi). Parameters names are made netCDF-safe (GENE's &info 'number of computed time
 steps' -> number_of_computed_time_steps, ...), the corner folder name
 (Teh0.80_Tew0.80_neh0.80_new0.80) becomes Te_ped_scale, Te_width_scale,
 ne_ped_scale, ne_width_scale and attrs['corner_tag'], complex arrays are split into
@@ -24,10 +28,10 @@ field_omega gives every run a convergence measure: the field_phi fit over the
 last 30% of the run (fit_gamma/fit_omega with *_std, fit_verdict), GENE's state
 (omega_source), a converged flag, and gamma_best/omega_best for training.
 
-    python -m NSTXU_lithium_study.scripts.build_discharge_data --shot 129038 --diag-dir /pscratch/.../129038/corners --out-root ~/NSTX_discharge_data --dry-run
-    python -m NSTXU_lithium_study.scripts.build_discharge_data --shot 129038 --diag-dir /pscratch/.../129038/corners/x0_0.6737 --out-root ~/NSTX_discharge_data
-    python -m NSTXU_lithium_study.scripts.build_discharge_data --from-paths-json --shot 129038 --x0 0.6737 --out-root ~/NSTX_discharge_data
-    python -m NSTXU_lithium_study.scripts.build_discharge_data --from-paths-json --out-root ~/NSTX_discharge_data --skip-existing
+    python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /pscratch/.../lithium_study --out-root NSTXU_lithium_study/data/simulation_data --dry-run
+    python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /pscratch/.../lithium_study --out-root NSTXU_lithium_study/data/simulation_data --skip-existing
+    python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /pscratch/.../lithium_study --shot 129038 --out-root NSTXU_lithium_study/data/simulation_data
+    python -m NSTXU_lithium_study.scripts.build_discharge_data --from-paths-json --shot 129038 --x0 0.6737 --out-root NSTXU_lithium_study/data/simulation_data
 """
 
 from __future__ import annotations
@@ -47,18 +51,31 @@ CORNER_TAG = re.compile(r'(?:(?:Te|Ti|ne)[hw]\d+(?:\.\d+)?_?)+')
 CORNER_AXIS = re.compile(r'(Te|Ti|ne)([hw])(\d+(?:\.\d+)?)')
 #: always written, NaN when the path has no corner tag, so runs concatenate
 CORNER_AXES = ['Te_ped_scale', 'Te_width_scale', 'ne_ped_scale', 'ne_width_scale']
+#: discharge folders (NSTX/NSTX-U shot numbers) and radial-location folders
+SHOT_DIR = re.compile(r'\d{6}')
+X0_DIR = re.compile(r'x0_(\d+(?:\.\d+)?)')
 
 
-def find_runs(diag_dir: str, max_depth: int = 4) -> list[tuple[str, str]]:
-    """(parameters file, output subdir) for every GENE run under diag_dir.
-
-    The output subdir is the run's folder relative to diag_dir, prefixed with
-    diag_dir's own name when that is an x0_<x0> folder."""
+def find_runs(diag_dir: str, max_depth: int = 6) -> list[str]:
+    """Every GENE parameters file under diag_dir (TPED's finder: X* skipped)."""
     from TPED.projects.GENE_sim_reader.utils.find_GENE_files import GeneFileFinder
-    diag_dir = os.path.abspath(diag_dir)
-    base = os.path.dirname(diag_dir) if os.path.basename(diag_dir).startswith('x0_') else diag_dir
-    files = GeneFileFinder(diag_dir).find_files('parameters', max_depth=max_depth)
-    return [(f, os.path.relpath(os.path.dirname(f), base)) for f in files]
+    return GeneFileFinder(os.path.abspath(diag_dir)).find_files('parameters', max_depth=max_depth)
+
+
+def run_location(param_file: str, shot: int | None = None) -> tuple[int, str]:
+    """(shot, run folder below the shot folder) of one run.
+
+    The shot folder is the nearest 6-digit folder above the run. Without one,
+    shot must be given and the subdir is the run folder from its x0_<x0>
+    folder down (or the run folder alone)."""
+    parts = os.path.normpath(os.path.dirname(os.path.abspath(param_file))).split(os.sep)
+    for i in range(len(parts) - 1, -1, -1):
+        if SHOT_DIR.fullmatch(parts[i]):
+            return int(parts[i]), os.path.join(*parts[i + 1:]) if parts[i + 1:] else '.'
+    if shot is None:
+        raise ValueError(f'no shot folder in {param_file}; give --shot')
+    x0 = [i for i, d in enumerate(parts) if X0_DIR.fullmatch(d)]
+    return shot, os.path.join(*parts[x0[-1]:]) if x0 else parts[-1]
 
 
 def out_path(out_root: str, shot: int, subdir: str, param_file: str) -> str:
@@ -103,6 +120,18 @@ def corner_scales(param_file: str) -> tuple[str, dict]:
             return part, {f'{p}_{"ped" if hw == "h" else "width"}_scale': float(v)
                           for p, hw, v in CORNER_AXIS.findall(part)}
     return '', {}
+
+
+def add_location(ds, shot: int, subdir: str):
+    """shot, x0 (NaN without an x0_<x0> folder) and run_root (first folder
+    below the shot, e.g. corners_kyhi; '' when that is x0_<x0>) as variables."""
+    import numpy as np
+    parts = os.path.normpath(subdir).split(os.sep)
+    x0 = [float(m.group(1)) for m in map(X0_DIR.fullmatch, parts) if m]
+    ds['shot'] = np.int64(shot)
+    ds['x0'] = x0[-1] if x0 else np.nan
+    ds['run_root'] = parts[0] if len(parts) > 1 and not X0_DIR.fullmatch(parts[0]) else ''
+    return ds
 
 
 def add_corner(ds, param_file: str):
@@ -151,7 +180,7 @@ def add_cost(ds):
     return ds
 
 
-def build(param_file: str):
+def build(param_file: str, shot: int, subdir: str):
     """Load and analyse one run into a netCDF-ready Dataset."""
     from TPED.projects.GENE_sim_analysis.src.sim_assembler import GeneSimulationPlus
     from TPED.projects.MGKDB_tools.src.upload.quantity_info_xarray import prepare_attrs_for_netcdf
@@ -166,6 +195,7 @@ def build(param_file: str):
             ds[name] = ds[f'fit_{name}']
     ds = add_cost(ds)
     ds = add_corner(ds, param_file)
+    ds = add_location(ds, shot, subdir)
     ds.attrs = prepare_attrs_for_netcdf(ds.attrs)
     return ds
 
@@ -188,36 +218,45 @@ if __name__ == '__main__':
     src.add_argument('--from-paths-json', nargs='?', const='', metavar='PATHS',
                      help='take <diag_root>/x0_<x0> of every gene_run_paths.json entry '
                           '[sparse_grid_results/gene_run_paths.json]; filter with --shot/--x0')
-    ap.add_argument('--shot', type=int, nargs='+', default=None, help='discharge(s)')
+    ap.add_argument('--shot', type=int, nargs='+', default=None,
+                    help='only these discharges; with one, also the shot of runs with no shot folder')
     ap.add_argument('--x0', type=float, nargs='+', default=None, help='radii, with --from-paths-json')
-    ap.add_argument('--out-root', required=True, help='NSTX_discharge_data clone; writes <shot>/... under it')
-    ap.add_argument('--max-depth', type=int, default=4, help='folder depth searched below each diag dir')
+    ap.add_argument('--out-root', required=True, help='data dir; writes <shot>/... under it')
+    ap.add_argument('--max-depth', type=int, default=6,
+                    help='folder depth searched below each diag dir (lithium_study/<shot>/<root>/x0_*/<tag>/scanfiles* is 5)')
     ap.add_argument('--skip-existing', action='store_true', help='leave runs whose .nc already exists')
     ap.add_argument('--dry-run', action='store_true', help='list runs and output paths; load nothing')
     args = ap.parse_args()
 
     if args.diag_dir is not None:
-        if not args.shot or len(args.shot) != 1:
-            raise SystemExit('--diag-dir needs exactly one --shot')
-        jobs = [(args.shot[0], d) for d in args.diag_dir]
+        jobs = [(args.shot[0] if args.shot and len(args.shot) == 1 else None, d) for d in args.diag_dir]
     else:
         jobs = jobs_from_paths_json(args.from_paths_json or None, args.shot, args.x0)
         if not jobs:
             raise SystemExit(f'no gene_run_paths.json entry matches --shot {args.shot} --x0 {args.x0}')
 
     # grouped by run folder (a scanfiles dir) for reporting; each run loads alone
-    groups = defaultdict(list)
-    for shot, diag in jobs:
+    groups, unplaced = defaultdict(list), []
+    for default_shot, diag in jobs:
         try:
             runs = find_runs(diag, args.max_depth)
         except FileNotFoundError as exc:
-            print(f'{shot} {diag}: {exc}')
+            print(f'{diag}: {exc}')
             continue
-        for f, sub in runs:
+        for f in runs:
+            try:
+                shot, sub = run_location(f, default_shot)
+            except ValueError as exc:
+                unplaced.append(str(exc))
+                continue
+            if args.shot and shot not in args.shot:
+                continue
             dest = out_path(args.out_root, shot, sub, f)
             if args.skip_existing and os.path.exists(dest):
                 continue
             groups[(shot, sub)].append((f, dest))
+    for msg in unplaced:
+        print(f'skipped: {msg}')
 
     n = sum(len(v) for v in groups.values())
     print(f'{n} runs in {len(groups)} folders')
@@ -231,7 +270,7 @@ if __name__ == '__main__':
         print(f'\n===== {shot}/{sub} =====')
         for f, dest in items:
             try:
-                ds = build(f)
+                ds = build(f, shot, sub)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 ds.to_netcdf(dest)
                 print(f'saved {dest}  [{ds["omega_source"].item()}, fit {ds["fit_verdict"].item()}, '
