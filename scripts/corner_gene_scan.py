@@ -69,6 +69,15 @@ a profiles.iterdb written by TPED, and the one run is tagged base, in
 
     python corner_gene_scan.py --shot 129015 --gpu --x0 0.8425 --baseline --walltime 01:30:00
 
+--case-dir NAME=PATH runs explicit cheaseBS case dirs (any layout, e.g. a
+cheasebs_132xxx test case or nstxu_scaling_check prep's copies), tagged NAME:
+run dir <prefix>_x0_<x0>_<NAME>/, output <diag-root>/x0_<x0>/<NAME>. No
+DONE.json needed; cheasebs_acceptance.json must exist and say accepted. The
+geomfile may also carry CHEASE's own EQDSK_COCOS_*.OUT name (older runs).
+Default prefix NSTXU_<shot>_proj, diag root <shot>/nstxu_projection.
+
+    python corner_gene_scan.py --shot 132543 --gpu --case-dir U=<prep root>/U --x0 0.8173
+
 A second scan into an existing diagdir lands in the next scanfilesNNNN;
 plot_corners.py merges every scanfiles dir by ky.
 
@@ -280,10 +289,17 @@ def find_geqdsk(case_dir: str):
     return None, f"{len(found)} files matching {GEQDSK}" + (f": {found}" if found else "")
 
 
-def check_case(case_dir: str) -> tuple[str | None, list[str]]:
+def check_case(case_dir: str, explicit: bool = False) -> tuple[str | None, list[str]]:
+    """explicit (--case-dir): no DONE.json, but an accepted cheasebs_acceptance.json,
+    and CHEASE's EQDSK_COCOS_*.OUT name accepted as the geomfile."""
     geomfile, problem = find_geqdsk(case_dir)
-    missing = [f for f in (DONE, "profiles.iterdb")
-               if not os.path.isfile(os.path.join(case_dir, f))]
+    if explicit and problem:
+        alt = sorted(os.path.basename(p) for p in glob.glob(os.path.join(case_dir,
+                                                                         "EQDSK_COCOS_*.OUT")))
+        if len(alt) == 1:
+            geomfile, problem = alt[0], None
+    need = ("profiles.iterdb",) if explicit else (DONE, "profiles.iterdb")
+    missing = [f for f in need if not os.path.isfile(os.path.join(case_dir, f))]
     if problem:
         missing.append(problem)
     acc = os.path.join(case_dir, "cheasebs_acceptance.json")
@@ -291,6 +307,8 @@ def check_case(case_dir: str) -> tuple[str | None, list[str]]:
         with open(acc) as fh:
             if not json.load(fh).get("accepted", True):
                 missing.append("cheasebs_acceptance: not accepted")
+    elif explicit:
+        missing.append("cheasebs_acceptance.json")
     return geomfile, missing
 
 
@@ -316,7 +334,7 @@ def baseline_case(src: str, case_dir: str, dry_run=False) -> str:
 def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREFIX,
           only=None, force=False, submit=False, test=False, dry_run=False, x0=X0,
           walltime=None, kymin=None, overrides=None, res_scale=1, cases=None, gpu=False,
-          baseline=None):
+          baseline=None, case_dirs=None):
     """Write (and with *submit*, sbatch) the corner run dirs.
 
     gpu      copy and sbatch the template's submit_gpu.cmd, --mps = n_parallel_sims
@@ -328,6 +346,7 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     res_scale  grid refinement factor (resolution_overrides); prefix and diag
              root get _res<N>
     cases    ped_grid case names to run instead of the 16 corners
+    case_dirs  {tag: cheaseBS case dir} to run instead (check_case explicit)
     walltime SLURM -t (HH:MM:SS); timelim follows it
     x0       radius (rho_tor) or radii to scan; more than one is a scanlist
     test     one corner, debug queue, TEST_WALLTIME, *_test dirs and manifest
@@ -369,6 +388,8 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
     skipped = []
     if baseline:
         points = [({}, BASELINE_TAG)]
+    elif case_dirs:
+        points = [({}, name) for name in case_dirs]
     else:
         points = [(p, tag(p)) for p in ([parse_tag(c) for c in cases] if cases else corners())]
     for p, label in points:
@@ -377,6 +398,9 @@ def build(template=TEMPLATE, ped_root=PED_ROOT, diag_root=DIAG_ROOT, prefix=PREF
         if baseline:
             case_dir = os.path.join(os.path.dirname(diag_root.rstrip("/")), "baseline_eq")
             geomfile, missing = baseline_case(baseline, case_dir, dry_run), []
+        elif case_dirs:
+            case_dir = os.path.abspath(case_dirs[label])
+            geomfile, missing = check_case(case_dir, explicit=True)
         else:
             case_dir = os.path.join(ped_root, label)
             geomfile, missing = check_case(case_dir)
@@ -480,6 +504,10 @@ if __name__ == "__main__":
                     help=f"run the measured g-file and profiles ({DATA_ROOT}/<shot>; no mtanh "
                          "fit, no cheaseBS) instead of the corners; prefix NSTX_<shot>_baseline, "
                          "diag root <shot>/baseline")
+    ap.add_argument("--case-dir", nargs="+", default=None, metavar="NAME=PATH",
+                    help="explicit cheaseBS case dirs to run, tagged NAME (no DONE.json; "
+                         "accepted cheasebs_acceptance.json); prefix NSTXU_<shot>_proj, "
+                         "diag root <shot>/nstxu_projection")
     ap.add_argument("--force", action="store_true", help="rewrite existing run dirs")
     ap.add_argument("--submit", action="store_true", help="sbatch each run dir")
     ap.add_argument("--test", action="store_true",
@@ -497,6 +525,18 @@ if __name__ == "__main__":
         args.prefix = args.prefix or f"NSTX_{args.shot}_baseline"
         args.diag_root = args.diag_root or os.path.join(os.path.dirname(d["diag_root"]), "baseline")
         baseline = os.path.join(DATA_ROOT, str(args.shot))
+    case_dirs = None
+    if args.case_dir:
+        if args.baseline or args.case or args.only:
+            ap.error("--case-dir names its own cases; drop --baseline/--case/--only")
+        bad = [kv for kv in args.case_dir if "=" not in kv]
+        if bad:
+            ap.error(f"--case-dir takes NAME=PATH, got {bad}")
+        case_dirs = dict(kv.split("=", 1) for kv in args.case_dir)
+        d = shot_defaults(args.shot)
+        args.prefix = args.prefix or f"NSTXU_{args.shot}_proj"
+        args.diag_root = args.diag_root or os.path.join(os.path.dirname(d["diag_root"]),
+                                                        "nstxu_projection")
     for key, value in shot_defaults(args.shot).items():
         if key != "chapman" and getattr(args, key) is None:
             setattr(args, key, value)
@@ -504,5 +544,5 @@ if __name__ == "__main__":
                        args.only, args.force, args.submit, args.test, args.dry_run, args.x0,
                        args.walltime, args.kymin,
                        dict(kv.split("=", 1) for kv in args.set), args.res_scale, args.case,
-                       args.gpu, baseline)
+                       args.gpu, baseline, case_dirs)
     sys.exit(1 if skipped else 0)
