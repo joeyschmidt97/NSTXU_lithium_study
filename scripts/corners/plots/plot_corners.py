@@ -398,6 +398,13 @@ def style(p) -> dict:
             "ls": HEIGHT_LS[(p["Teh"], p["neh"])], "marker": NEH_MARKER[p["neh"]]}
 
 
+def rerun_style(ds, corner) -> dict:
+    """style() of a 1x line in a rerun comparison: diamonds mark the reruns there,
+    so the reference's diamond becomes a circle."""
+    st = style(point_of(ds, corner))
+    return {**st, "marker": "o"} if st["marker"] == "D" else st
+
+
 def point_of(ds, corner) -> dict:
     return {k: float(ds[k].sel(corner=corner)) for k in (*ORDER, "slot")}
 
@@ -1966,7 +1973,7 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
     rows, faded = [], False
     for c in names:
         i = int(np.flatnonzero(ds.corner.values == c)[0])
-        st = style(point_of(ds, c))
+        st = rerun_style(ds, c)
         one = {v: one_x(ds, i, v) for v in ("gamma", "omega")}
         for ax, var in zip(axes[:2], ("gamma", "omega")):
             y, err, conv = one[var]
@@ -2026,7 +2033,7 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
     for n, var in enumerate(("gamma", "omega")):
         pct_violins(pct_axes[n], ky, pct[var], var, base, alt)
         parity(par_axes[n], pts[var], var, base, alt)
-    handles = [Line2D([], [], lw=1.8, ms=5, **style(point_of(ds, c)),
+    handles = [Line2D([], [], lw=1.8, ms=5, **rerun_style(ds, c),
                       label=str(ds.label.values[list(ds.corner.values).index(c)]))
                for c in names]
     extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=5, label=f"{base} GENE converged"),
