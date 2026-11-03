@@ -49,6 +49,11 @@ control plus four box-scan failures inside the 0.8-1.2 campaign box.
        Each temperature's separatrix value is held at baseline
        (T_sep + lambda^2 (T - T_sep)) and p_fast stays fixed (Hatch,
        2026-10-23).
+    U0 U's recipe at lambda = 1: T_scale 1.0 with the clamp (an identity on
+       the raw profiles), B0 and Ip untouched, K's settings. The unscaled
+       control for U in GENE: same profile source and pipeline, so U/U0 is the
+       scaling alone. K's Te_ped_scale_1.000 is the mtanh unity fit, whose omte
+       at the 132543 Te top (x0 0.808) is 1.15 against 0.24 raw.
 
 Both shots, from O/P on -- campaign outer bounds on the repo's data/discharges
 (Pingyu's GENE profiles_e/i/z, which NERSC already loaded for 132543 and the
@@ -85,6 +90,7 @@ wrote to before the rename.
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests K
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests M
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests U
+    python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests U0
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare B
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all
     python -u -m NSTXU_lithium_study.scripts.cheasebs_132xxx_tests compare all --campaign profile_base_132588
@@ -240,6 +246,10 @@ TESTS = {
               cases=[(tag("T_scale", LAMBDA_132543 ** 2) + "_sep",
                       [("T_scale", LAMBDA_132543 ** 2, {"clamp_sep": True})])],
               ref=["Te_ped_scale_1.000"]),
+    "U0": dict(shot=132543, dir="U0_unscaled_replay", settings=RHOP,
+               namelist=dict(NAMELIST, **TENSBND),
+               cases=[(tag("T_scale", 1.0) + "_sep", [("T_scale", 1.0, {"clamp_sep": True})])],
+               ref=["Te_ped_scale_1.000"]),
     "R": dict(shot=132588, dir="R_corner_mix0.2", settings=dict(RHOP, bootstrap_mix=0.2),
               namelist=dict(NAMELIST, **TENSBND),
               cases=[c for c in BOUNDS if c[0] == "Te_ped_scale_1.200_ne_ped_scale_1.200"],
