@@ -29,6 +29,7 @@ cannot change what an old code means.
     python -m NSTXU_lithium_study.scripts.corners.res2.res_check --dry-run      # first job's parameters
     python -m NSTXU_lithium_study.scripts.corners.res2.res_check                # write the run dirs
     python -m NSTXU_lithium_study.scripts.corners.res2.res_check --code a4f2ws  # same batch again
+    python -m NSTXU_lithium_study.scripts.corners.res2.res_check --picks-from a4f2ws --grids nv0 nw0
     python -m NSTXU_lithium_study.scripts.corners.res2.res_check --shot 132543 --grids nx0
 
 then, in each allocation:
@@ -103,6 +104,9 @@ if __name__ == "__main__":
     ap.add_argument("--x0", type=float, nargs="+", default=None, help="radii [all picked]")
     ap.add_argument("--code", default=None,
                     help="reuse the picks recorded for this batch code")
+    ap.add_argument("--picks-from", default=None, metavar="CODE",
+                    help="the picks recorded for batch CODE with these --grids (a new code), "
+                         "so another grid reruns the same points")
     ap.add_argument("--results", default=RESULTS, help="sparse_grid_results root")
     ap.add_argument("--gamma-cut", type=float, default=GAMMA_CUT)
     ap.add_argument("--walltime", default=WALLTIME, help="sets GENE timelim [01:30:00]")
@@ -115,7 +119,18 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     genedir = os.path.dirname(os.path.normpath(args.template))
-    if args.code:
+    if args.code and args.picks_from:
+        ap.error("--code and --picks-from exclude each other")
+    if args.picks_from:
+        path = os.path.join(genedir, f"rescheck_{args.picks_from}.json")
+        if not os.path.isfile(path):
+            ap.error(f"no batch {path}")
+        with open(path) as fh:
+            jobs = json.load(fh)["jobs"]
+        grids = sorted(args.grids)
+        code = batch_code(jobs, grids)
+        print(f"picks of batch {args.picks_from}")
+    elif args.code:
         path = os.path.join(genedir, f"rescheck_{args.code}.json")
         if not os.path.isfile(path):
             ap.error(f"no batch {path}")
