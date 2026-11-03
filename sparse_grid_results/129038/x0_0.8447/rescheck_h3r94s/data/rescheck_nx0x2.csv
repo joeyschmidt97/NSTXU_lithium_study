@@ -1,0 +1,5 @@
+corner,Teh,Tew,neh,new,ky,status_1x,gamma_1x,omega_1x,source_nx0x2,gamma_nx0x2,gamma_nx0x2_std,omega_nx0x2,omega_nx0x2_std,gamma_rel_diff,omega_rel_diff,dir_nx0x2
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,0.3,ok,0.133,-2.881,ambiguous,0.132317,0.0592633,-2.89676,0.0430378,-0.005136,-0.005472,/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/rescheck_h3r94s/nx0x2/x0_0.8447/Teh1.00_Tew1.00_neh1.00_new1.00
+Teh0.80_Tew1.20_neh0.80_new1.20,0.8,1.2,0.8,1.2,0.1,ok,0.008,-0.907,ambiguous,-0.351604,0.388313,0.315561,0.150837,-44.95,1.348,/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/rescheck_h3r94s/nx0x2/x0_0.8447/Teh0.80_Tew1.20_neh0.80_new1.20
+Teh0.80_Tew1.20_neh0.80_new1.20,0.8,1.2,0.8,1.2,0.5,ok,0.301,-1.16,decaying,-5.90862,0.664508,-0.520749,0.592635,-20.63,0.5511,/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/rescheck_h3r94s/nx0x2/x0_0.8447/Teh0.80_Tew1.20_neh0.80_new1.20
+Teh0.80_Tew1.20_neh0.80_new1.20,0.8,1.2,0.8,1.2,0.7,ok,0.299,-1.023,decaying,-5.51722,1.63688,0.765801,0.375286,-19.45,1.749,/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/129038/rescheck_h3r94s/nx0x2/x0_0.8447/Teh0.80_Tew1.20_neh0.80_new1.20
