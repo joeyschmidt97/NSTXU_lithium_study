@@ -17,7 +17,7 @@ grids, same code), carried in every name:
 
     run dir  <genedir>/NSTX_<shot>_rc<code>_<grid>x2_x0_<x0>_<tag>/
     output   .../lithium_study/<shot>/rescheck_<code>/<grid>x2/x0_<x0>/<tag>/
-    batch    <genedir>/rescheck_<code>.json   (picks, grids, 1x and 2x values)
+    batch    <genedir>/rescheck_<code>.json   (picks, grids, 1x and 2x values, output dirs)
 
 so the one glob NSTX_*_rc<code>_*/ is the whole batch, and the same
 interactive_corners.sh command can be run in allocation after allocation:
@@ -40,7 +40,7 @@ LANES_PER_GPU=3 packs three run dirs (nine ky ranks) onto each A100, any mix of
 shots, radii and scalings: 4 nodes run 48 dirs at once. Without it
 (NODES_PER=1) each dir holds a whole node.
 
-Compare with plot_corners --diag-root .../<shot>/rescheck_<code>/<grid>x2 --x0 <x0>.
+Plot each rerun against its 1x scan with plot_res_check --code <code>.
 """
 
 from __future__ import annotations
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     one_x = {g: int(C.read_param(par, g)) for g in grids}
     print("1x -> 2x: " + ", ".join(f"{g} {n} -> {doubled(n, g)}" for g, n in one_x.items()))
 
-    skipped = []
+    skipped, dirs = [], []
     for grid in grids:
         for j in jobs:
             d = C.shot_defaults(j["shot"])
@@ -154,17 +154,25 @@ if __name__ == "__main__":
                               walltime=args.walltime, kymin=j["ky"],
                               overrides={grid: str(doubled(one_x[grid], grid))},
                               cases=[j["case"]], gpu=True)
+            dirs.append(os.path.join(diag_root, C.x0_label((j["x0"],)), j["case"]))
             skipped += [(grid, j["shot"], j["x0"], *s) for s in skip
                         if s[1] != ["run dir exists"]]
             if args.dry_run:
                 sys.exit(0)
 
     path = os.path.join(genedir, f"rescheck_{code}.json")
-    if not os.path.isfile(path):
+    if os.path.isfile(path):          # an older record gets its dirs; its picks never change
+        with open(path) as fh:
+            batch = json.load(fh)
+        if not batch.get("dirs"):
+            batch["dirs"] = dirs
+            with open(path, "w") as fh:
+                json.dump(batch, fh, indent=1)
+    else:
         with open(path, "w") as fh:
             json.dump({"code": code, "grids": grids, "one_x": one_x,
                        "two_x": {g: doubled(n, g) for g, n in one_x.items()},
-                       "walltime": args.walltime, "jobs": jobs}, fh, indent=1)
+                       "walltime": args.walltime, "jobs": jobs, "dirs": dirs}, fh, indent=1)
     for grid, shot, x0, label, why in skipped:
         print(f"  SKIPPED {grid} {shot} x0 {x0:g} {label}: {why}")
     print(f"\nbatch {code} -> {path}\nrun (again in each new allocation until all are done):\n"
