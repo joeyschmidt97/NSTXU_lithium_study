@@ -19,8 +19,10 @@ were rerun, so each 1x line has its own 2x diamonds and nothing else:
     sparse_grid_results/rescheck_<code>.csv        every row of the batch, one table
     sparse_grid_results/<shot>/summary_rescheck_<code>_<grid>x2.png
 
-Each summary (one per shot and doubled grid) has one column per radius (smallest
-x0 left), gamma over omega: every rerun scaling at that radius on the same axes in
+Each summary (one per shot and doubled grid) has one column per radius of the
+shot (every x0_<x0>/ folder under sparse_grid_results/<shot>/, smallest x0 left,
+so the columns line up with update_results' summaries; "no res check" where a
+radius was not rerun), gamma over omega: every rerun scaling at that radius on the same axes in
 its plot_corners colour, its 1x line (circles for the reference) and its 2x
 diamonds beside it, the gamma change over --tol written next to the diamond.
 Diamonds mark 2x points only.
@@ -29,8 +31,11 @@ A 2x ky GENE did not converge (timelim reached: these are spot checks) is read
 from a live field_omega fit of its field file, hollow +-1 std, faded unless the
 fit passes; the 1x side uses GENE where it converged, else its recorded field
 fit (update_results writes those). The table printed at the end flags a gamma
-change above --tol.
+change above --tol. With --x0 the summary is not rewritten (it would lose the
+other radii). update_results runs this for every batch (batch_codes) after its
+own plots.
 
+    python -m NSTXU_lithium_study.scripts.corners.res2.plot_res_check --all
     python -m NSTXU_lithium_study.scripts.corners.res2.plot_res_check --code h3r94s --list
     python -m NSTXU_lithium_study.scripts.corners.res2.plot_res_check --code h3r94s
     python -m NSTXU_lithium_study.scripts.corners.res2.plot_res_check --code h3r94s --shot 129015 --grids nx0
@@ -76,6 +81,28 @@ def folder_dirs(code: str, root: str = ROOT) -> list[str]:
     """Rerun dirs of batch *code* by folder name, under every <shot>/ of *root*."""
     return sorted(d for d in glob.glob(os.path.join(root, "*", f"rescheck_{code}", "*x2",
                                                     "x0_*", "*")) if os.path.isdir(d))
+
+
+def batch_codes(root: str = ROOT, genedir: str = GENEDIR) -> list[str]:
+    """Every res_check batch code: <root>/<shot>/rescheck_<code>/ folders and
+    <genedir>/rescheck_<code>.json records."""
+    found = {os.path.basename(d).removeprefix("rescheck_")
+             for d in glob.glob(os.path.join(root, "*", "rescheck_*")) if os.path.isdir(d)}
+    found |= {os.path.basename(f).removeprefix("rescheck_").removesuffix(".json")
+              for f in glob.glob(os.path.join(genedir, "rescheck_*.json"))}
+    return sorted(found)
+
+
+def shot_radii(results: str, shot: int) -> list[float]:
+    """x0 of every x0_<x0>/ folder under <results>/<shot>/ (update_results' radii)."""
+    out = []
+    for name in os.listdir(os.path.join(results, str(shot))) if os.path.isdir(
+            os.path.join(results, str(shot))) else ():
+        try:
+            out.append(float(name.removeprefix("x0_")))
+        except ValueError:
+            continue
+    return sorted(out)
 
 
 def json_dirs(code: str, genedir: str = GENEDIR) -> list[str]:
@@ -149,13 +176,28 @@ def summary_rows(path: str, shot: int, x0: float, grid: str, alt: str) -> list[d
              **{k: r[k.replace("_2x", f"_{ak}")] for k in SUMMARY_KEYS[3:]}} for r in rows]
 
 
-def plot_summary(shot, grid, panels, code, out, written, tol=TOL):
+def plot_summary(shot, grid, panels, code, out, written, tol=TOL, radii=()):
     """<out>/summary_rescheck_<code>_<grid>x2.png from *panels* = [(x0, 1x Dataset,
-    its summary rows of *grid*)]: one column per radius, gamma (top) and omega (bottom)."""
+    its summary rows of *grid*)]: one column per radius, gamma (top) and omega (bottom).
+    *radii* not in *panels* get an empty "no res check" column."""
+    have = [p[0] for p in panels]
+    panels = list(panels) + [(x, None, []) for x in radii
+                             if not any(abs(x - h) < X0_TOL for h in have)]
     panels = sorted(panels, key=lambda p: p[0])
     fig, axes = plt.subplots(2, len(panels), figsize=(4.6 * len(panels) + 3, 8.5), squeeze=False)
     handles, faded, missing = {}, False, False
     for col, (x0, ds, rows) in enumerate(panels):
+        if ds is None:
+            for row in range(2):
+                ax = axes[row, col]
+                ax.set_xticks([])
+                ax.set_yticks([])
+                for sp in ax.spines.values():
+                    sp.set_color(pc.GRID)
+            axes[0, col].text(0.5, 0.5, "no res check", ha="center", va="center",
+                              fontsize=10, color=pc.MUTED, transform=axes[0, col].transAxes)
+            axes[0, col].set_title(f"x0 = {x0:g}", loc="left", fontsize=10, color=pc.INK)
+            continue
         ky = ds.ky.values
         nudge = pc.RES2_NUDGE * (np.ptp(ky) if ky.size > 1 else 1.0)
         names = list(ds.corner.values)
@@ -241,30 +283,18 @@ def print_table(rows, tol=TOL):
               f"{100 * rel:>6.1f}%  {r['source_2x']}{flag}")
 
 
-if __name__ == "__main__":
-    import argparse
-
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--code", required=True, help="res_check batch code, e.g. h3r94s")
-    ap.add_argument("--shot", type=int, nargs="+", default=None, help="shots [all in the batch]")
-    ap.add_argument("--x0", type=float, nargs="+", default=None, help="radii [all in the batch]")
-    ap.add_argument("--grids", nargs="+", choices=GRIDS, default=None,
-                    help="doubled grids [all in the batch]")
-    ap.add_argument("--root", default=ROOT, help="parent of <shot>/rescheck_<code>/")
-    ap.add_argument("--genedir", default=GENEDIR, help="where rescheck_<code>.json is")
-    ap.add_argument("--results", default=RESULTS, help="sparse_grid_results root (output)")
-    ap.add_argument("--tol", type=float, default=TOL, help="flag |gamma change| above this")
-    ap.add_argument("--list", action="store_true", help="print the dirs found and exit")
-    args = ap.parse_args()
-
-    found = find_dirs(args.code, args.root, args.genedir, args.shot, args.x0, args.grids)
+def run(code, shots=None, x0s=None, grids=None, root=ROOT, genedir=GENEDIR,
+        results=RESULTS, tol=TOL, list_only=False) -> list[str]:
+    """Plot batch *code* (see the module docstring); the paths written. The
+    per-shot summary is skipped under *x0s*, so it never loses radii."""
+    found = find_dirs(code, root, genedir, shots, x0s, grids)
     for (shot, x0, grid), dirs in sorted(found.items()):
         print(f"  {shot} x0 {x0:g} {grid}x2: " + ", ".join(sorted(dirs)))
     if not found:
-        sys.exit("no rerun dirs with GENE output")
-    if args.list:
-        sys.exit(0)
+        print(f"batch {code}: no rerun dirs with GENE output")
+        return []
+    if list_only:
+        return []
 
     entries = load_entries()
     written, summary, panels = [], [], {}
@@ -286,8 +316,8 @@ if __name__ == "__main__":
             except SystemExit as exc:
                 print(f"  no 1x scan: {exc}")
                 continue
-            out = os.path.join(args.results, str(shot), C.x0_label((x0,)),
-                               f"rescheck_{args.code}")
+            out = os.path.join(results, str(shot), C.x0_label((x0,)),
+                               f"rescheck_{code}")
             os.makedirs(out, exist_ok=True)
             first = len(summary)
             for grid, dirs in sorted(per_grid.items()):
@@ -307,15 +337,46 @@ if __name__ == "__main__":
                 if rows:
                     panels.setdefault((shot, grid), []).append((x0, ds, rows))
         for (shot, grid), p in sorted(panels.items()):
-            plot_summary(shot, grid, p, args.code, os.path.join(args.results, str(shot)),
-                         written, args.tol)
+            if x0s:
+                print(f"  --x0 given: summary_rescheck_{code}_{grid}x2.png for {shot} left as is")
+                continue
+            plot_summary(shot, grid, p, code, os.path.join(results, str(shot)),
+                         written, tol, shot_radii(results, shot))
 
     if summary:
-        path = os.path.join(args.results, f"rescheck_{args.code}.csv")
+        path = os.path.join(results, f"rescheck_{code}.csv")
         with open(path, "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=SUMMARY_KEYS)
             w.writeheader()
             w.writerows(summary)
         written.append(path)
-        print_table(summary, args.tol)
+        print_table(summary, tol)
     print("\nwrote\n  " + "\n  ".join(written))
+    return written
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--code", nargs="+", default=None, help="res_check batch code(s), e.g. h3r94s")
+    ap.add_argument("--all", action="store_true", help="every batch (batch_codes)")
+    ap.add_argument("--shot", type=int, nargs="+", default=None, help="shots [all in the batch]")
+    ap.add_argument("--x0", type=float, nargs="+", default=None, help="radii [all in the batch]")
+    ap.add_argument("--grids", nargs="+", choices=GRIDS, default=None,
+                    help="doubled grids [all in the batch]")
+    ap.add_argument("--root", default=ROOT, help="parent of <shot>/rescheck_<code>/")
+    ap.add_argument("--genedir", default=GENEDIR, help="where rescheck_<code>.json is")
+    ap.add_argument("--results", default=RESULTS, help="sparse_grid_results root (output)")
+    ap.add_argument("--tol", type=float, default=TOL, help="flag |gamma change| above this")
+    ap.add_argument("--list", action="store_true", help="print the dirs found and exit")
+    args = ap.parse_args()
+
+    if not args.code and not args.all:
+        ap.error("give --code or --all")
+    codes = batch_codes(args.root, args.genedir) if args.all else args.code
+    print(f"batches: {', '.join(codes) or 'none'}")
+    for code in codes:
+        run(code, args.shot, args.x0, args.grids, args.root, args.genedir, args.results,
+            args.tol, args.list)
