@@ -111,6 +111,13 @@ on every plot, table and CSV. It is no corner, so the corner statistics leave
 it out: the mode fractions under the growth plot, the knob-level mode mix,
 and the spread and mean of corners_local_params.png.
 
+--case reads named case dirs instead of ped_grid tags (case_point; the NSTX-U
+projection's U and U0 from nstxu_scaling_check prep): GENE under
+<diag-root>/x0_<X0>/<NAME>/ and profiles under <ped-root>/<NAME>/, each case at
+its own x0 (marked in its colour on the rho_tor axes). Same per-scan plots into
+<out>/corners/, legends read "NAME (x0)", --ref-case is drawn solid black and
+first but stays in the comparisons; no knob mix, batches, sampling or 2x check.
+
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --out ./corner_plots
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --spread 0.02 --max-params 16
@@ -118,6 +125,7 @@ and the spread and mean of corners_local_params.png.
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.6737 --modes
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --x0 0.8447 --modes --field-fits
     python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --shot 132588 --x0 0.677 --outliers
+    python -m NSTXU_lithium_study.scripts.corners.plots.plot_corners --shot 132543 --diag-root .../132543/nstxu_projection --ped-root .../132543/nstxu_projection_eq --case U0=0.808 U=0.8173 --ref-case U0 --modes --mode-extent
 
 Two growth plots, always:
 
@@ -250,6 +258,14 @@ INK, MUTED, GRID, SURFACE = "#1f1f1e", "#6b6a63", "#e4e3dc", "#fcfcfb"
 #: read against. Black, solid, diamonds, so it stands apart from every corner hue.
 REF = {k: 1.0 for k in ORDER}
 REF_STYLE = {"color": INK, "ls": (0, ()), "marker": "D"}
+#: Named cases (case_point, run(cases=...)): explicit case dirs read by name instead of
+#: ped_grid tags, e.g. the NSTX-U projection's U and U0 (nstxu_scaling_check prep), GENE
+#: under <diag_root>/x0_<x0>/<name>/ and profiles under <ped_root>/<name>/, each at its
+#: own x0. Knobs are NaN. The ref case is drawn in REF_STYLE but is still a row of every
+#: comparison (local parameters, mode mix), since there are no corners to set it against.
+NAMED_COLORS = ("#2a78d6", "#eb6834", "#1baf7a", "#c4338a", "#6250d6", "#eda100")
+NAMED_MARKERS = ("o", "s", "^", "v", "P", "X")
+NAMED_LEGEND = "case (x0)"
 DPI = 150
 #: Which reading of a ky wins when two scanfiles dirs hold it.
 RANK = {"ok": 2, "field": 1, "decaying": 0.5, "ambiguous": 0.5}
@@ -363,11 +379,54 @@ MODE_INPUTS = {("fingerprints", "D_e-Chi_e"): "De_Xe", ("fingerprints", "Chi_i-C
 
 # ----------------------------------------------------------------------------- labels, style
 
+def case_point(name: str, x0=None, ref=False) -> dict:
+    """A named case: GENE under <diag_root>/x0_<x0>/<name>/ (x0 None: the scan's x0),
+    profiles under <ped_root>/<name>/; *ref* draws it in REF_STYLE, first."""
+    return {**{k: np.nan for k in ORDER}, "name": name,
+            "x0": None if x0 is None else float(x0), "ref": bool(ref)}
+
+
+def case_name(p) -> str:
+    """The case's dir name: its own for a named case, else the ped_grid tag."""
+    return p.get("name") or tag(p)
+
+
+def is_named(ds) -> bool:
+    return bool(ds.attrs.get("named", 0))
+
+
+def legend_title(ds) -> str:
+    return NAMED_LEGEND if is_named(ds) else LEGEND_TITLE
+
+
+def x0_text(ds) -> str:
+    """'x0 = 0.808', or each named case's x0 when they differ."""
+    if is_named(ds) and np.unique(ds["x0_case"].values).size > 1:
+        return "x0 per case (" + ", ".join(f"{c} {x:g}" for c, x in
+                                           zip(ds.corner.values, ds["x0_case"].values)) + ")"
+    return f"x0 = {ds.x0:g}"
+
+
+def x0_marks(ds) -> list[tuple[float, str]]:
+    """(x0, colour) to mark on rho_tor axes: one per named case at its own x0, else ds.x0."""
+    if not is_named(ds):
+        return [(ds.x0, INK)]
+    return [(float(x), style(point_of(ds, c))["color"])
+            for c, x in zip(ds.corner.values, ds["x0_case"].values)]
+
+
 def is_ref(p) -> bool:
+    """The knob reference (1.00 on every knob). A named case never is: its ref flag
+    only styles it, so it stays in the comparisons."""
+    if "name" in p:
+        return False
     return all(p[k] == REF[k] for k in ORDER)
 
 
 def label(p) -> str:
+    if "name" in p:
+        return p["name"] + (f" ({p['x0']:g})" if p.get("x0") is not None else "") \
+            + (" ref" if p.get("ref") else "")
     return "(" + ", ".join(f"{p[k]:g}" for k in ORDER) + ")" + (" ref" if is_ref(p) else "")
 
 
@@ -386,6 +445,12 @@ def is_corner(p) -> bool:
 
 
 def style(p) -> dict:
+    if "name" in p:                                # a named case: ref black, others by slot
+        if p.get("ref"):
+            return dict(REF_STYLE)
+        i = int(p.get("slot", 0))
+        return {"color": NAMED_COLORS[i % len(NAMED_COLORS)], "ls": (0, ()),
+                "marker": NAMED_MARKERS[i % len(NAMED_MARKERS)]}
     if is_ref(p):
         return dict(REF_STYLE)
     if not is_corner(p):                           # a VURS pick: its slot in the batch
@@ -406,7 +471,11 @@ def rerun_style(ds, corner) -> dict:
 
 
 def point_of(ds, corner) -> dict:
-    return {k: float(ds[k].sel(corner=corner)) for k in (*ORDER, "slot")}
+    p = {k: float(ds[k].sel(corner=corner)) for k in (*ORDER, "slot")}
+    if is_named(ds):
+        p.update(name=str(corner), x0=float(ds["x0_case"].sel(corner=corner)),
+                 ref=bool(ds["case_ref"].sel(corner=corner)))
+    return p
 
 
 def corner_rows(ds) -> np.ndarray:
@@ -711,14 +780,25 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
     case's place in that order (its style when it is no corner).
 
     GENE runs are read from every ky_roots(diag_root, extra_roots) root, merged by ky.
+
+    points may instead be named cases (case_point): read by name, each at its own
+    x0 (x0_case), the ref case first, no knob reference prepended.
     """
     gene, prof, pts = {}, {}, []
     roots = ky_roots(diag_root, extra_roots)
     if len(roots) > 1:
         print("GENE roots: " + ", ".join(os.path.basename(r.rstrip("/\\")) for r in roots))
-    for p in [REF] + (ordered(corners()) if points is None else list(points)):
-        name = tag(p)
-        g = gene_corner([os.path.join(r, x0_label(x0), name) for r in roots], field_fits)
+    named = points is not None and any("name" in p for p in points)
+    if named and not all("name" in p for p in points):
+        raise ValueError("named cases and ped_grid points cannot be mixed")
+    todo = (sorted(points, key=lambda p: not p.get("ref")) if named else
+            [REF] + (ordered(corners()) if points is None else list(points)))
+    for p in todo:
+        name = case_name(p)
+        if named and p.get("x0") is None:
+            p = {**p, "x0": float(x0[0])}
+        cx0 = (p["x0"],) if named else x0
+        g = gene_corner([os.path.join(r, x0_label(cx0), name) for r in roots], field_fits)
         pr = iterdb_profiles(os.path.join(ped_root, name))
         q = q_profile(os.path.join(ped_root, name))
         if q is not None:
@@ -741,10 +821,11 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
         if pr is not None:
             prof[name] = pr
         pts.append(p)
-    if not pts or (points is not None and all(is_ref(p) for p in pts)):
-        raise SystemExit(f"no corner found under {diag_root} or {ped_root}")
+    if not pts or (points is not None and not named and all(is_ref(p) for p in pts)):
+        raise SystemExit(f"no {'named case' if named else 'corner'} found under "
+                         f"{diag_root} or {ped_root}")
 
-    names = [tag(p) for p in pts]
+    names = [case_name(p) for p in pts]
     ky = np.array(sorted({k for g in gene.values() for k in g[0]}) or KYMIN, dtype=float)
 
     def on_ky(n, j, fill):
@@ -756,7 +837,10 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                             "label": ("corner", [label(p) for p in pts]),
                             "slot": ("corner", [sum(not is_ref(q) for q in pts[:i])
                                                 for i in range(len(pts))]),
-                            "reference": ("corner", [is_ref(p) for p in pts])})
+                            "reference": ("corner", [is_ref(p) for p in pts]),
+                            "x0_case": ("corner", [p["x0"] if named else float(x0[0])
+                                                   for p in pts]),
+                            "case_ref": ("corner", [bool(p.get("ref")) for p in pts])})
     ds["gamma"] = (("corner", "ky"), [on_ky(n, 0, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["omega"] = (("corner", "ky"), [on_ky(n, 1, np.nan) for n in names], {"units": "c_ref/L_ref"})
     ds["status"] = (("corner", "ky"), [on_ky(n, 2, "missing") for n in names])
@@ -779,7 +863,7 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
         ds["q_offset"] = (nq - np.round(nq)).assign_attrs(
             long_name="n q0 - round(n q0): 0 on a rational surface, +-1/2 midway")
         if "shat" in ds:
-            ds["dx_rational"] = (abs(ds["q_offset"]) * float(x0[0])
+            ds["dx_rational"] = (abs(ds["q_offset"]) * ds["x0_case"]
                                  / (ds["n0"] * ds["shat"] * ds["q0"])).assign_attrs(
                 long_name="rho_tor from x0 to the nearest q = m/n surface")
     trusted = ds["gamma"].where(ds["status"] != "ambiguous")   # an ambiguous fit is no maximum
@@ -808,9 +892,9 @@ def load_dataset(diag_root: str = DIAG_ROOT, ped_root: str = PED_ROOT, x0=X0,
                 ds[f"omg_{var}"] = (("corner", "rho_tor"),
                                     -np.gradient(arr, grid, axis=1) / arr,
                                     {"long_name": f"-dln{var}/drho_tor"})
-    ds.attrs.update(x0=float(x0[0]), diag_root=diag_root, ped_root=ped_root,
+    ds.attrs.update(x0=float(ds["x0_case"].values[0]), diag_root=diag_root, ped_root=ped_root,
                     gene_roots="; ".join(roots),
-                    field_fits=int(field_fits), shot=int(shot), scan=scan)
+                    field_fits=int(field_fits), shot=int(shot), scan=scan, named=int(named))
     if modes and gene:
         print("\nmode_identifier (TPED) per ky:")
         ds = add_modes(ds)
@@ -833,8 +917,8 @@ def corner_handles(ds):
             for c, lab in zip(ds.corner.values, ds.label.values)]
 
 
-def legend_right(fig, handles, extra=()):
-    fig.legend(handles=list(handles) + list(extra), title=LEGEND_TITLE, loc="center right",
+def legend_right(fig, handles, extra=(), title=LEGEND_TITLE):
+    fig.legend(handles=list(handles) + list(extra), title=title, loc="center right",
                frameon=False, fontsize=8, title_fontsize=9)
 
 
@@ -931,8 +1015,8 @@ def plot_growth(ds, out, written, guesses=False):
     else:
         handles = [Line2D([], [], lw=1.8, ms=5.5, **style(point_of(ds, c)), label=str(l))
                    for c, l in zip(ds.corner.values, ds.label.values)]
-    legend_right(fig, handles, extra)
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan}, linear GENE at x0 = {ds.x0:g}", x=0.06, ha="left",
+    legend_right(fig, handles, extra, legend_title(ds))
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan}, linear GENE at {x0_text(ds)}", x=0.06, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.95))
     save(fig, out, name, written)
@@ -1028,7 +1112,7 @@ def plot_mode_scaling(ds, out, written):
     tab.tick_params(length=0)
     for sp in tab.spines.values():
         sp.set_visible(False)
-    tab.set_title(f"mode and gamma per corner and ky, rows {LEGEND_TITLE}  (x unconverged, - none"
+    tab.set_title(f"mode and gamma per corner and ky, rows {legend_title(ds)}  (x unconverged, - none"
                   + (", dec/amb recorded fit" if ds.attrs.get("field_fits") else "") + ")\n"
                   "shade: gamma / largest gamma at that ky, light 0 to dark 1",
                   loc="left", fontsize=10, color=INK)
@@ -1039,6 +1123,13 @@ def plot_mode_scaling(ds, out, written):
         tab.text(k * 1.9 + 1.6, -1.72, MODE_SHORT.get(mode, mode), fontsize=7, va="center", color=INK,
                  clip_on=False)
 
+    if is_named(ds):                              # no knobs: the table is the whole story
+        bars.axis("off")
+        fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode per case",
+                     x=0.02, ha="left", fontsize=12, color=INK)
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        save(fig, out, "corners_mode_scaling.png", written)
+        return
     groups = [(k, side) for k in ORDER for side in ("<1", ">1")]
     side = {g: (ds[g[0]].values < 1) if g[1] == "<1" else (ds[g[0]].values > 1) for g in groups}
     xs = np.array([i + 0.6 * (i // 2) for i in range(len(groups))])
@@ -1067,7 +1158,7 @@ def plot_mode_scaling(ds, out, written):
                    fontsize=10, color=INK)
     bars.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(bars)
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: profile scaling vs mode",
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: profile scaling vs mode",
                  x=0.02, ha="left", fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, out, "corners_mode_scaling.png", written)
@@ -1119,7 +1210,7 @@ def plot_q_offset(ds, out, written):
     for sp in tab.spines.values():
         sp.set_visible(False)
     tab.set_title(r"$\delta = nq_0 - \mathrm{round}(nq_0)$ per corner and ky, rows "
-                  f"{LEGEND_TITLE}\ncell: delta, n, [mode] gamma, top band the mode's colour; "
+                  f"{legend_title(ds)}\ncell: delta, n, [mode] gamma, top band the mode's colour; "
                   "dark = on a q = m/n surface, light = midway", loc="left", fontsize=10, color=INK)
     for q in range(6):                             # dark-to-light key under the table
         tab.add_patch(plt.Rectangle((q * 0.35, -1.95), 0.35, 0.45, fc=Q_OFFSET_CMAP(q / 5),
@@ -1153,7 +1244,7 @@ def plot_q_offset(ds, out, written):
                  color=INK)
     sc.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     tidy(sc)
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: q = m/n overlap", x=0.02, ha="left",
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: q = m/n overlap", x=0.02, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, out, "corners_q_offset.png", written)
@@ -1211,7 +1302,7 @@ def plot_outliers(ds, out, written):
     tab.tick_params(length=0)
     for sp in tab.spines.values():
         sp.set_visible(False)
-    tab.set_title(f"TPED outlier per corner and ky, rows {LEGEND_TITLE}; red = outlier\n"
+    tab.set_title(f"TPED outlier per corner and ky, rows {legend_title(ds)}; red = outlier\n"
                   "cell: near-Nyquist fraction, tripped criteria, GENE status if not "
                   "converged", loc="left", fontsize=10, color=INK)
     crit = (f"grid: fraction > {OUTLIER_NYQ:g}   γ<0: GENE gamma < 0   "
@@ -1243,8 +1334,8 @@ def plot_outliers(ds, out, written):
     sc.set_title("near-Nyquist fraction (last field time, whole ballooning domain)\n"
                  "filled = GENE converged, hollow = not", loc="left", fontsize=10, color=INK)
     tidy(sc)
-    legend_right(fig, corner_handles(ds))
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: outlier check "
+    legend_right(fig, corner_handles(ds), title=legend_title(ds))
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: outlier check "
                  f"({int(bad.sum())} of {int(checked.sum())} runs flagged)", x=0.02, ha="left",
                  fontsize=12, color=INK)
     fig.tight_layout(rect=(0, 0.02, 0.87, 0.95))
@@ -1495,8 +1586,8 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
                 for x in MODE_COLOR if (m == x).any()]
     fig.legend(handles=handles, frameon=False, fontsize=8, loc="lower center",
                ncol=min(len(handles), 5), bbox_to_anchor=(0.56, 0.0))
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: mode structure along the field line,"
-                 f" rows {LEGEND_TITLE}\n{n_cut} box(es) with an end above {tol:g}; "
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode structure along the field line,"
+                 f" rows {legend_title(ds)}\n{n_cut} box(es) with an end above {tol:g}; "
                  "text: mode (under --modes) and gamma\nleft: each row's grid, darker = "
                  "higher among the runs here (grey: one value), boxed where a case's runs "
                  "differ", x=0.02, ha="left", fontsize=11,
@@ -1557,7 +1648,7 @@ def plot_mode_extent(ds, out, written, tol=EXTENT_TOL, profiles=None, nx0=()):
         tidy(ax)
     axes[-1].set_xticks(range(len(rows)), [str(ds.label.values[i]) for i in rows], rotation=35,
                         ha="right", fontsize=8)
-    axes[-1].set_xlabel(f"profile scaling {LEGEND_TITLE}")
+    axes[-1].set_xlabel(f"profile scaling {legend_title(ds)}")
     axes[-1].set_xlim(-0.6, len(rows) - 0.4)
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, fraction=0.03,
                       pad=0.02)
@@ -1572,7 +1663,7 @@ def plot_mode_extent(ds, out, written, tol=EXTENT_TOL, profiles=None, nx0=()):
     axes[-1].legend(handles=handles, frameon=False, fontsize=8, loc="upper center", ncol=4,
                     bbox_to_anchor=(0.5, -0.32))
     nx0_txt = ", ".join(f"{x:g}" for x in sorted(x for x in nx0 if x is not None)) or "?"
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: mode extent along the field line "
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode extent along the field line "
                  f"(nx0 = {nx0_txt})\nend values below {EXTENT_FLOOR:g} are drawn at it",
                  x=0.02, ha="left", fontsize=12, color=INK)
     save(fig, out, "corners_mode_extent.png", written)
@@ -1690,7 +1781,7 @@ def plot_vspace_edge(ds, out, written, tol=VSP_TOL):
     for ax in axes[-1]:
         ax.set_xticks(range(len(rows)), [str(ds.label.values[i]) for i in rows], rotation=35,
                       ha="right", fontsize=8)
-        ax.set_xlabel(f"profile scaling {LEGEND_TITLE}")
+        ax.set_xlabel(f"profile scaling {legend_title(ds)}")
         ax.set_xlim(-0.6, len(rows) - 0.4)
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, fraction=0.03,
                       pad=0.02)
@@ -1708,7 +1799,7 @@ def plot_vspace_edge(ds, out, written, tol=VSP_TOL):
     fig.legend(handles=handles, frameon=False, fontsize=8, loc="outside lower center", ncol=5)
     grid_txt = "; ".join(f"nv0 = {g[0]:g}, nw0 = {g[1]:g}, lv = {g[2]:g}, lw = {g[3]:g}"
                          for g in sorted({g for g in grids.values() if None not in g}))
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: f at the velocity-box edges "
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: f at the velocity-box edges "
                  f"(vsp, last time, max over z)\n{grid_txt or 'grid ?'}; values below "
                  f"{EXTENT_FLOOR:g} are drawn at it", x=0.02, ha="left", fontsize=12, color=INK)
     save(fig, out, "corners_vspace_edge.png", written)
@@ -1858,7 +1949,7 @@ def load_res2(ds, extra_roots=(), dirs=None, name="2x") -> dict:
     alt, out = name, {}
     for name, paths in sorted(dirs.items()):
         if name not in ds.corner.values:
-            print(f"--- {alt} {name}: no 1x corner at x0 = {ds.x0:g}; left out")
+            print(f"--- {alt} {name}: no 1x corner at {x0_text(ds)}; left out")
             continue
         for d in paths:
             g = gene_corner(d)
@@ -2048,8 +2139,8 @@ def plot_res2(ds, out, written, extra_roots=(), dirs=None, base="1x", alt="2x",
     if any(not np.isfinite(r["gamma"]) for r in res.values()):
         extra.append(Line2D([], [], ls="none", marker="x", color=MUTED, ms=7, mew=1.8,
                             label=f"{alt}, no field output yet"))
-    legend_right(fig, handles, extra)
-    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at x0 = {ds.x0:g}: {what} "
+    legend_right(fig, handles, extra, legend_title(ds))
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: {what} "
                  f"({alt} not converged: live field fit)", x=0.02, ha="left", fontsize=12,
                  color=INK)
     fig.tight_layout(rect=(0, 0, 0.8, 0.97))
@@ -2123,11 +2214,13 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
         if not has_q:
             bot.set_xlabel(r"$\rho_{tor}$")
         for a in (top, bot):
-            a.axvline(ds.x0, color=INK, ls=":", lw=1.4)
+            for xm, cm in x0_marks(ds):
+                a.axvline(xm, color=cm, ls=":", lw=1.4)
             a.set_xlim(*xlim)
             tidy(a)
     if has_q:                                     # one under each column, zoomed on x0
-        qlim = (max(float(x.min()), ds.x0 - Q_ZOOM), min(float(x.max()), ds.x0 + Q_ZOOM))
+        marks = [xm for xm, _ in x0_marks(ds)]
+        qlim = (max(float(x.min()), min(marks) - Q_ZOOM), min(float(x.max()), max(marks) + Q_ZOOM))
         for a in ax.ravel():
             a.axvspan(*qlim, color=GRID, alpha=0.45, lw=0, zorder=0)
         for j in range(len(vars_)):
@@ -2137,7 +2230,9 @@ def plot_profiles(ds, out, written, xlim=None, name="corners_profiles.png"):
                       ls=style(point_of(ds, c))["ls"], lw=1.8, label=str(l))
                for c, l in zip(ds.corner.values, ds.label.values)]
     legend_right(fig, handles, [Line2D([], [], color=INK, ls=":", lw=1.4,
-                                       label=f"x0 = {ds.x0:g}")])
+                                       label=(f"x0 = {ds.x0:g}" if not is_named(ds) else
+                                              "x0 (each case's colour)"))],
+                 legend_title(ds))
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} profiles (profiles.iterdb)"
                  + (f", rho_tor {xlim[0]:g}-{xlim[1]:g}" if name.endswith("_ped.png") else ""),
                  x=0.04, ha="left", fontsize=12, color=INK)
@@ -2170,7 +2265,8 @@ def plot_q(ax, ds, x, xlim, labels=True, title=True):
             if r.size:
                 ax.vlines(r, lo, n, color=st["color"], ls=st["ls"], lw=0.8, alpha=0.75,
                           zorder=2)
-    ax.axvline(ds.x0, color=INK, ls=":", lw=1.4)
+    for xm, cm in x0_marks(ds):
+        ax.axvline(xm, color=cm, ls=":", lw=1.4)
     ax.set_ylim(lo, hi)
     if 2 <= ints.size <= 20:                      # ticks on the integers themselves
         ax.set_yticks(ints)
@@ -2253,7 +2349,7 @@ def plot_s_alpha(ds, out, written):
                            label=m) for m in MODE_MARKER if (modes == m).any()]
     ax.legend(handles=handles, frameon=False, fontsize=8, loc="upper right")
     key.axis("off")
-    head = f"{'#':>2}  {LEGEND_TITLE:<21} {'gamma':>9}" + ("  modes over ky" if wide else "")
+    head = f"{'#':>2}  {legend_title(ds):<21} {'gamma':>9}" + ("  modes over ky" if wide else "")
     key.text(0, 1, head + "\n" + "\n".join(lines), family="monospace", fontsize=8, va="top",
              color=INK, transform=key.transAxes)
     foot = (f"each corner: a ring of its ky, {ky[0]:g} at 12 o'clock then clockwise\n"
@@ -2271,7 +2367,7 @@ def plot_s_alpha(ds, out, written):
     ax.set_xlabel(r"$\alpha_{MHD} = q_0^2\,(R_0/L_{ref})\,(-d\beta/dx)$")
     ax.set_ylabel(r"$\hat{s}$")
     ax.margins(x=0.1, y=0.1)
-    ax.set_title(f"s-alpha at x0 = {ds.x0:g}, every ky", loc="left", fontsize=10, color=INK)
+    ax.set_title(f"s-alpha at {x0_text(ds)}, every ky", loc="left", fontsize=10, color=INK)
     tidy(ax)
     fig.tight_layout()
     save(fig, out, "corners_s_alpha.png", written)
@@ -2345,12 +2441,12 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
                       [f"{k}\n{100 * spread_of[k]:.0f}%" for k in keys_], fontsize=8)
         ax.set_ylabel(ylabel)
         tidy(ax)
-    axes[0, 0].set_title(f"local parameters at x0 = {ds.x0:g} with (max-min)/max|value| > "
+    axes[0, 0].set_title(f"local parameters at {x0_text(ds)} with (max-min)/max|value| > "
                          f"{spread:g} (spread under each name)", loc="left", fontsize=10,
                          color=INK)
     if crosses:
         axes[0, -1].set_title("sign-changing, absolute", loc="left", fontsize=10, color=INK)
-    fig.legend(title=LEGEND_TITLE, loc="center right", frameon=False, fontsize=8,
+    fig.legend(title=legend_title(ds), loc="center right", frameon=False, fontsize=8,
                title_fontsize=9)
     fig.tight_layout(rect=(0, 0, 0.82, 1))
     save(fig, out, "corners_local_params.png", written)
@@ -2365,7 +2461,7 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     tab.auto_set_font_size(False)
     tab.set_fontsize(7.5)
     tab.scale(1, 1.25)
-    ax.set_title(f"local parameters per corner, rows {LEGEND_TITLE}", loc="left",
+    ax.set_title(f"local parameters per corner, rows {legend_title(ds)}", loc="left",
                  fontsize=10, color=INK)
     fig.tight_layout()
     save(fig, out, "corners_local_table.png", written)
@@ -2577,7 +2673,8 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
     plot_s_alpha(ds, out, written)
     plot_local(ds, out, written, spread, max_params)
     plot_q_offset(ds, out, written)
-    plot_res2(ds, out, written, res2_roots)
+    if not is_named(ds):                          # 2x reruns are found by ped_grid tag
+        plot_res2(ds, out, written, res2_roots)
     if nz_compare:
         plot_nz_compare(ds, out, written, nz_compare, nz_root)
     if mode_extent:
@@ -2596,15 +2693,27 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
         nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH,
-        extra_roots=(), outliers=False):
+        extra_roots=(), outliers=False, cases=None, scan=None):
     """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
     and the sampling plot of all of them into <out>/. Returns the corner dataset
     (None when there are no corners but batches were plotted). GENE runs come from
-    diag_root, its _ky* siblings and extra_roots (ky_roots)."""
+    diag_root, its _ky* siblings and extra_roots (ky_roots).
+
+    cases: named cases (case_point) to plot instead, into <out>/corners/ with the
+    same per-scan plots (no batches, sampling, 2x or nz0 checks); scan titles them."""
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     os.makedirs(out, exist_ok=True)
     written: list[str] = []
+    if cases:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, list(cases),
+                              scan or "named cases", extra_roots, outliers)
+            plot_scan(ds, os.path.join(out, CORNER_DIR), written, spread, max_params,
+                      mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol)
+        print("\nwrote\n  " + "\n  ".join(written))
+        return ds
     cases = sampled_cases(diag_root, x0)
     corner_ds, plotted = None, 0
     with warnings.catch_warnings():
@@ -2688,9 +2797,25 @@ if __name__ == "__main__":
                     help="(max-min)/|mean| above which a local parameter counts as varying")
     ap.add_argument("--max-params", type=int, default=MAX_PARAMS,
                     help="most varying parameters to chart and tabulate")
+    ap.add_argument("--case", nargs="+", default=None, metavar="NAME[=X0]",
+                    help="named case dirs to plot instead of the ped_grid corners: GENE under "
+                         "<diag-root>/x0_<X0>/<NAME>/, profiles under <ped-root>/<NAME>/ "
+                         "(X0 defaults to --x0), e.g. --case U0=0.808 U=0.8173")
+    ap.add_argument("--ref-case", default=None, metavar="NAME",
+                    help="--case drawn as the reference (black, first)")
+    ap.add_argument("--scan-name", default=None, help="--case: the scan's name in titles")
     args = ap.parse_args()
     d = shot_defaults(args.shot)
+    cases = None
+    if args.case:
+        cases = []
+        for kv in args.case:
+            name, _, cx0 = kv.partition("=")
+            cases.append(case_point(name, float(cx0) if cx0 else None, name == args.ref_case))
+        if args.ref_case and args.ref_case not in [c["name"] for c in cases]:
+            ap.error(f"--ref-case {args.ref_case} is not one of --case")
     run(args.diag_root or d["diag_root"], args.ped_root or d["ped_root"], args.out, args.spread,
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
-        args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers)
+        args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers, cases=cases,
+        scan=args.scan_name)
