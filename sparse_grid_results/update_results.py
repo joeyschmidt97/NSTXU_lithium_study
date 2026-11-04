@@ -30,6 +30,19 @@ run still shows:
 --no-summary skips it; --summary-only rebuilds it from the PNGs on disk and
 plots nothing else (runs anywhere, no /pscratch needed).
 
+Then the res_check batches (plot_res_check.run, every batch_codes code, or
+--rescheck-code): each doubled-grid rerun against its 1x scan, for every shot
+updated, all of its radii (the summary needs them all, so --x0 does not narrow
+this step):
+
+    sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/rescheck_<grid>x2.png
+    sparse_grid_results/<shot>/summary_rescheck_<code>_<grid>x2.png   one column per
+                                                     radius, aligned with the summaries
+    sparse_grid_results/rescheck_<code>.csv
+
+--no-rescheck skips it. --summary-only leaves the rescheck summaries as they are
+(they are drawn from GENE output, not stitched from PNGs).
+
 Every enabled entry by default; --shot and --x0 pick a subset (an x0 matches
 any shot that has it). One entry failing is reported and the rest still run.
 
@@ -42,6 +55,8 @@ any shot that has it). One entry failing is reported and the rest still run.
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --no-nz-subdir
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --paths my_paths.json
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --summary-only
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129015 --rescheck-code h3r94s
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --no-rescheck
 """
 
 from __future__ import annotations
@@ -68,6 +83,8 @@ SUMMARY = ("corners/corners_growth", "corners/corners_growth_field",
            "corners/corners_mode_structure", "corners/corners_mode_scaling",
            "corners/corners_outlier", "sampling")
 SUMMARY_DPI = 100
+#: summaries plot_res_check writes (summary_rescheck_<code>_<grid>x2.png): not stale
+RESCHECK_SUMMARY = "summary_rescheck_"
 
 
 def load_entries(path: str = PATHS) -> list[dict]:
@@ -154,6 +171,25 @@ def update(e, out_root: str = HERE, nz: bool = False):
                   extra_roots=extra, **kw)
 
 
+def rescheck(shots, codes=None, out_root: str = HERE) -> list[str]:
+    """plot_res_check.run for each batch code (every one found, or *codes*) over
+    *shots*, all radii; a batch failing is reported and the rest still run."""
+    from NSTXU_lithium_study.scripts.corners.res2 import plot_res_check as prc
+    codes = codes or prc.batch_codes()
+    print(f"batches: {', '.join(codes) or 'none found'}")
+    written, failed = [], []
+    for code in codes:
+        print(f"\n----- rescheck {code} -----")
+        try:
+            written += prc.run(code, shots=list(shots), results=out_root)
+        except (Exception, SystemExit) as exc:
+            traceback.print_exc() if isinstance(exc, Exception) else print(exc)
+            failed.append(code)
+    if failed:
+        print(f"rescheck failed: {', '.join(failed)}")
+    return written
+
+
 def summarize(shot: int, out_root: str = HERE) -> list[str]:
     """<out_root>/<shot>/summary_<plot>.png for each plot in SUMMARY: that PNG of
     every x0_<x0>/ folder of the discharge, side by side at its own resolution,
@@ -196,7 +232,8 @@ def summarize(shot: int, out_root: str = HERE) -> list[str]:
     # before sampling.png moved out of corners/) would sit there stale
     keep = {f"summary_{os.path.basename(p)}.png" for p in SUMMARY}
     for name in os.listdir(shot_dir) if os.path.isdir(shot_dir) else ():
-        if name.startswith("summary_") and name.endswith(".png") and name not in keep:
+        if (name.startswith("summary_") and name.endswith(".png") and name not in keep
+                and not name.startswith(RESCHECK_SUMMARY)):
             os.remove(os.path.join(shot_dir, name))
             print(f"    removed stale {name}")
     return written
@@ -218,6 +255,11 @@ if __name__ == "__main__":
     ap.add_argument("--summary", default=True, action=argparse.BooleanOptionalAction,
                     help="after plotting, <shot>/summary_<plot>.png: each plot of every x0 "
                          "side by side")
+    ap.add_argument("--rescheck", default=True, action=argparse.BooleanOptionalAction,
+                    help="after the summaries, plot_res_check for every res_check batch "
+                         "(rescheck_<grid>x2.png per radius, summary_rescheck_* per shot)")
+    ap.add_argument("--rescheck-code", nargs="+", default=None,
+                    help="res_check batch codes to plot [every one found]")
     ap.add_argument("--summary-only", action="store_true",
                     help="only rebuild the summaries from the PNGs on disk; plot nothing else")
     for k, what in (("field_omega", "fit every ky's field trace and append it to its omega file "
@@ -263,6 +305,9 @@ if __name__ == "__main__":
         for shot in shots:
             print(f"\n===== {shot} summary =====")
             summarize(shot, args.out_root)
+    if args.rescheck:
+        print(f"\n===== res check ({', '.join(map(str, shots))}) =====")
+        rescheck(shots, args.rescheck_code, args.out_root)
     done = len(jobs) - len(failed)
     print(f"\nupdated {done}/{len(jobs)}" + (f"; failed: {', '.join(failed)}" if failed else ""))
     if failed:
