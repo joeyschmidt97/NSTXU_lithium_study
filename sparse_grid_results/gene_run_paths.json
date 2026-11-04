@@ -10,7 +10,9 @@
     "nz_subdir: when nz_compare is set, also run the field fits and every plot on the nz0 = N runs, into x0_<x0>/nz<N>/.",
     "outliers: corners_outlier.png, TPED's outlier analysis per corner and ky (grid-scale oscillation, gamma < 0, D/chi_e, chi_i/chi_e, x0).",
     "Any option key (field_omega, modes, mode_extent, outliers, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
-    "enabled: false keeps an entry listed but skipped unless named with --shot and --x0."
+    "enabled: false keeps an entry listed but skipped unless named with --shot and --x0.",
+    "cases: {NAME: x0} named case dirs to plot instead of the ped_grid corners (plot_corners --case): GENE under <diag_root>/x0_<x0>/<NAME>/, profiles under <ped_root>/<NAME>/; x0 null for the entry's own. ref_case: the one drawn as reference. scan_name: title text.",
+    "A discharge key '<shot>_<name>' (e.g. 132543_nstxu_test) is its own results folder and summary group (update_results --group); its shot is the part before the first '_'."
   ],
   "defaults": {
     "field_omega": true,
@@ -104,6 +106,30 @@
         "res2_roots": [],
         "nz_compare": null,
         "nz_root": null
+      }
+    },
+    "132543_nstxu_test": {
+      "0.8173": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection_test",
+        "ped_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection_eq",
+        "cases": {
+          "U": 0.8173
+        },
+        "ref_case": null,
+        "scan_name": "NSTX-U projection 0.9 T, debug test"
+      }
+    },
+    "132543_nstxu": {
+      "0.808": {
+        "enabled": false,
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection",
+        "ped_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection_eq",
+        "cases": {
+          "U0": 0.808,
+          "U": 0.8173
+        },
+        "ref_case": "U0",
+        "scan_name": "NSTX-U projection 0.9 T vs unscaled"
       }
     }
   }

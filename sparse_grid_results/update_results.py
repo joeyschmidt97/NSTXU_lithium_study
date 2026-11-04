@@ -43,6 +43,19 @@ this step):
 --no-rescheck skips it. --summary-only leaves the rescheck summaries as they are
 (they are drawn from GENE output, not stitched from PNGs).
 
+Named-case entries (the NSTX-U projection): an entry with "cases" {NAME: x0}
+plots those case dirs instead of the ped_grid corners (plot_corners --case):
+GENE under <diag_root>/x0_<x0>/<NAME>/, profiles under <ped_root>/<NAME>/,
+"ref_case" drawn as the reference, "scan_name" in the titles. Field fits run on
+each case dir. Its discharge key carries a suffix, "<shot>_<name>" (e.g.
+132543_nstxu_test), which is also its results folder and summary group, so it
+never mixes into <shot>/:
+
+    sparse_grid_results/132543_nstxu_test/x0_0.8173/corners/    the same plots
+    sparse_grid_results/132543_nstxu_test/summary_<plot>.png
+
+It has no res_check batches. --group picks entries by that key.
+
 Every enabled entry by default; --shot and --x0 pick a subset (an x0 matches
 any shot that has it). One entry failing is reported and the rest still run.
 
@@ -57,6 +70,7 @@ any shot that has it). One entry failing is reported and the rest still run.
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --summary-only
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129015 --rescheck-code h3r94s
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --no-rescheck
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --group 132543_nstxu_test --modes --mode-extent --outliers
 """
 
 from __future__ import annotations
@@ -93,9 +107,12 @@ def load_entries(path: str = PATHS) -> list[dict]:
         cfg = json.load(fh)
     defaults = cfg.get("defaults", {})
     out = []
-    for shot, by_x0 in cfg["runs"].items():
+    for key, by_x0 in cfg["runs"].items():
         for x0, e in by_x0.items():
-            out.append({"shot": int(shot), "x0": float(x0), "label": f"x0_{float(x0):g}",
+            out.append({"shot": int(key.split("_")[0]), "group": key,
+                        "x0": float(x0), "label": f"x0_{float(x0):g}",
+                        "cases": dict(e.get("cases") or {}), "ref_case": e.get("ref_case"),
+                        "scan_name": e.get("scan_name"),
                         "enabled": e.get("enabled", True), "diag_root": e.get("diag_root"),
                         "ped_root": e.get("ped_root"), "res2_roots": tuple(e.get("res2_roots") or ()),
                         "extra_roots": tuple(e.get("extra_roots") or ()),
@@ -103,18 +120,21 @@ def load_entries(path: str = PATHS) -> list[dict]:
                         "field_omega": e.get("field_omega", defaults.get("field_omega", True)),
                         "nz_subdir": e.get("nz_subdir", defaults.get("nz_subdir", True)),
                         **{k: e.get(k, defaults.get(k)) for k in OPTIONS}})
-    return sorted(out, key=lambda e: (e["shot"], e["x0"]))
+    return sorted(out, key=lambda e: (e["shot"], e["group"], e["x0"]))
 
 
-def select(entries, shots=None, x0s=None) -> list[dict]:
-    """Entries matching --shot and --x0; disabled ones only when both name them."""
+def select(entries, shots=None, x0s=None, groups=None) -> list[dict]:
+    """Entries matching --shot, --x0 and --group; disabled ones only when --x0 and
+    --shot or --group name them."""
     picked = []
     for e in entries:
         if shots and e["shot"] not in shots:
             continue
+        if groups and e["group"] not in groups:
+            continue
         if x0s and not any(abs(e["x0"] - x) < X0_TOL for x in x0s):
             continue
-        if e["enabled"] or (shots and x0s):
+        if e["enabled"] or ((shots or groups) and x0s):
             picked.append(e)
     return picked
 
@@ -128,8 +148,14 @@ def describe(e) -> str:
     def where(p):
         return f"{p}  [{'ok' if p and os.path.isdir(p) else 'MISSING'}]"
     dirs = os.path.join(e["diag_root"] or "", e["label"])
-    lines = [f"{e['shot']} {e['label']}" + ("" if e["enabled"] else "  (disabled)"),
-             f"    GENE      {where(dirs)}", f"    profiles  {where(e['ped_root'])}"]
+    lines = [f"{e['group']} {e['label']}" + ("" if e["enabled"] else "  (disabled)")]
+    if e["cases"]:
+        for name, cx0 in case_x0s(e).items():
+            ref = "  (ref)" if name == e["ref_case"] else ""
+            lines += [f"    {name:<9} GENE {where(case_dir(e, name, cx0))}{ref}",
+                      f"    {'':<9} prof {where(os.path.join(e['ped_root'] or '', name))}"]
+    else:
+        lines += [f"    GENE      {where(dirs)}", f"    profiles  {where(e['ped_root'])}"]
     lines += [f"    ky        {where(os.path.join(p, e['label']))}" for p in e["extra_roots"]]
     lines += [f"    res2      {where(p)}" for p in e["res2_roots"]]
     if e["nz_compare"]:
@@ -139,16 +165,56 @@ def describe(e) -> str:
     return "\n".join(lines)
 
 
+def case_x0s(e) -> dict:
+    """{case name: x0} of a named-case entry; a null x0 is the entry's own."""
+    return {n: float(x if x is not None else e["x0"]) for n, x in e["cases"].items()}
+
+
+def case_dir(e, name, x0) -> str:
+    return os.path.join(e["diag_root"] or "", f"x0_{x0:g}", name)
+
+
+def update_cases(e, out_root: str = HERE):
+    """update() for a named-case entry: field fits on each case dir, then
+    plot_corners.run(cases=...) into <out_root>/<group>/x0_<x0>/."""
+    from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
+    if not (e["diag_root"] and e["ped_root"]):
+        raise SystemExit(f"{e['group']}: a named-case entry needs diag_root and ped_root")
+    out = os.path.join(out_root, e["group"], e["label"])
+    x0s = case_x0s(e)
+    if e["field_omega"]:
+        from NSTXU_lithium_study.scripts.corners.field_omega import field_omega as fo
+        print("--- field fits (field_omega --write)")
+        for name, x0 in x0s.items():
+            path = case_dir(e, name, x0)
+            if not os.path.isdir(path):
+                print(f"{name}: no {path}; no fits")
+                continue
+            try:
+                fo.run(x0=(x0,), write=True, path=path)
+            except Exception:
+                traceback.print_exc()
+                print(f"field fits failed under {path}; plotting with the fits already there")
+    kw = {k: e[k] for k in OPTIONS if e[k] is not None}
+    cases = [pc.case_point(n, x, n == e["ref_case"]) for n, x in x0s.items()]
+    print("--- plots (plot_corners --case)")
+    return pc.run(e["diag_root"], e["ped_root"], out=out, x0=(e["x0"],), shot=e["shot"],
+                  cases=cases, scan=e["scan_name"] or e["group"], **kw)
+
+
 def update(e, out_root: str = HERE, nz: bool = False):
     """Field fits (unless field_omega is off), then plot_corners.run on one entry,
     into <out_root>/<shot>/x0_<x0>/. nz=True does the same for the entry's
     nz_compare runs, into <out_root>/<shot>/x0_<x0>/nz<N>/. The field fits and plots
     cover every ky_roots root (diag_root, its _ky* siblings, extra_roots); the nz
-    runs get only their own root's _ky* siblings."""
+    runs get only their own root's _ky* siblings. A named-case entry goes to
+    update_cases."""
+    if e["cases"]:
+        return update_cases(e, out_root)
     from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
     d = pc.shot_defaults(e["shot"])
     diag_root = e["diag_root"] or d["diag_root"]
-    out = os.path.join(out_root, str(e["shot"]), e["label"])
+    out = os.path.join(out_root, e["group"], e["label"])
     if nz:
         diag_root = nz_root({**e, "diag_root": diag_root})
         out = os.path.join(out, f"nz{e['nz_compare']}")
@@ -190,8 +256,9 @@ def rescheck(shots, codes=None, out_root: str = HERE) -> list[str]:
     return written
 
 
-def summarize(shot: int, out_root: str = HERE) -> list[str]:
-    """<out_root>/<shot>/summary_<plot>.png for each plot in SUMMARY: that PNG of
+def summarize(shot: int | str, out_root: str = HERE) -> list[str]:
+    """<out_root>/<shot>/summary_<plot>.png (shot: a discharge key, e.g. 132543_nstxu_test)
+    for each plot in SUMMARY: that PNG of
     every x0_<x0>/ folder of the discharge, side by side at its own resolution,
     smallest x0 left, each titled with its x0. A plot no radius has is skipped."""
     import matplotlib.pyplot as plt
@@ -249,6 +316,9 @@ if __name__ == "__main__":
                     help="discharges to update [every one in --paths]")
     ap.add_argument("--x0", type=float, nargs="+", default=None,
                     help="radii to update, matched to the x0 keys [every one]")
+    ap.add_argument("--group", nargs="+", default=None,
+                    help="discharge keys of --paths to update, e.g. 132543_nstxu_test "
+                         "(a named-case entry's own results folder) [every one]")
     ap.add_argument("--out-root", default=HERE, help="results root; writes <shot>/x0_<x0>/ under it")
     ap.add_argument("--list", action="store_true",
                     help="print the selected entries and whether their paths exist; plot nothing")
@@ -275,26 +345,28 @@ if __name__ == "__main__":
                         help=f"{what}; overrides the paths file [per entry]")
     args = ap.parse_args()
 
-    entries = select(load_entries(args.paths), args.shot, args.x0)
+    entries = select(load_entries(args.paths), args.shot, args.x0, args.group)
     if not entries:
-        raise SystemExit(f"no entry in {args.paths} matches --shot {args.shot} --x0 {args.x0}")
+        raise SystemExit(f"no entry in {args.paths} matches --shot {args.shot} --x0 {args.x0}"
+                         f" --group {args.group}")
     for e in entries:
         e.update({k: getattr(args, k) for k in SWITCHES if getattr(args, k) is not None})
     print("\n".join(describe(e) for e in entries))
     if args.list:
         raise SystemExit(0)
-    shots = sorted({e["shot"] for e in entries})
+    groups = sorted({e["group"] for e in entries})
+    shots = sorted({e["shot"] for e in entries if not e["cases"]})    # res_check: corners only
     if args.summary_only:
-        for shot in shots:
-            print(f"\n===== {shot} summary =====")
-            summarize(shot, args.out_root)
+        for group in groups:
+            print(f"\n===== {group} summary =====")
+            summarize(group, args.out_root)
         raise SystemExit(0)
 
     jobs = [(e, False) for e in entries]
     jobs += [(e, True) for e in entries if e["nz_compare"] and e["nz_subdir"]]
     failed = []
     for e, nz in jobs:
-        name = f"{e['shot']} {e['label']}" + (f" nz{e['nz_compare']}" if nz else "")
+        name = f"{e['group']} {e['label']}" + (f" nz{e['nz_compare']}" if nz else "")
         print(f"\n===== {name} =====")
         try:
             update(e, args.out_root, nz)
@@ -302,10 +374,10 @@ if __name__ == "__main__":
             traceback.print_exc() if isinstance(exc, Exception) else print(exc)
             failed.append(name)
     if args.summary:
-        for shot in shots:
-            print(f"\n===== {shot} summary =====")
-            summarize(shot, args.out_root)
-    if args.rescheck:
+        for group in groups:
+            print(f"\n===== {group} summary =====")
+            summarize(group, args.out_root)
+    if args.rescheck and shots:
         print(f"\n===== res check ({', '.join(map(str, shots))}) =====")
         rescheck(shots, args.rescheck_code, args.out_root)
     done = len(jobs) - len(failed)
