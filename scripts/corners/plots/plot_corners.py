@@ -529,7 +529,7 @@ def gene_corner(corner_dir, field_fits: bool = False):
     for k, vals in params.items():                # equilibrium values: identical at every ky
         vals = np.array(vals)
         if np.ptp(vals) > 1e-6 * max(abs(vals).max(), 1e-30):
-            print(f"    {os.path.basename(corner_dir)}: {k} differs across ky "
+            print(f"    {os.path.basename(dirs[0])}: {k} differs across ky "
                   f"({vals.min():.4g}..{vals.max():.4g}); using the median")
         local[k] = float(np.median(vals))
     if local:
