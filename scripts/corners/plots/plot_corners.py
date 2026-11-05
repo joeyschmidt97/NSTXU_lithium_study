@@ -46,6 +46,13 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
                                 per corner and ky at a glance, outlined in its mode's
                                 colour, dashed where an end is above EXTENT_TOL, grey
                                 where not converged
+    corners_mode_groups.png     (--mode-extent) the converged runs' mode structures grouped
+                                by shape: earth mover's distance between |phi| (and
+                                |Apar|) along z, average-linkage groups closer than
+                                --group-tol, one panel per group with its members
+                                overlaid and coloured by mode (under --modes), runs
+                                in no group together in a last "outliers" panel;
+                                + corners_mode_groups.csv
     corners_vspace_edge.png     (--vspace-edge) has f decayed by the edges of the velocity
                                 box? GENE's vsp <|f|^2>^1/2 (per species, over x and ky)
                                 at v_par = -lv (<) and +lv (>) (left) and at the top mu
@@ -325,6 +332,13 @@ OUTLIER_FLOOR = 1e-8
 #: line colour of each in corners_mode_structure.png (palette slots 1 and 2)
 FIELDS = ("field_phi", "field_apar")
 STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
+#: corners_mode_groups.png: two runs whose |phi| (and |Apar|) along z are closer than
+#: this earth mover's distance (in ballooning angle z/pi, largest over the fields
+#: both have) can share a group; average linkage, so a group's members are this close on
+#: average, not by a chain. Panels per row; points of the common z grid.
+GROUP_TOL = 0.25
+GROUP_COLS = 4
+GROUP_NZ = 801
 #: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
 STRUCT_BOX_IN = 0.95
 STRUCT_MAX_W = 18
@@ -1595,6 +1609,139 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
     save(fig, out, "corners_mode_structure.png", written)
 
 
+def mode_emd(a: dict, b: dict, z) -> float:
+    """Earth mover's distance (z/pi) between two mode_profile shapes on the common
+    grid *z*, each field taken as a distribution of |f| along z; the largest over
+    the fields both runs have, so a narrow |phi| does not hide a wide |Apar|."""
+    d = []
+    for f in FIELDS:
+        if f in a and f in b:
+            ca = np.cumsum(a[f]) / a[f].sum()
+            cb = np.cumsum(b[f]) / b[f].sum()
+            d.append(np.abs(ca - cb).sum() * (z[1] - z[0]))
+    return float(max(d)) if d else np.inf
+
+
+def group_modes(dist: np.ndarray, tol=GROUP_TOL) -> list[list[int]]:
+    """Average-linkage groups of the runs behind distance matrix *dist*: the two
+    closest groups merge while their mean pairwise distance is <= *tol*.
+    Largest group first."""
+    groups = [[k] for k in range(len(dist))]
+    while len(groups) > 1:
+        best, pair = np.inf, None
+        for p in range(len(groups)):
+            for q in range(p + 1, len(groups)):
+                d = dist[np.ix_(groups[p], groups[q])].mean()
+                if d < best:
+                    best, pair = d, (p, q)
+        if best > tol:
+            break
+        p, q = pair
+        groups[p] += groups.pop(q)
+    return sorted(groups, key=lambda g: (-len(g), g[0]))
+
+
+def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
+    """Converged runs (GENE or a field fit) grouped by mode structure: each
+    mode_profile put on one z grid (zero beyond a run's own domain), the earth
+    mover's distance between every pair (mode_emd) and average-linkage groups
+    under *tol* (group_modes). One panel per group of two or more, its members'
+    |phi| (solid) and |Apar| (dashed) overlaid, each in its mode's colour (grey
+    without --modes); runs in no group share a last "outliers" panel. Panels are
+    zoomed to where any member is above 1% of its peak. corners_mode_groups.csv
+    holds each run's group (0: outlier) and distance to its group's medoid."""
+    status, gam, ky = ds.status.values, ds.gamma.values, ds.ky.values
+    m = ds["mode"].values if "mode" in ds else None
+    runs = sorted(k for k in profiles if status[k] in ("ok", "field"))
+    if not runs:
+        print("no converged run with field output; corners_mode_groups.png skipped")
+        return
+    zmax = max(np.abs(profiles[k]["zgrid"]).max() for k in runs)
+    z = np.linspace(-zmax, zmax, GROUP_NZ)
+    shapes = [{f: np.interp(z, profiles[k]["zgrid"], profiles[k][f], left=0, right=0)
+               for f in FIELDS if f in profiles[k]} for k in runs]
+    n = len(runs)
+    dist = np.zeros((n, n))
+    for p in range(n):
+        for q in range(p + 1, n):
+            dist[p, q] = dist[q, p] = mode_emd(shapes[p], shapes[q], z)
+    groups = group_modes(dist, tol)
+    panels = [g for g in groups if len(g) > 1]
+    lone = [g[0] for g in groups if len(g) == 1]
+    if lone:
+        panels.append(lone)
+    group_of, medoid_d = {}, {}
+    for g_id, g in enumerate(groups, 1):
+        med = g[int(np.argmin(dist[np.ix_(g, g)].sum(axis=1)))]
+        for k in g:
+            group_of[k] = g_id if len(g) > 1 else 0
+            medoid_d[k] = dist[k, med] if len(g) > 1 else np.nan
+
+    def mode_of(k):
+        return str(m[runs[k]]) if m is not None and m[runs[k]] else ""
+
+    ncol = min(len(panels), GROUP_COLS)
+    nrow = -(-len(panels) // ncol)
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol + 2.6, 3.2 * nrow + 1.3),
+                             squeeze=False)
+    for a in axes.flat[len(panels):]:
+        a.set_visible(False)
+    for c, (ax, g) in enumerate(zip(axes.flat, panels)):
+        hi = 1.0
+        for k in g:
+            colour = (MODE_COLOR.get(mode_of(k), MODE_COLOR["unidentified"]) if m is not None
+                      else MUTED)
+            for f, ls in zip(FIELDS, ("-", "--")):
+                if f in shapes[k]:
+                    ax.plot(z, shapes[k][f], ls=ls, color=colour, lw=1.0, alpha=0.7)
+                    above = z[shapes[k][f] > 0.01]
+                    hi = max(hi, np.abs(above).max() if above.size else 0)
+        ax.set_xlim(-hi * 1.05, hi * 1.05)
+        ax.set_ylim(0, 1.08)
+        ax.set_xlabel(r"ballooning angle $z/\pi$")
+        if c % ncol == 0:
+            ax.set_ylabel("|field| / peak")
+        kys = [ky[runs[k][1]] for k in g]
+        cases = len({runs[k][0] for k in g})
+        mix: dict[str, int] = {}
+        for k in g:
+            lab = MODE_SHORT.get(mode_of(k), mode_of(k)) or "–"
+            mix[lab] = mix.get(lab, 0) + 1
+        head = "outliers" if g is lone else f"group {group_of[g[0]]}"
+        span = f"{min(kys):g}" if min(kys) == max(kys) else f"{min(kys):g}–{max(kys):g}"
+        ax.set_title(f"{head}: {len(g)} run(s), {cases} case(s), ky {span}",
+                     loc="left", fontsize=9, color=INK)
+        if m is not None:
+            ax.text(0.98, 0.95, ", ".join(f"{k} {v}" for k, v in mix.items()), ha="right",
+                    va="top", fontsize=7, color=INK, transform=ax.transAxes)
+        tidy(ax)
+    handles = [Line2D([], [], color=INK, lw=1.2, ls="-", label=r"$|\phi|$ / peak"),
+               Line2D([], [], color=INK, lw=1.2, ls="--", label=r"$|A_\parallel|$ / peak")]
+    if m is not None:
+        handles += [Line2D([], [], color=MODE_COLOR[x], lw=2, label=x) for x in MODE_COLOR
+                    if any(mode_of(k) == x for k in range(n))]
+    legend_right(fig, handles, title="mode (--modes)" if m is not None else "field")
+    skipped = sum(1 for k in profiles if k not in runs)
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode structures grouped by "
+                 f"shape (earth mover's distance along z, average linkage <= {tol:g} z/π)\n"
+                 f"{n} converged run(s) in {len(groups) - len(lone)} group(s)"
+                 f" + {len(lone)} outlier(s); {skipped} unconverged left out",
+                 x=0.02, ha="left", fontsize=11, color=INK)
+    fig.tight_layout(rect=(0, 0, 1 - 2.4 / fig.get_figwidth(), 0.9))
+    save(fig, out, "corners_mode_groups.png", written)
+
+    path = data_path(out, "corners_mode_groups.csv")
+    with open(path, "w") as fh:
+        fh.write(",".join(["corner", *ORDER, "ky", "status", "gamma", "mode", "group",
+                           "emd_to_medoid"]) + "\n")
+        for k, (i, j) in enumerate(runs):
+            fh.write(",".join([str(ds.corner.values[i]),
+                               *(f"{ds[q].values[i]:g}" for q in ORDER), f"{ky[j]:g}",
+                               str(status[i, j]), f"{gam[i, j]:.6g}", mode_of(k),
+                               str(group_of[k]), f"{medoid_d[k]:.4g}"]) + "\n")
+    written.append(path)
+
+
 def plot_mode_extent(ds, out, written, tol=EXTENT_TOL, profiles=None, nx0=()):
     """|phi| (top) and |Apar| (bottom) at the two ends of the ballooning domain over
     their peak, against profile scaling: one column per corner, the left end (<)
@@ -2663,7 +2810,7 @@ def batches(cases, size=BATCH) -> list[tuple[str, list[dict]]]:
 
 def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots=(),
               nz_compare=None, nz_root=None, mode_extent=False, vspace_edge=False,
-              vspace_tol=VSP_TOL):
+              vspace_tol=VSP_TOL, group_tol=GROUP_TOL):
     """Every per-scan plot of one dataset (the corners, or a VURS batch) into out/."""
     os.makedirs(out, exist_ok=True)
     plot_growth(ds, out, written)
@@ -2681,6 +2828,7 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
         profiles, nx0 = load_profiles(ds)
         plot_mode_extent(ds, out, written, profiles=profiles, nx0=nx0)
         plot_mode_structure(ds, out, written, profiles)
+        plot_mode_groups(ds, out, written, profiles, group_tol)
     if vspace_edge:
         plot_vspace_edge(ds, out, written, vspace_tol)
     if "outlier" in ds:
@@ -2693,7 +2841,7 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
         nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH,
-        extra_roots=(), outliers=False, cases=None, scan=None):
+        extra_roots=(), outliers=False, cases=None, scan=None, group_tol=GROUP_TOL):
     """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
     and the sampling plot of all of them into <out>/. Returns the corner dataset
     (None when there are no corners but batches were plotted). GENE runs come from
@@ -2711,7 +2859,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, list(cases),
                               scan or "named cases", extra_roots, outliers)
             plot_scan(ds, os.path.join(out, CORNER_DIR), written, spread, max_params,
-                      mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol)
+                      mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol,
+                      group_tol=group_tol)
         print("\nwrote\n  " + "\n  ".join(written))
         return ds
     cases = sampled_cases(diag_root, x0)
@@ -2730,10 +2879,11 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             if pts is None:
                 corner_ds = ds
                 plot_scan(ds, os.path.join(out, name), written, spread, max_params, res2_roots,
-                          nz_compare, nz_root, mode_extent, vspace_edge, vspace_tol)
+                          nz_compare, nz_root, mode_extent, vspace_edge, vspace_tol, group_tol)
             else:                                      # 2x and nz0 checks are corner-only
                 plot_scan(ds, os.path.join(out, name), written, spread, max_params,
-                          mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol)
+                          mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol,
+                          group_tol=group_tol)
             plotted += 1
         plot_sampling(cases, ped_root, x0, shot, out, written)
     print("\nwrote\n  " + "\n  ".join(written))
@@ -2782,7 +2932,12 @@ if __name__ == "__main__":
     ap.add_argument("--mode-extent", action="store_true",
                     help="corners_mode_extent.png: |phi|, |Apar| at the ballooning z ends over "
                          "their peak, per corner and ky; corners_mode_structure.png: the whole "
-                         "|phi|, |Apar| along z per corner and ky (reads every field file)")
+                         "|phi|, |Apar| along z per corner and ky; corners_mode_groups.png: "
+                         "converged runs grouped by mode-structure shape (reads every field "
+                         "file)")
+    ap.add_argument("--group-tol", type=float, default=GROUP_TOL,
+                    help="corners_mode_groups.png: earth mover's distance along z (z/pi) "
+                         "under which mode structures share a group (average linkage)")
     ap.add_argument("--vspace-edge", action="store_true",
                     help="corners_vspace_edge.png: <|f|^2>^1/2 at the v_par = +-lv and top-mu "
                          "edges of the velocity box over its peak, per species, corner and ky "
@@ -2818,4 +2973,4 @@ if __name__ == "__main__":
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
         args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers, cases=cases,
-        scan=args.scan_name)
+        scan=args.scan_name, group_tol=args.group_tol)

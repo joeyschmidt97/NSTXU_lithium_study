@@ -84,7 +84,8 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PATHS = os.path.join(HERE, "gene_run_paths.json")
 #: plot_corners.run options an entry (or "defaults") may set
-OPTIONS = ("modes", "mode_extent", "outliers", "field_fits", "spread", "max_params")
+OPTIONS = ("modes", "mode_extent", "outliers", "field_fits", "spread", "max_params",
+           "group_tol")
 #: on/off switches an entry (or "defaults", or the CLI) may set: the plot_corners
 #: options above, field_omega, the field fits written before plotting, and
 #: nz_subdir, the full plot set for the nz_compare runs in x0_<x0>/nz<N>/
@@ -94,7 +95,8 @@ X0_TOL = 1e-4
 #: plots put side by side across radii in <shot>/summary_<plot>.png, as paths
 #: under x0_<x0>/ without .png
 SUMMARY = ("corners/corners_growth", "corners/corners_growth_field",
-           "corners/corners_mode_structure", "corners/corners_mode_scaling",
+           "corners/corners_mode_structure", "corners/corners_mode_groups",
+           "corners/corners_mode_scaling",
            "corners/corners_outlier", "sampling")
 SUMMARY_DPI = 100
 #: summaries plot_res_check writes (summary_rescheck_<code>_<grid>x2.png): not stale
@@ -330,6 +332,9 @@ if __name__ == "__main__":
                          "(rescheck_<grid>x2.png per radius, summary_rescheck_* per shot)")
     ap.add_argument("--rescheck-code", nargs="+", default=None,
                     help="res_check batch codes to plot [every one found]")
+    ap.add_argument("--group-tol", type=float, default=None,
+                    help="corners_mode_groups.png grouping distance (z/pi); overrides the "
+                         "paths file [plot_corners.GROUP_TOL]")
     ap.add_argument("--summary-only", action="store_true",
                     help="only rebuild the summaries from the PNGs on disk; plot nothing else")
     for k, what in (("field_omega", "fit every ky's field trace and append it to its omega file "
@@ -337,7 +342,8 @@ if __name__ == "__main__":
                     ("nz_subdir", "full field fits and plots for the nz_compare runs, "
                                   "in x0_<x0>/nz<N>/"),
                     ("modes", "TPED mode_identifier per ky"),
-                    ("mode_extent", "corners_mode_extent.png, corners_mode_structure.png"),
+                    ("mode_extent", "corners_mode_extent.png, corners_mode_structure.png, "
+                                    "corners_mode_groups.png"),
                     ("outliers", "corners_outlier.png: TPED outlier analysis per ky"),
                     ("field_fits", "carry decaying/ambiguous field fits")):
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, default=None,
@@ -351,6 +357,8 @@ if __name__ == "__main__":
                          f" --group {args.group}")
     for e in entries:
         e.update({k: getattr(args, k) for k in SWITCHES if getattr(args, k) is not None})
+        if args.group_tol is not None:
+            e["group_tol"] = args.group_tol
     print("\n".join(describe(e) for e in entries))
     if args.list:
         raise SystemExit(0)
