@@ -287,10 +287,11 @@ FIT_STYLE = {"decaying": {"mec": "#008300", "alpha": 1.0, "label": "decaying fit
 #: --modes: TPED mode_identifier label -> marker, and the inputs it decided on,
 #: (TPED node, variable) -> column name.
 MODE_MARKER = {"ITG_TEM": "o", "ETG": "^", "KBM": "s", "MTM": "v", "unidentified": "*"}
-#: Mode colours: validated categorical slots 7, 4, 1, 2 (violet, yellow, blue, orange)
-#: of the reference palette; yellow is under 3:1 on the surface, so every mode
-#: panel also carries its label (legend, table text).
-MODE_COLOR = {"ITG_TEM": "#6250d6", "ETG": "#eda100", "KBM": "#2a78d6", "MTM": "#eb6834",
+#: Mode colours: validated categorical slots 3, 4, 1, 2 (green, yellow, blue, orange)
+#: of the reference palette (ITG_TEM was violet, too close to the KBM blue); yellow
+#: is under 3:1 on the surface, so every mode panel also carries its label (legend,
+#: table text).
+MODE_COLOR = {"ITG_TEM": "#1baf7a", "ETG": "#eda100", "KBM": "#2a78d6", "MTM": "#eb6834",
               "unidentified": "#9b9a92"}
 #: Mode table shading: gamma / (largest gamma at that ky) of 0 -> this toward white,
 #: 1 -> this toward black (shade()); per ky, since gamma rises steeply with ky.
