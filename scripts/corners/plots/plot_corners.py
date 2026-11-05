@@ -49,8 +49,8 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
     corners_mode_groups.png     (--mode-extent) the converged runs' mode structures grouped
                                 by shape: earth mover's distance between |phi| (and
                                 |Apar|) along z, average-linkage groups closer than
-                                --group-tol, one panel per group with its members
-                                overlaid and coloured by mode (under --modes), runs
+                                --group-tol, one column per group with its members'
+                                |phi| (top) and |Apar| (bottom) overlaid, coloured by mode (under --modes), runs
                                 in no group together in a last "outliers" panel;
                                 + corners_mode_groups.csv
     corners_vspace_edge.png     (--vspace-edge) has f decayed by the edges of the velocity
@@ -1656,9 +1656,9 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     """Converged runs (GENE or a field fit) grouped by mode structure: each
     mode_profile put on one z grid (zero beyond a run's own domain), the earth
     mover's distance between every pair (mode_emd) and average-linkage groups
-    under *tol* (group_modes). One panel per group of two or more, its members'
-    |phi| (solid) and |Apar| (dashed) overlaid, each in its mode's colour (grey
-    without --modes); runs in no group share a last "outliers" panel. Panels are
+    under *tol* (group_modes). One column per group of two or more, its members'
+    |phi| overlaid on top and |Apar| below (shared z), each in its mode's colour
+    (grey without --modes); runs in no group share a last "outliers" panel. Panels are
     zoomed to where any member is above 1% of its peak. corners_mode_groups.csv
     holds each run's group (0: outlier) and distance to its group's medoid."""
     status, gam, ky = ds.status.values, ds.gamma.values, ds.ky.values
@@ -1697,27 +1697,38 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     def mode_of(k):
         return str(m[runs[k]]) if m is not None and m[runs[k]] else ""
 
+    # each group a column pair of axes: |phi| on top, |Apar| below, sharing z
     ncol = min(len(panels), GROUP_COLS)
     nrow = -(-len(panels) // ncol)
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol + 2.6, 3.2 * nrow + 1.3),
-                             squeeze=False)
-    for a in axes.flat[len(panels):]:
-        a.set_visible(False)
-    for c, (ax, g) in enumerate(zip(axes.flat, panels)):
+    fig, axes = plt.subplots(2 * nrow, ncol, figsize=(4.2 * ncol + 2.6, 5.0 * nrow + 1.3),
+                             squeeze=False, gridspec_kw={"hspace": 0.12})
+    for p in range(len(panels), nrow * ncol):
+        axes[2 * (p // ncol), p % ncol].set_visible(False)
+        axes[2 * (p // ncol) + 1, p % ncol].set_visible(False)
+    for c, g in enumerate(panels):
+        top, bot = axes[2 * (c // ncol), c % ncol], axes[2 * (c // ncol) + 1, c % ncol]
+        bot.sharex(top)
         hi = 0.2
         for k in g:
             colour = (MODE_COLOR.get(mode_of(k), MODE_COLOR["unidentified"]) if m is not None
                       else MUTED)
-            for f, ls in zip(FIELDS, ("-", "--")):
+            for f, a in zip(FIELDS, (top, bot)):
                 if f in shapes[k]:
-                    ax.plot(z, shapes[k][f], ls=ls, color=colour, lw=1.0, alpha=0.7)
+                    a.plot(z, shapes[k][f], color=colour, lw=1.0, alpha=0.7)
                     above = z[shapes[k][f] > 0.01]
                     hi = max(hi, np.abs(above).max() if above.size else 0)
-        ax.set_xlim(-hi * 1.05, hi * 1.05)
-        ax.set_ylim(0, 1.08)
-        ax.set_xlabel(r"ballooning angle $z/\pi$")
-        if c % ncol == 0:
-            ax.set_ylabel("|field| / peak")
+        top.set_xlim(-hi * 1.05, hi * 1.05)
+        for f, a, sym in zip(FIELDS, (top, bot), (r"$|\phi|$", r"$|A_\parallel|$")):
+            a.set_ylim(0, 1.08)
+            if not any(f in shapes[k] for k in g):
+                a.text(0.5, 0.5, f"no {sym}", ha="center", va="center", fontsize=9,
+                       color=MUTED, transform=a.transAxes)
+            if c % ncol == 0:
+                a.set_ylabel(f"{sym} / peak")
+            tidy(a)
+        top.tick_params(labelbottom=False)
+        bot.set_xlabel(r"ballooning angle $z/\pi$")
+        ax = top
         kys = [ky[runs[k][1]] for k in g]
         cases = len({runs[k][0] for k in g})
         mix: dict[str, int] = {}
@@ -1731,20 +1742,19 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
         if m is not None:
             ax.text(0.98, 0.95, ", ".join(f"{k} {v}" for k, v in mix.items()), ha="right",
                     va="top", fontsize=7, color=INK, transform=ax.transAxes)
-        tidy(ax)
-    handles = [Line2D([], [], color=INK, lw=1.2, ls="-", label=r"$|\phi|$ / peak"),
-               Line2D([], [], color=INK, lw=1.2, ls="--", label=r"$|A_\parallel|$ / peak")]
-    if m is not None:
-        handles += [Line2D([], [], color=MODE_COLOR[x], lw=2, label=x) for x in MODE_COLOR
-                    if any(mode_of(k) == x for k in range(n))]
-    legend_right(fig, handles, title="mode (--modes)" if m is not None else "field")
+    handles = ([Line2D([], [], color=MODE_COLOR[x], lw=2, label=x) for x in MODE_COLOR
+                if any(mode_of(k) == x for k in range(n))] if m is not None
+               else [Line2D([], [], color=MUTED, lw=2, label="no --modes")])
+    legend_right(fig, handles, title="mode")
     skipped = sum(1 for k in profiles if k not in runs)
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode structures grouped by "
                  f"shape (earth mover's distance along z / mode width, average linkage <= {tol:g})\n"
                  f"{n} converged run(s) in {len(groups) - len(lone)} group(s)"
                  f" + {len(lone)} outlier(s); {skipped} unconverged left out",
                  x=0.02, ha="left", fontsize=11, color=INK)
-    fig.tight_layout(rect=(0, 0, 1 - 2.4 / fig.get_figwidth(), 0.9))
+    w, h = fig.get_size_inches()
+    fig.subplots_adjust(left=0.75 / w, right=1 - 2.4 / w, bottom=0.7 / h, top=1 - 1.0 / h,
+                        wspace=0.22)
     save(fig, out, "corners_mode_groups.png", written)
 
     path = data_path(out, "corners_mode_groups.csv")
