@@ -4,12 +4,15 @@
 #   bash NSTXU_lithium_study/scripts/gene_jobs.sh                  # every NSTX_* run dir
 #   bash NSTXU_lithium_study/scripts/gene_jobs.sh 'NSTX_*_rc*_*'   # a name glob: reschecks
 #   bash NSTXU_lithium_study/scripts/gene_jobs.sh 'NSTX_*_rcquiv9u_*'
+#   bash NSTXU_lithium_study/scripts/gene_jobs.sh -a 'NSTX_*_rc*_*'   # done dirs too
 #
 # One block per job ID, from squeue (queued, running) and from the .claim_<jobid>
 # marks interactive_corners.sh leaves in each run dir it starts (so ended
-# interactive jobs show too): the job's run dirs, each done or open. A batch job's
-# run dir is the dir it was submitted from (%Z) or its script's dir (%o). An ended
-# job whose dirs are all done is one line. Then every dir no job has taken.
+# interactive jobs show too): the job's open run dirs. A batch job's run dir is
+# the dir it was submitted from (%Z) or its script's dir (%o). Done dirs, and
+# ended jobs whose dirs are all done, are hidden unless -a (--all): then each dir
+# is marked done or open and an all-done ended job is one line. Then every dir no
+# job has taken.
 # Done is interactive_corners.sh's check: .interactive_ran, or a complete
 # scanfilesNNNN (omega for every parameters).
 #
@@ -19,7 +22,14 @@
 set -u
 GENEDIR=${GENEDIR:-$HOME/simulators/GENE3_gpu}
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-PAT=${1:-NSTX_*}
+PAT='NSTX_*'
+ALL=0
+for a in "$@"; do
+    case $a in
+        -a|--all) ALL=1 ;;
+        *) PAT=$a ;;
+    esac
+done
 
 DIRS=()
 for d in "$GENEDIR"/$PAT/; do
@@ -63,22 +73,34 @@ ndone=0
 for d in "${DIRS[@]}"; do [ -n "${DONE[$d]:-}" ] && ndone=$((ndone + 1)); done
 echo "${#DIRS[@]} run dirs matching $GENEDIR/$PAT: $ndone done"
 
+hidden=0
 for id in $(printf '%s\n' "${!JOBDIRS[@]}" "${!STATE[@]}" | sort -un); do
     st=${STATE[$id]:-ENDED}
     mapfile -t jd < <(printf '%s' "${JOBDIRS[$id]:-}" | sed '/^$/d' | sort -u)
     n=0
     for d in "${jd[@]}"; do [ -n "${DONE[$d]:-}" ] && n=$((n + 1)); done
+    alldone=0
+    [ "$st" = ENDED ] && [ ${#jd[@]} -gt 0 ] && [ "$n" -eq ${#jd[@]} ] && alldone=1
+    if [ "$alldone" = 1 ] && [ "$ALL" = 0 ]; then
+        hidden=$((hidden + 1))
+        continue
+    fi
     printf '\n%-10s %-9s %-12s %3d dir(s), %d done\n' "$id" "$st" "${KIND[$id]:-other}" \
         "${#jd[@]}" "$n"
     if [ ${#jd[@]} -eq 0 ]; then
         echo "    no run dir matching '$PAT'; workdir ${WORKDIR[$id]:-?}"
         continue
     fi
-    [ "$st" = ENDED ] && [ "$n" -eq ${#jd[@]} ] && continue
+    [ "$alldone" = 1 ] && continue
     for d in "${jd[@]}"; do
-        printf '    %-4s %s\n' "$([ -n "${DONE[$d]:-}" ] && echo done || echo open)" "${d##*/}"
+        if [ -n "${DONE[$d]:-}" ]; then
+            [ "$ALL" = 1 ] && printf '    done %s\n' "${d##*/}"
+        else
+            printf '    open %s\n' "${d##*/}"
+        fi
     done
 done
+[ "$hidden" -gt 0 ] && echo -e "\n($hidden ended job(s) with every dir done hidden; -a shows them)"
 
 echo -e "\nnot run (not done, no job, no claim):"
 n=0
