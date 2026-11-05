@@ -333,7 +333,7 @@ if __name__ == "__main__":
     ap.add_argument("--rescheck-code", nargs="+", default=None,
                     help="res_check batch codes to plot [every one found]")
     ap.add_argument("--group-tol", type=float, default=None,
-                    help="corners_mode_groups.png grouping distance (z/pi); overrides the "
+                    help="corners_mode_groups.png grouping distance (in mode widths); overrides the "
                          "paths file [plot_corners.GROUP_TOL]")
     ap.add_argument("--summary-only", action="store_true",
                     help="only rebuild the summaries from the PNGs on disk; plot nothing else")

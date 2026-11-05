@@ -333,10 +333,12 @@ OUTLIER_FLOOR = 1e-8
 FIELDS = ("field_phi", "field_apar")
 STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 #: corners_mode_groups.png: two runs whose |phi| (and |Apar|) along z are closer than
-#: this earth mover's distance (in ballooning angle z/pi, largest over the fields
-#: both have) can share a group; average linkage, so a group's members are this close on
-#: average, not by a chain. Panels per row; points of the common z grid.
-GROUP_TOL = 0.25
+#: this can share a group. Distance: earth mover's distance along z over the pair's
+#: mean rms width (mode_emd), the largest over the fields both have, so 0.3 = the
+#: weight moves 30% of a mode width: scale-free, a narrow ETG and a narrow KBM differ
+#: as much as wide ones would. Average linkage, so a group's members are this close
+#: on average, not by a chain. Panels per row; points of the common z grid.
+GROUP_TOL = 0.3
 GROUP_COLS = 4
 GROUP_NZ = 801
 #: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
@@ -1609,16 +1611,25 @@ def plot_mode_structure(ds, out, written, profiles, tol=EXTENT_TOL):
     save(fig, out, "corners_mode_structure.png", written)
 
 
+def mode_width(f, z) -> float:
+    """rms width (z/pi) of |f| along *z*, taken as a distribution."""
+    mu = (z * f).sum() / f.sum()
+    return float(np.sqrt(((z - mu) ** 2 * f).sum() / f.sum()))
+
+
 def mode_emd(a: dict, b: dict, z) -> float:
-    """Earth mover's distance (z/pi) between two mode_profile shapes on the common
-    grid *z*, each field taken as a distribution of |f| along z; the largest over
-    the fields both runs have, so a narrow |phi| does not hide a wide |Apar|."""
+    """Distance between two mode_profile shapes on the common grid *z*: each field
+    a distribution of |f| along z, earth mover's distance between the two over
+    their mean rms width (mode_width), so the result is in mode widths, not z/pi;
+    the largest over the fields both runs have, so a narrow |phi| does not hide a
+    wide |Apar|."""
     d = []
     for f in FIELDS:
         if f in a and f in b:
             ca = np.cumsum(a[f]) / a[f].sum()
             cb = np.cumsum(b[f]) / b[f].sum()
-            d.append(np.abs(ca - cb).sum() * (z[1] - z[0]))
+            w = (mode_width(a[f], z) + mode_width(b[f], z)) / 2
+            d.append(np.abs(ca - cb).sum() * (z[1] - z[0]) / max(w, z[1] - z[0]))
     return float(max(d)) if d else np.inf
 
 
@@ -1666,6 +1677,12 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
         for q in range(p + 1, n):
             dist[p, q] = dist[q, p] = mode_emd(shapes[p], shapes[q], z)
     groups = group_modes(dist, tol)
+    off = dist[np.triu_indices(n, 1)]
+    if off.size:
+        q = np.percentile(off, (10, 50, 90))
+        print(f"    mode groups: pairwise distance 10/50/90% {q[0]:.3g}/{q[1]:.3g}/{q[2]:.3g} "
+              f"mode widths; tol {tol:g} -> {sum(len(g) > 1 for g in groups)} group(s), "
+              f"{sum(len(g) == 1 for g in groups)} outlier(s)")
     panels = [g for g in groups if len(g) > 1]
     lone = [g[0] for g in groups if len(g) == 1]
     if lone:
@@ -1687,7 +1704,7 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     for a in axes.flat[len(panels):]:
         a.set_visible(False)
     for c, (ax, g) in enumerate(zip(axes.flat, panels)):
-        hi = 1.0
+        hi = 0.2
         for k in g:
             colour = (MODE_COLOR.get(mode_of(k), MODE_COLOR["unidentified"]) if m is not None
                       else MUTED)
@@ -1723,7 +1740,7 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     legend_right(fig, handles, title="mode (--modes)" if m is not None else "field")
     skipped = sum(1 for k in profiles if k not in runs)
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode structures grouped by "
-                 f"shape (earth mover's distance along z, average linkage <= {tol:g} z/π)\n"
+                 f"shape (earth mover's distance along z / mode width, average linkage <= {tol:g})\n"
                  f"{n} converged run(s) in {len(groups) - len(lone)} group(s)"
                  f" + {len(lone)} outlier(s); {skipped} unconverged left out",
                  x=0.02, ha="left", fontsize=11, color=INK)
@@ -2936,8 +2953,8 @@ if __name__ == "__main__":
                          "converged runs grouped by mode-structure shape (reads every field "
                          "file)")
     ap.add_argument("--group-tol", type=float, default=GROUP_TOL,
-                    help="corners_mode_groups.png: earth mover's distance along z (z/pi) "
-                         "under which mode structures share a group (average linkage)")
+                    help="corners_mode_groups.png: earth mover's distance along z, in mode "
+                         "widths, under which mode structures share a group (average linkage)")
     ap.add_argument("--vspace-edge", action="store_true",
                     help="corners_vspace_edge.png: <|f|^2>^1/2 at the v_par = +-lv and top-mu "
                          "edges of the velocity box over its peak, per species, corner and ky "
