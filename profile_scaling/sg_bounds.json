@@ -1,0 +1,89 @@
+{
+ "form": "full",
+ "axes": [
+  "Te_ped_scale",
+  "ne_ped_scale",
+  "Te_width_scale",
+  "ne_width_scale"
+ ],
+ "scale_ceiling": [
+  0.7,
+  1.3
+ ],
+ "bounds": {
+  "Te_ped_scale": [
+   0.7,
+   1.3
+  ],
+  "ne_ped_scale": [
+   0.7,
+   1.3
+  ],
+  "Te_width_scale": [
+   0.7,
+   1.3
+  ],
+  "ne_width_scale": [
+   0.7,
+   1.3
+  ]
+ },
+ "shared_across_discharges": true,
+ "discharges": [
+  129015,
+  129038,
+  132543,
+  132588
+ ],
+ "regime": {
+  "129015": "ELMy",
+  "129038": "ELM_free",
+  "132543": "ELMy",
+  "132588": "ELM_free"
+ },
+ "boyle_widths": {
+  "ELMy": {
+   "dne": [
+    6,
+    12
+   ],
+   "dTe": [
+    4,
+    7
+   ],
+   "dpe": [
+    4,
+    8
+   ]
+  },
+  "ELM_free": {
+   "dne": [
+    14,
+    22
+   ],
+   "dTe": [
+    7,
+    10
+   ],
+   "dpe": [
+    8,
+    12
+   ]
+  }
+ },
+ "targets": {
+  "Te_ped": [
+   0.2,
+   0.8
+  ],
+  "ne_ped": [
+   3.0,
+   7.0
+  ],
+  "Ti_Te": [
+   1.0,
+   2.0
+  ]
+ },
+ "notes": []
+}
