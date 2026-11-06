@@ -84,8 +84,8 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
                                 scaling (tag); the line is this scan, at its own nz0
                                 read from its parameters; + corners_nz<N>.csv
     s_alpha_ion.png (in <out>/) corners_s_alpha_ion.png for every case at x0: corners,
-                                reference and every VURS batch on one s-alpha, corners
-                                large; + s_alpha_ion.csv
+                                reference and every VURS batch on one s-alpha, marker
+                                area = gamma at the ion peak; + s_alpha_ion.csv
     sampling.png (in <out>/)    where the scan has sampled: every case dir under
                                 x0_<x0>/ (corners, reference, VURS picks, which the
                                 other plots leave out) as a corner plot of the four
@@ -2482,6 +2482,8 @@ def corner_modes(ds):
 #: s-alpha ion-scale peak: points either side of a local max of gamma in the
 #: quadratic fit (in log ky) that confirms it as a cusp (ion_peak).
 PEAK_HALF = 2
+#: s-alpha ion plots: marker area (points^2) at the smallest and largest ion-peak gamma
+ION_SIZE = (25, 260)
 
 
 def converged_gamma(ds) -> np.ndarray:
@@ -2624,26 +2626,37 @@ def ion_rows(ds, scan=None) -> list[dict]:
     return rows
 
 
-def ion_scatter(ax, rows, numbered=True, size=70, legend_rows=None):
+def ion_size(g, lo, hi):
+    """Marker area for ion-peak gamma *g* on the plot's [lo, hi]: ION_SIZE linear
+    in gamma, the smallest for NaN."""
+    if not np.isfinite(g):
+        return ION_SIZE[0]
+    u = 0.5 if hi <= lo else float(np.clip((g - lo) / (hi - lo), 0, 1))
+    return ION_SIZE[0] + u * (ION_SIZE[1] - ION_SIZE[0])
+
+
+def ion_scatter(ax, rows, numbered=True):
     """One marker per row at (alpha_MHD, shat): shape and colour its ion-peak mode
-    (grey with no mode label), filled for a cusp, hollow for the no-cusp max; grey
-    x with no converged ky; black edge on the reference, numbered in row order when *numbered*. Legend from *legend_rows*
-    (default *rows*), so a second call on the same axes can cover both."""
+    (grey with no mode label), area its ion-peak gamma (ion_size, over these
+    rows), filled for a cusp, hollow for the no-cusp max; grey x with no
+    converged ky; black edge on the reference, numbered in row order when
+    *numbered*."""
+    g = np.array([r["gamma_ion"] for r in rows], float)
+    lo, hi = (np.nanmin(g), np.nanmax(g)) if np.isfinite(g).any() else (0.0, 1.0)
     for n, r in enumerate(rows, start=1):
         if not np.isfinite(r["ky_ion"]):
-            ax.scatter(r["alpha_MHD"], r["shat"], marker="x", s=size * 0.6, color=MUTED,
+            ax.scatter(r["alpha_MHD"], r["shat"], marker="x", s=ION_SIZE[0], color=MUTED,
                        linewidths=1.2, zorder=3)
         else:
             m, c = r["mode_ion"], MODE_COLOR.get(r["mode_ion"], MUTED)
             cusp = r["peak"] == "cusp"
             ax.scatter(r["alpha_MHD"], r["shat"], marker=MODE_MARKER.get(m, "o") if m else "o",
-                       s=size * (1.6 if r["ref"] else 1), facecolors=c if cusp else "none",
+                       s=ion_size(r["gamma_ion"], lo, hi), facecolors=c if cusp else "none",
                        edgecolors=INK if r["ref"] else (SURFACE if cusp else c),
-                       linewidths=1.4 if r["ref"] or not cusp else 0.6, zorder=4)
+                       linewidths=1.4 if r["ref"] or not cusp else 0.6, alpha=0.85, zorder=4)
         if numbered:
             ax.annotate(str(n), (r["alpha_MHD"], r["shat"]), xytext=(5, 4),
                         textcoords="offset points", fontsize=7, color=INK, zorder=6)
-    rows = rows if legend_rows is None else legend_rows
     present = sorted({r["mode_ion"] for r in rows if np.isfinite(r["ky_ion"]) and r["mode_ion"]},
                      key=list(MODE_COLOR).index)
     handles = [Line2D([], [], ls="none", marker=MODE_MARKER.get(m, "o"), color=MODE_COLOR[m],
@@ -2659,7 +2672,12 @@ def ion_scatter(ax, rows, numbered=True, size=70, legend_rows=None):
                               label="no converged ky"))
     if any(r["ref"] for r in rows):
         handles.append(Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.4,
-                              ms=10, label="reference 1.00"))
+                              ms=8, label="reference 1.00"))
+    if np.isfinite(g).any():                     # size key: gamma at the ion peak
+        for v in dict.fromkeys((lo, (lo + hi) / 2, hi)):
+            handles.append(Line2D([], [], ls="none", marker="o", color=MUTED,
+                                  ms=np.sqrt(ion_size(v, lo, hi)),
+                                  label=f"gamma {v:.3g}"))
     ax.legend(handles=handles, frameon=False, fontsize=8, loc="best")
     ax.set_xlabel(r"$\alpha_{MHD} = q_0^2\,(R_0/L_{ref})\,(-d\beta/dx)$")
     ax.set_ylabel(r"$\hat{s}$")
@@ -2693,19 +2711,16 @@ def plot_s_alpha_ion(ds, out, written):
 
 def plot_s_alpha_x0(rows, x0, shot, out, written):
     """<out>/s_alpha_ion.png: every case at this x0 (corners, reference, every
-    VURS batch) as in corners_s_alpha_ion.png, unnumbered; corners in a bigger
-    marker; + data/s_alpha_ion.csv."""
+    VURS batch) as in corners_s_alpha_ion.png, unnumbered; + data/s_alpha_ion.csv."""
     if not rows:
         print("no case with shat/alpha_MHD; s_alpha_ion.png skipped")
         return
     fig, ax = plt.subplots(figsize=(10, 7.5))
-    picks = [r for r in rows if r["scan"] != "corners"]
-    ion_scatter(ax, picks, numbered=False, size=40)
-    ion_scatter(ax, [r for r in rows if r["scan"] == "corners"], numbered=False, size=90,
-                legend_rows=rows)
+    ion_scatter(ax, rows, numbered=False)
     n_max = sum(r["peak"] == "max" for r in rows)
     ax.set_title(f"NSTX {shot} s-alpha at x0 = {', '.join(f'{x:g}' for x in x0)}: mode at the "
-                 f"ion-scale peak, {len(rows)} case(s) (corners large, VURS picks small), "
+                 f"ion-scale peak, marker area = its gamma" + chr(10)
+                 + f"{len(rows)} case(s) (corners, reference, VURS picks), "
                  f"{n_max} without a cusp (max, hollow)", loc="left", fontsize=10, color=INK)
     fig.tight_layout()
     save(fig, out, "s_alpha_ion.png", written)
