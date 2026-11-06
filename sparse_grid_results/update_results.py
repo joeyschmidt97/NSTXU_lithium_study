@@ -97,7 +97,7 @@ X0_TOL = 1e-4
 SUMMARY = ("corners/corners_growth", "corners/corners_growth_field",
            "corners/corners_mode_structure", "corners/corners_mode_groups",
            "corners/corners_mode_scaling",
-           "corners/corners_outlier", "sampling")
+           "corners/corners_outlier", "s_alpha_ion", "sampling")
 SUMMARY_DPI = 100
 #: summaries plot_res_check writes (summary_rescheck_<code>_<grid>x2.png): not stale
 RESCHECK_SUMMARY = "summary_rescheck_"

@@ -25,7 +25,13 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
     corners_s_alpha.png         shat vs alpha_MHD at x0: each corner a small ring of
                                 its converged ky (unconverged ones left out), each
                                 coloured by that ky's gamma (marker = its mode under
-                                --modes), numbered, with a key beside
+                                --modes), the ion-scale peak circled, numbered, with
+                                a key beside (gamma range, ion-peak ky and mode)
+    corners_s_alpha_ion.png     shat vs alpha_MHD, one marker per case: its mode at the
+                                ion-scale peak (first local max of gamma over the
+                                converged ky, at ky <= ION_KY_MAX = 2; x where gamma
+                                has none), so a cut-off
+                                high-ky run never stands in for the maximum
     corners_local_params.png    the local parameters that vary most: % from the corner
                                 mean, or the absolute difference for those that change sign
     corners_local_table.png     their values per corner, as a table
@@ -78,6 +84,9 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
                                 each matched to the corner of the same profile
                                 scaling (tag); the line is this scan, at its own nz0
                                 read from its parameters; + corners_nz<N>.csv
+    s_alpha_ion.png (in <out>/) corners_s_alpha_ion.png for every case at x0: corners,
+                                reference and every VURS batch on one s-alpha, corners
+                                large; + s_alpha_ion.csv
     sampling.png (in <out>/)    where the scan has sampled: every case dir under
                                 x0_<x0>/ (corners, reference, VURS picks, which the
                                 other plots leave out) as a corner plot of the four
@@ -2471,6 +2480,44 @@ def corner_modes(ds):
     return np.array(at_max, dtype=object), seq
 
 
+#: s-alpha ion-scale peak: the first local max of gamma over ky at ky rho_ref at or
+#: below this (ion scale; the 10+ runs are often cut off), none above it.
+ION_KY_MAX = 2.0
+
+
+def converged_gamma(ds) -> np.ndarray:
+    """gamma (corner, ky) of converged ky only: GENE's own value or a passing field
+    estimate; unconverged, missing and --field-fits decaying/ambiguous fits NaN."""
+    return np.where(np.isin(ds.status.values, list(FIT_STYLE)), np.nan, ds.gamma.values)
+
+
+def ion_peak(gam_row, ky) -> int | None:
+    """ky index of the first interior local maximum of one case's converged gamma
+    over ky at ky <= ION_KY_MAX (the ion-scale peak, an upper cusp), neighbours
+    taken among the converged ky; None when there is no such cusp (gamma only
+    rises or only falls there), so a high-ky run that is cut off never stands in
+    for it."""
+    js = np.flatnonzero(np.isfinite(gam_row))
+    g = gam_row[js]
+    for q in range(1, len(js) - 1):
+        if ky[js[q]] > ION_KY_MAX:
+            break
+        if g[q] > g[q - 1] and g[q] >= g[q + 1]:
+            return int(js[q])
+    return None
+
+
+def ion_peaks(ds) -> list[tuple]:
+    """(ky index or None, gamma, mode) at each case's ion_peak."""
+    gam = converged_gamma(ds)
+    modes = ds["mode"].values if "mode" in ds else np.full(gam.shape, "", dtype=object)
+    out = []
+    for i in range(ds.sizes["corner"]):
+        j = ion_peak(gam[i], ds.ky.values)
+        out.append((j, np.nan, "") if j is None else (j, gam[i, j], str(modes[i, j])))
+    return out
+
+
 def ky_ring(ax_span, s_span, n, radius=0.02, aspect=1.35):
     """Data offsets placing n ky points on a small ring, lowest ky at 12 o'clock, clockwise."""
     ang = np.pi / 2 - 2 * np.pi * np.arange(n) / n
@@ -2488,10 +2535,9 @@ def plot_s_alpha(ds, out, written):
         print("shat/alpha_MHD all NaN; s-alpha plot skipped")
         return
     status, ky = ds.status.values, ds.ky.values
-    # converged ky only: GENE's own value or a passing field estimate; unconverged,
-    # missing and --field-fits decaying/ambiguous fits are left off the rings
-    gam = np.where(np.isin(status, list(FIT_STYLE)), np.nan, ds.gamma.values)
+    gam = converged_gamma(ds)                    # unconverged ky are gaps in the ring
     modes = ds["mode"].values if "mode" in ds else np.full(gam.shape, "", dtype=object)
+    peaks = ion_peaks(ds)
     gfin = gam[ok][np.isfinite(gam[ok])]
     span = max(np.abs(gfin).max(), 1e-6) if gfin.size else 1.0
     norm = Normalize(-span, span)                # symmetric: the grey middle is gamma = 0
@@ -2510,32 +2556,28 @@ def plot_s_alpha(ds, out, written):
             sc = ax.scatter(x[j], y[j], c=[gam[i, j]], cmap=GAMMA_CMAP, norm=norm, s=42,
                             marker=MODE_MARKER.get(modes[i, j], "o") if modes[i, j] else "o",
                             edgecolors=INK, linewidths=1.5 if field else 0.5, zorder=4)
+        jp = peaks[i][0]
+        if jp is not None:                       # ring around the ion-scale peak
+            ax.scatter(x[jp], y[jp], s=150, facecolors="none", edgecolors=INK, linewidths=1.2,
+                       zorder=5)
         ax.annotate(str(n), (a[i], s[i]), ha="center", va="center", fontsize=6.5,
                     fontweight="bold", color=INK, zorder=6,
                     bbox=dict(boxstyle="round,pad=0.12", fc=SURFACE, ec="none", alpha=0.8))
         g = gam[i][np.isfinite(gam[i])]
         rng = f"{g.min():.2f}-{g.max():.2f}" if g.size else "-"
-        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {rng:>9}"
-                     + (f"  {corner_modes(ds)[1][i]}" if wide else ""))
+        lines.append(f"{n:>2}  {ds.label.values[i]:<21} {rng:>9}  " + peak_text(ds, peaks[i]))
     handles = [Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.8, ms=7,
-                      label="TPED field estimate (thick edge)")]
+                      label="TPED field estimate (thick edge)"),
+               Line2D([], [], ls="none", marker="o", mfc="none", mec=INK, mew=1.2, ms=11,
+                      label=f"ion-scale peak (first local max of gamma, ky <= {ION_KY_MAX:g})")]
     if wide:
         handles += [Line2D([], [], ls="none", marker=MODE_MARKER[m], color=MUTED, mec=INK, ms=7,
                            label=m) for m in MODE_MARKER if (modes == m).any()]
     ax.legend(handles=handles, frameon=False, fontsize=8, loc="upper right")
     key.axis("off")
-    head = f"{'#':>2}  {legend_title(ds):<21} {'gamma':>9}" + ("  modes over ky" if wide else "")
+    head = f"{'#':>2}  {legend_title(ds):<21} {'gamma':>9}  ion peak ky" + (" mode" if wide else "")
     key.text(0, 1, head + "\n" + "\n".join(lines), family="monospace", fontsize=8, va="top",
              color=INK, transform=key.transAxes)
-    foot = (f"each corner: a ring of its ky, {ky[0]:g} at 12 o'clock then clockwise\n"
-            "(" + ", ".join(f"{k:g}" for k in ky) + "); number at the corner's own\n"
-            "(alpha, shat), the ring offset is for display only;\n"
-            "unconverged ky are left out (gaps in the ring)")
-    if wide:
-        foot += "\n\nmodes over ky, low to high:\n" + "\n".join(
-            f"  {v} = {k}" for k, v in MODE_SHORT.items())
-    key.text(0, 0, foot, family="monospace", fontsize=7, va="bottom", color=MUTED,
-             transform=key.transAxes)
     if sc is not None:
         cb = fig.colorbar(sc, ax=ax, pad=0.02)
         cb.set_label(r"$\gamma$ at each $k_y$ [$c_{ref}/L_{ref}$]")
@@ -2546,6 +2588,121 @@ def plot_s_alpha(ds, out, written):
     tidy(ax)
     fig.tight_layout()
     save(fig, out, "corners_s_alpha.png", written)
+
+
+def peak_text(ds, peak) -> str:
+    """'0.7 KBM' for an ion_peaks entry, 'none' without a cusp."""
+    j, _, mode = peak
+    if j is None:
+        return "none"
+    return f"{ds.ky.values[j]:g}" + (f" {MODE_SHORT.get(mode, mode)}" if mode else "")
+
+
+def ion_rows(ds, scan=None) -> list[dict]:
+    """One row per case with finite (alpha_MHD, shat): its ion_peaks entry, for
+    corners_s_alpha_ion.png and the x0 summary."""
+    if "shat" not in ds or "alpha_MHD" not in ds:
+        return []
+    ref = ds["case_ref"].values if "case_ref" in ds else np.zeros(ds.sizes["corner"], bool)
+    rows = []
+    for i, (j, g, mode) in enumerate(ion_peaks(ds)):
+        a, s = float(ds.alpha_MHD.values[i]), float(ds.shat.values[i])
+        if np.isfinite(a) and np.isfinite(s):
+            rows.append({"case": str(ds.label.values[i]), "scan": scan or ds.scan,
+                         "ref": bool(ref[i]), "alpha_MHD": a, "shat": s,
+                         "ky_ion": np.nan if j is None else float(ds.ky.values[j]),
+                         "gamma_ion": g, "mode_ion": mode})
+    return rows
+
+
+def ion_scatter(ax, rows, numbered=True, size=70, legend_rows=None):
+    """One marker per row at (alpha_MHD, shat): shape and colour its ion-peak mode
+    (grey circle with no mode label, grey x with no ion peak); black edge on the
+    reference, numbered in row order when *numbered*. Legend from *legend_rows*
+    (default *rows*), so a second call on the same axes can cover both."""
+    for n, r in enumerate(rows, start=1):
+        if not np.isfinite(r["ky_ion"]):
+            ax.scatter(r["alpha_MHD"], r["shat"], marker="x", s=size * 0.6, color=MUTED,
+                       linewidths=1.2, zorder=3)
+        else:
+            m = r["mode_ion"]
+            ax.scatter(r["alpha_MHD"], r["shat"], marker=MODE_MARKER.get(m, "o") if m else "o",
+                       s=size * (1.6 if r["ref"] else 1), color=MODE_COLOR.get(m, MUTED),
+                       edgecolors=INK if r["ref"] else SURFACE, linewidths=1.4 if r["ref"] else 0.6,
+                       zorder=4)
+        if numbered:
+            ax.annotate(str(n), (r["alpha_MHD"], r["shat"]), xytext=(5, 4),
+                        textcoords="offset points", fontsize=7, color=INK, zorder=6)
+    rows = rows if legend_rows is None else legend_rows
+    present = sorted({r["mode_ion"] for r in rows if np.isfinite(r["ky_ion"]) and r["mode_ion"]},
+                     key=list(MODE_COLOR).index)
+    handles = [Line2D([], [], ls="none", marker=MODE_MARKER.get(m, "o"), color=MODE_COLOR[m],
+                      ms=8, label=m) for m in present]
+    if any(np.isfinite(r["ky_ion"]) and not r["mode_ion"] for r in rows):
+        handles.append(Line2D([], [], ls="none", marker="o", color=MUTED, ms=8,
+                              label="ion peak, no mode (--modes)"))
+    if any(not np.isfinite(r["ky_ion"]) for r in rows):
+        handles.append(Line2D([], [], ls="none", marker="x", color=MUTED, ms=7, mew=1.2,
+                              label=f"no ion peak (no local max at ky <= {ION_KY_MAX:g})"))
+    if any(r["ref"] for r in rows):
+        handles.append(Line2D([], [], ls="none", marker="o", color=MUTED, mec=INK, mew=1.4,
+                              ms=10, label="reference 1.00"))
+    ax.legend(handles=handles, frameon=False, fontsize=8, loc="best")
+    ax.set_xlabel(r"$\alpha_{MHD} = q_0^2\,(R_0/L_{ref})\,(-d\beta/dx)$")
+    ax.set_ylabel(r"$\hat{s}$")
+    ax.margins(x=0.1, y=0.1)
+    tidy(ax)
+
+
+def plot_s_alpha_ion(ds, out, written):
+    """corners_s_alpha_ion.png: shat vs alpha_MHD, one marker per case, its mode at
+    the ion-scale peak (ion_peak: first local max of gamma over ky, not the global
+    max a cut-off high-ky run can take); key: case, peak ky, gamma, mode."""
+    rows = ion_rows(ds)
+    if not rows:
+        print("no shat/alpha_MHD; corners_s_alpha_ion.png skipped")
+        return
+    fig, (ax, key) = plt.subplots(1, 2, figsize=(13.5, 7.5), width_ratios=(3, 1.5))
+    ion_scatter(ax, rows)
+    ax.set_title(f"s-alpha at {x0_text(ds)}, mode at the ion-scale peak", loc="left",
+                 fontsize=10, color=INK)
+    key.axis("off")
+    lines = [f"{n:>2}  {r['case']:<21} " + ("none" if not np.isfinite(r["ky_ion"]) else
+             f"{r['ky_ion']:>5g} {r['gamma_ion']:>7.3f} {MODE_SHORT.get(r['mode_ion'], r['mode_ion'])}")
+             for n, r in enumerate(rows, start=1)]
+    key.text(0, 1, f"{'#':>2}  {legend_title(ds):<21} {'ky':>5} {'gamma':>7} mode\n"
+             + "\n".join(lines), family="monospace", fontsize=8, va="top", color=INK,
+             transform=key.transAxes)
+    fig.tight_layout()
+    save(fig, out, "corners_s_alpha_ion.png", written)
+
+
+def plot_s_alpha_x0(rows, x0, shot, out, written):
+    """<out>/s_alpha_ion.png: every case at this x0 (corners, reference, every
+    VURS batch) as in corners_s_alpha_ion.png, unnumbered; corners in a bigger
+    marker; + data/s_alpha_ion.csv."""
+    if not rows:
+        print("no case with shat/alpha_MHD; s_alpha_ion.png skipped")
+        return
+    fig, ax = plt.subplots(figsize=(10, 7.5))
+    picks = [r for r in rows if r["scan"] != "corners"]
+    ion_scatter(ax, picks, numbered=False, size=40)
+    ion_scatter(ax, [r for r in rows if r["scan"] == "corners"], numbered=False, size=90,
+                legend_rows=rows)
+    n_none = sum(not np.isfinite(r["ky_ion"]) for r in rows)
+    ax.set_title(f"NSTX {shot} s-alpha at x0 = {', '.join(f'{x:g}' for x in x0)}: mode at the "
+                 f"ion-scale peak, {len(rows)} case(s) (corners large, VURS picks small), "
+                 f"{n_none} without a peak", loc="left", fontsize=10, color=INK)
+    fig.tight_layout()
+    save(fig, out, "s_alpha_ion.png", written)
+    path = data_path(out, "s_alpha_ion.csv")
+    keys = ("case", "scan", "ref", "alpha_MHD", "shat", "ky_ion", "gamma_ion", "mode_ion")
+    with open(path, "w") as fh:
+        fh.write(",".join(keys) + "\n")
+        for r in rows:
+            fh.write(",".join(f"{r[k]:.6g}" if isinstance(r[k], float) else str(r[k])
+                              for k in keys) + "\n")
+    written.append(path)
 
 
 def local_params(ds) -> list[str]:
@@ -2846,6 +3003,7 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
     plot_profiles(ds, out, written)
     plot_profiles(ds, out, written, PED_ZOOM, "corners_profiles_ped.png")
     plot_s_alpha(ds, out, written)
+    plot_s_alpha_ion(ds, out, written)
     plot_local(ds, out, written, spread, max_params)
     plot_q_offset(ds, out, written)
     if not is_named(ds):                          # 2x reruns are found by ped_grid tag
@@ -2892,7 +3050,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         print("\nwrote\n  " + "\n  ".join(written))
         return ds
     cases = sampled_cases(diag_root, x0)
-    corner_ds, plotted = None, 0
+    corner_ds, plotted, s_alpha = None, 0, []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)       # all-NaN corners and rows
         for name, pts in [(CORNER_DIR, None)] + batches(cases, batch):
@@ -2913,7 +3071,9 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
                           mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol,
                           group_tol=group_tol)
             plotted += 1
+            s_alpha += ion_rows(ds)
         plot_sampling(cases, ped_root, x0, shot, out, written)
+        plot_s_alpha_x0(s_alpha, x0, shot, out, written)
     print("\nwrote\n  " + "\n  ".join(written))
     if not plotted:
         raise SystemExit(f"no corner or VURS pick found under {diag_root} or {ped_root}")
