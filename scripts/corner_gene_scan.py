@@ -74,7 +74,8 @@ cheasebs_132xxx test case or nstxu_scaling_check prep's copies), tagged NAME:
 run dir <prefix>_x0_<x0>_<NAME>/, output <diag-root>/x0_<x0>/<NAME>. No
 DONE.json needed; cheasebs_acceptance.json must exist and say accepted. The
 geomfile may also carry CHEASE's own EQDSK_COCOS_*.OUT name (older runs).
-Default prefix NSTXU_<shot>_proj, diag root <shot>/nstxu_projection.
+Default prefix NSTXU_<shot>_proj, diag root <shot>/nstxu_projection, and the
+16 ky of KYMIN_CASE_DIR (0.1-10, 4 GPU nodes; --kymin wins).
 
     python corner_gene_scan.py --shot 132543 --gpu --case-dir U=<prep root>/U --x0 0.8173
 
@@ -156,6 +157,9 @@ TEMPLATE, PED_ROOT, DIAG_ROOT, PREFIX = _D["template"], _D["ped_root"], _D["diag
 CORNER_GRID = (0.8, 1.2)
 #: 1.5-3 added after the x0 = 0.6737 scan peaked at the top of 0.1-1.0.
 KYMIN = (0.1, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0)
+#: --case-dir (NSTX-U projection) default: KYMIN plus 3.5-10, since the 132543 U
+#: debug test still grew at ky 3 (ETG). 16 sims = 4 GPU nodes per run dir.
+KYMIN_CASE_DIR = KYMIN + (3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0)
 #: 129038 baseline Chapman radii; other shots in SHOTS.
 CHAPMAN = _D["chapman"]
 #: Scanned radius; ne top (0.6737) was the first 129038 scan, Te top is the second.
@@ -485,7 +489,7 @@ if __name__ == "__main__":
     ap.add_argument("--prefix", default=None,
                     help=f"run dir name prefix, beside the template [{PREFIX}]")
     ap.add_argument("--kymin", type=float, nargs="+", default=None,
-                    help=f"ky values to scan [{scanlist(KYMIN)}]")
+                    help=f"ky values to scan [{scanlist(KYMIN)}; --case-dir: {scanlist(KYMIN_CASE_DIR)}]")
     ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
                     help="override template parameters, e.g. --set nx0=7 nz0=128")
     ap.add_argument("--walltime", default=None,
@@ -537,6 +541,7 @@ if __name__ == "__main__":
         args.prefix = args.prefix or f"NSTXU_{args.shot}_proj"
         args.diag_root = args.diag_root or os.path.join(os.path.dirname(d["diag_root"]),
                                                         "nstxu_projection")
+        args.kymin = args.kymin or list(KYMIN_CASE_DIR)
     for key, value in shot_defaults(args.shot).items():
         if key != "chapman" and getattr(args, key) is None:
             setattr(args, key, value)

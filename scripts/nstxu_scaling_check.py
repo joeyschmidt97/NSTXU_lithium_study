@@ -503,7 +503,8 @@ def prep(x0: float, ref: str, dest: str, force: bool, runs: bool = False,
     for name, c in record["cases"].items():
         _, sk = cgs.build(template=cgs.GPU_TEMPLATE, ped_root=None, diag_root=diag_root,
                           prefix="NSTXU_132543_proj", force=force, x0=(c["x0"],),
-                          walltime=walltime, gpu=True, case_dirs={name: c["case_dir"]})
+                          walltime=walltime, gpu=True, case_dirs={name: c["case_dir"]},
+                          kymin=cgs.KYMIN_CASE_DIR)
         skipped += sk
     return 1 if skipped else 0
 
@@ -624,8 +625,8 @@ if __name__ == "__main__":
                     help="prep: also write both GENE3_gpu run dirs (corner_gene_scan "
                          "--case-dir, GPU template, prefix NSTXU_132543_proj)")
     ap.add_argument("--walltime", default="03:45:00",
-                    help="prep --runs: GENE timelim + 300 s. Two dirs on a 4-node 4 h "
-                         "allocation run as one round of two 2-node lanes")
+                    help="prep --runs: GENE timelim + 300 s. Each dir is 16 ky on 4 GPU "
+                         "nodes: run with NODES_PER=4, one dir per 4-node allocation")
     ap.add_argument("--out", default=None, help="pre/post: write the table as JSON")
     a = ap.parse_args()
     load_t_sep()
