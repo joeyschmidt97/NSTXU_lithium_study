@@ -209,6 +209,14 @@ def curves(diag_x0, tags, ky_range, clip):
     return out, n_all
 
 
+def guess(r, ks, what="mean"):
+    """GP mean (or sd) of gamma at ky *ks*, before any fill pick; NaN without a GP."""
+    ks = np.asarray(ks, float)
+    if r[what] is None:
+        return np.full(len(ks), np.nan)
+    return np.interp(np.log(ks), np.log(r["grid"]), r[what])
+
+
 def plot(picks, data, results, path):
     import matplotlib
     matplotlib.use("Agg")
@@ -216,35 +224,45 @@ def plot(picks, data, results, path):
     n = len(picks)
     cols = 4
     rows = math.ceil(n / cols)
-    fig, axs = plt.subplots(rows, cols, figsize=(4.2 * cols, 3.0 * rows), squeeze=False)
+    fig, axs = plt.subplots(rows, cols, figsize=(4.4 * cols, 3.3 * rows), squeeze=False)
     for ax, (_, p) in zip(axs.flat, picks.iterrows()):
         d, r = data[p["tag"]], results[p["tag"]]
         if r["mean"] is not None:
             ax.fill_between(r["grid"], r["mean"] - 2 * r["sd"], r["mean"] + 2 * r["sd"],
-                            color="0.85", lw=0)
-            ax.plot(r["grid"], r["mean"], color="0.35", lw=1)
-        ax.errorbar(d.kymin, d.gamma, yerr=np.nan_to_num(d["std"]), fmt="o", ms=3.5,
-                    color="k", label="on disk")
-        top = ax.get_ylim()[1]
-        for k in r["peak"]:
-            ax.axvline(k, color="C3", lw=1, ls="-")
-        for k in r["std"]:
-            ax.axvline(k, color="C0", lw=1, ls="--")
-        if r["density"] is not None:
-            tw = ax.twinx()
-            tw.plot(r["grid"], r["density"], color="C3", alpha=.35, lw=1)
-            tw.set_yticks([])
-            tw.set_ylim(0, None)
+                            color="0.88", lw=0, label="GP ± 2 sd")
+            ax.plot(r["grid"], r["mean"], color="0.45", lw=1, label="GP mean")
+        ax.errorbar(d.kymin, d.gamma, yerr=np.nan_to_num(d["std"]), fmt="o", ms=4,
+                    color="k", zorder=3, label="on disk")
+        # each new ky at the GP's best guess of gamma there, numbered in pick order
+        for kind, color, marker, lab in (("peak", "C3", "^", "P"), ("std", "C0", "s", "U")):
+            ks = np.asarray(r[kind], float)
+            if not len(ks):
+                continue
+            ys = guess(r, ks)
+            ax.errorbar(ks, ys, yerr=2 * guess(r, ks, "sd"), fmt=marker, ms=5.5, color=color,
+                        mec="k", mew=.5, elinewidth=.8, capsize=1.5, zorder=4,
+                        label=("peak pick" if kind == "peak" else "max-std pick") + " (GP guess)")
+            for i, (k, y) in enumerate(zip(ks, ys), 1):
+                ax.annotate(f"{lab}{i}", (k, y), xytext=(3, 4), textcoords="offset points",
+                            fontsize=6, color=color)
+        # rug: every ky the case will have, to judge spacing at a glance
+        lo = ax.get_ylim()[0]
+        ax.plot(d.kymin, np.full(len(d), lo), "|", color="k", ms=9, mew=1)
+        ax.plot(r["peak"], np.full(len(r["peak"]), lo), "|", color="C3", ms=9, mew=1.5)
+        ax.plot(r["std"], np.full(len(r["std"]), lo), "|", color="C0", ms=9, mew=1.5)
+        ax.set_ylim(bottom=lo)
         ax.set_xscale("log")
-        ax.set_ylim(top=top)
         ax.set_title(p["tag"] + (f"  [{p['flags']}]" if p["flags"] else ""), fontsize=7)
         ax.set_xlabel(r"$k_y\rho_s$", fontsize=8)
         ax.set_ylabel(r"$\gamma$", fontsize=8)
         ax.tick_params(labelsize=7)
+    handles, labels = axs.flat[0].get_legend_handles_labels()
     for ax in list(axs.flat)[n:]:
         ax.axis("off")
-    fig.suptitle("FILL picks: red = peak (density faint red), blue dashed = max std; "
-                 "grey = GP mean +- 2 sd", fontsize=9)
+    fig.legend(handles, labels, loc="upper right", fontsize=7, ncol=len(labels))
+    fig.suptitle("FILL picks: P = peak, U = max std, numbered in pick order, drawn at the GP "
+                 "guess ± 2 sd; ticks on the bottom axis = every ky the case will have", fontsize=9,
+                 x=.01, ha="left")
     fig.tight_layout()
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -268,6 +286,8 @@ def make_picks(args, diag_x0, tags, n_ky, n_peak):
                      "gp_peak_ky": round(peak_ky, DECIMALS),
                      "peak_picks": " ".join(f"{k:g}" for k in sorted(r["peak"])),
                      "std_picks": " ".join(f"{k:g}" for k in sorted(r["std"])),
+                     "peak_gamma_guess": " ".join(f"{g:.3g}" for g in guess(r, sorted(r["peak"]))),
+                     "std_gamma_guess": " ".join(f"{g:.3g}" for g in guess(r, sorted(r["std"]))),
                      "kymin": " ".join(f"{k:g}" for k in sorted(r["peak"] + r["std"])),
                      "flags": ",".join(r["flags"])})
     return pd.DataFrame(rows), data, results
