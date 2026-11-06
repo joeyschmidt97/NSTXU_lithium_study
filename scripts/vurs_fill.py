@@ -5,13 +5,17 @@ the growth-rate peak. This picks --n-ky new kymin for each of those
 equilibria from a 1D GP of gamma against log kymin, fitted to that
 equilibrium's own runs only, and reruns the same cheaseBS case with them:
 
-    peak   --n-peak picks (default half): where the maximum of gamma(ky) may
-           be. 2000 GP posterior draws on a fine log-ky grid, the argmax of
-           each binned into a density; the densest allowed ky is picked, the
-           GP is conditioned on its mean there (kriging believer, kernel
-           fixed), and the draws are redone, so the picks spread over the
-           peak instead of stacking on its mode. Two peaks (an ion- and an
-           electron-scale branch) split the density and both get picks.
+    peak   --n-peak picks (default half), all around the peak. 2000 GP
+           posterior draws on a fine log-ky grid, the argmax of each binned
+           into a density. The densest ky is the first pick. Each pick
+           conditions the GP on its mean there (kriging believer, kernel
+           fixed) and the draws are redone. A density mode outside every
+           picked peak's half-max region (a second, ion- or electron-scale
+           branch) with >= PEAK_FLOOR of the first mode's density is its own
+           first pick. Otherwise the pick flanks a picked peak: the side (left
+           or right) holding fewer ky inside its half-max region (quarter-max
+           once that is full), at the largest posterior sd there. Only when
+           no peak has room left does a peak pick become a std pick.
     std    the rest: largest GP posterior std, conditioned on every pick so
            far, one at a time.
 
@@ -70,7 +74,8 @@ from TPED.projects.GENE_pipelines.src.scan_campaign import QoISpec
 GRID = 400            # fine log-ky grid the GP is evaluated on
 DRAWS = 2000          # posterior draws per peak pick
 MIN_GP = 4            # usable values needed for a GP fit
-PEAK_FLOOR = 0.05     # a peak pick needs density >= this x the first draw's top; else std
+PEAK_FLOOR = 0.05     # a new branch needs peak density >= this x the first draw's top
+PEAK_FRAC = (.5, .25) # flank picks: inside the half-max region, else the quarter-max one
 DECIMALS = 3          # as vurs_loop / ScanPointPicker(decimals=3)
 
 
@@ -95,7 +100,7 @@ def _gp(u, z, noise, kernel=None):
     return gp
 
 
-def pick_line(ky, gamma, std, n_new, n_peak, ky_range, min_ratio=1.06, seed=0):
+def pick_line(ky, gamma, std, n_new, n_peak, ky_range, min_ratio=1.15, seed=0):
     """New kymin for one equilibrium.
 
     ky, gamma, std  the values on disk (std NaN where GENE converged)
@@ -146,13 +151,50 @@ def pick_line(ky, gamma, std, n_new, n_peak, ky_range, min_ratio=1.06, seed=0):
     if np.argmax(mean) in (0, GRID - 1):
         out["flags"].append("peak_at_edge")
 
+    def region(m, c, frac):
+        """Contiguous grid indices around c where the mean is >= frac x its value at c."""
+        thr = frac * m[c] if m[c] > 0 else m[c] - abs(m[c]) * (1 - frac)
+        lo = hi = c
+        while lo > 0 and m[lo - 1] >= thr:
+            lo -= 1
+        while hi < GRID - 1 and m[hi + 1] >= thr:
+            hi += 1
+        mask = np.zeros(GRID, bool)
+        mask[lo:hi + 1] = True
+        return mask
+
+    def flank(m, s, ok, centers):
+        """Peak pick beside a branch's peak: the side holding fewer ky, inside the
+        half-max region (quarter-max if that is full), at the largest sd there."""
+        t = np.asarray(taken)
+        counts = []
+        for c in centers:
+            r = region(m, c, PEAK_FRAC[0])
+            counts.append(np.sum((t >= grid[r][0]) & (t <= grid[r][-1])))
+        for c in [centers[k] for k in np.argsort(counts, kind="stable")]:
+            for frac in PEAK_FRAC:
+                r = region(m, c, frac)
+                left = r & ok & (grid < grid[c])
+                right = r & ok & (grid > grid[c])
+                n_left = np.sum((t >= grid[r][0]) & (t < grid[c] - 1e-6))
+                n_right = np.sum((t <= grid[r][-1]) & (t > grid[c] + 1e-6))
+                sides = [left, right] if n_left < n_right else [right, left] if n_right < n_left \
+                    else sorted((left, right), key=lambda w: -s[w].max() if w.any() else 0.)
+                for side in sides:
+                    if side.any():
+                        return int(np.flatnonzero(side)[np.argmax(s[side])])
+        return None
+
     rng = np.random.default_rng(seed)
-    for i in range(n_peak + (n_new - n_peak)):
+    centers = []                                     # grid index of each branch's first peak pick
+    for i in range(n_new):
         kind = "peak" if i < n_peak else "std"
         ok = allowed()
         if not ok.any():
             out["flags"].append("ran_out_of_room")
             break
+        m, s = gp.predict(grid[:, None], return_std=True)
+        j = None
         if kind == "peak":
             draws = gp.sample_y(grid[:, None], DRAWS, random_state=int(rng.integers(2**31)))
             dens = np.bincount(np.argmax(draws, axis=0), minlength=GRID).astype(float)
@@ -161,12 +203,18 @@ def pick_line(ky, gamma, std, n_new, n_peak, ky_range, min_ratio=1.06, seed=0):
                 out["density"] = dens / dens.sum()
                 dens_top = dens.max()
             dens[~ok] = 0.
-            if dens.max() < PEAK_FLOOR * dens_top:   # peak mass used up: the rest is noise
+            inside = np.zeros(GRID, bool)
+            for c in centers:
+                inside |= region(m, c, PEAK_FRAC[0])
+            jd = int(np.argmax(dens))
+            if dens[jd] >= PEAK_FLOOR * dens_top and not inside[jd]:
+                j = jd                               # a branch's most likely peak
+                centers.append(jd)
+            elif centers:
+                j = flank(m, s, ok, centers)         # left / right of a peak already picked
+            if j is None:
                 kind = "std"
-        if kind == "peak":
-            j = int(np.argmax(dens))
-        else:
-            s = gp.predict(grid[:, None], return_std=True)[1]
+        if kind == "std":
             s[~ok] = -np.inf
             j = int(np.argmax(s))
         uj = take(j, kind)
@@ -307,8 +355,8 @@ def main(argv=None):
     ap.add_argument("--n-peak", type=int, default=None, help="of those, peak picks [n-ky // 2]")
     ap.add_argument("--kymin-range", type=float, nargs=2, default=(0.1, 10.), metavar=("LO", "HI"),
                     help="kymin range the picks and the GP grid span [0.1 10]")
-    ap.add_argument("--min-ratio", type=float, default=1.06,
-                    help="closest a new ky may sit to another, as a ratio [1.06]")
+    ap.add_argument("--min-ratio", type=float, default=1.15,
+                    help="closest a new ky may sit to another, as a ratio [1.15]")
     ap.add_argument("--cases", nargs="+", default=None,
                     help="case tags to fill [every vurs_loop run dir of this shot and x0]")
     ap.add_argument("--no-clip", action="store_true", help="fit gamma below 0 as it is")
