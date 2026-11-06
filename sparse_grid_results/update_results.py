@@ -21,9 +21,10 @@ its own (--no-nz-subdir skips it):
     sparse_grid_results/<shot>/x0_<x0>/nz<N>/    the same layout
 
 Then, per discharge, the quick look across radii: each corner plot in SUMMARY
-(and sampling.png) of every x0_<x0>/ folder of that discharge side by side (1 x N,
-smallest x0 left), from the PNGs already there, so a radius not replotted this
-run still shows:
+(and sampling.png, s_alpha_ion.png) of every x0_<x0>/ folder of that discharge
+side by side (smallest x0 left), a corners/ plot with one row more per VURS
+batch folder below the corners (blank where a radius has no such batch yet),
+from the PNGs already there, so a radius not replotted this run still shows:
 
     sparse_grid_results/<shot>/summary_<plot>.png
 
@@ -77,6 +78,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import traceback
 
 os.environ.setdefault("MPLBACKEND", "Agg")
@@ -99,6 +101,9 @@ SUMMARY = ("corners/corners_growth", "corners/corners_growth_field",
            "corners/corners_mode_scaling",
            "corners/corners_outlier", "s_alpha_ion", "sampling")
 SUMMARY_DPI = 100
+#: corners/ plots also get one summary row per VURS batch folder <x0>/batch<i>_<j>/
+CORNER_SUB = "corners"
+BATCH_RE = re.compile(r"batch(\d+)_(\d+)")
 #: summaries plot_res_check writes (summary_rescheck_<code>_<grid>x2.png): not stale
 RESCHECK_SUMMARY = "summary_rescheck_"
 
@@ -258,11 +263,20 @@ def rescheck(shots, codes=None, out_root: str = HERE) -> list[str]:
     return written
 
 
+def batch_label(row: str) -> str:
+    """Row name in a summary: 'corners', or 'VURS 1-16' for batch1_16."""
+    m = BATCH_RE.fullmatch(row)
+    return f"VURS {m[1]}-{m[2]}" if m else row
+
+
 def summarize(shot: int | str, out_root: str = HERE) -> list[str]:
     """<out_root>/<shot>/summary_<plot>.png (shot: a discharge key, e.g. 132543_nstxu_test)
     for each plot in SUMMARY: that PNG of
     every x0_<x0>/ folder of the discharge, side by side at its own resolution,
-    smallest x0 left, each titled with its x0. A plot no radius has is skipped."""
+    smallest x0 left, each titled with its x0. A corners/ plot gets one row more per
+    VURS batch folder (batch1_16/, batch17_32/, ...) any radius has, the same PNG of
+    that batch, blank where a radius has no such batch yet. A plot whose first row
+    (the corners) no radius has is skipped."""
     import matplotlib.pyplot as plt
     shot_dir = os.path.join(out_root, str(shot))
     folders = []
@@ -271,32 +285,55 @@ def summarize(shot: int | str, out_root: str = HERE) -> list[str]:
             folders.append((float(name.removeprefix("x0_")), name))
         except ValueError:
             continue
+    folders.sort()
+    # VURS batch folders (batch1_16, batch17_32, ...) of any radius, in sampling order
+    batches = sorted({b for _, name in folders for b in os.listdir(os.path.join(shot_dir, name))
+                      if BATCH_RE.fullmatch(b)}, key=lambda b: int(BATCH_RE.fullmatch(b)[1]))
     written = []
     for plot in SUMMARY:
-        found = [(x0, os.path.join(shot_dir, name, *f"{plot}.png".split("/")))
-                 for x0, name in sorted(folders)]
-        found = [(x0, p) for x0, p in found if os.path.isfile(p)]
-        if not found:
+        sub, _, base = plot.rpartition("/")
+        # a corners/ plot: one row for the corners and one per VURS batch below it
+        rows = [sub] + (batches if sub == CORNER_SUB else []) if sub else [""]
+        grid = {(r, x0): os.path.join(shot_dir, name, r, f"{base}.png")
+                for r in rows for x0, name in folders}
+        grid = {k: p for k, p in grid.items() if os.path.isfile(p)}
+        if not any(k[0] == rows[0] for k in grid):
             continue
-        imgs = [(x0, plt.imread(p)) for x0, p in found]
-        title = 60                                  # px above each panel for its x0
-        w = sum(im.shape[1] for _, im in imgs)
-        h = max(im.shape[0] for _, im in imgs) + title
+        rows = [r for r in rows if any(k[0] == r for k in grid)]
+        cols = [x0 for x0, _ in folders if any(k[1] == x0 for k in grid)]
+        imgs = {k: plt.imread(p) for k, p in grid.items()}
+        title, label = 60, 70 if len(rows) > 1 else 0   # px: x0 titles on top, row names left
+        cw = {x0: max(im.shape[1] for (r, x), im in imgs.items() if x == x0) for x0 in cols}
+        rh = {r: max(im.shape[0] for (q, _), im in imgs.items() if q == r) for r in rows}
+        w = label + sum(cw.values())
+        h = title + sum(rh.values())
         fig = plt.figure(figsize=(w / SUMMARY_DPI, h / SUMMARY_DPI), facecolor="white")
-        left = 0
-        for x0, im in imgs:                         # each panel at 1 image px per figure px
-            ax = fig.add_axes((left / w, (h - title - im.shape[0]) / h, im.shape[1] / w,
-                               im.shape[0] / h))
-            ax.imshow(im, interpolation="none")
-            ax.set_axis_off()
+        left = label
+        for x0 in cols:
             fig.text((left + 20) / w, 1 - 15 / h, f"x0 = {x0:g}", ha="left", va="top",
                      fontsize=20, fontweight="bold")
-            left += im.shape[1]
-        path = os.path.join(shot_dir, f"summary_{os.path.basename(plot)}.png")
+            left += cw[x0]
+        top = title
+        for r in rows:
+            if label:
+                fig.text(25 / w, 1 - (top + rh[r] / 2) / h, batch_label(r), ha="center",
+                         va="center", rotation=90, fontsize=20, fontweight="bold")
+            left = label
+            for x0 in cols:                         # each panel at 1 image px per figure px
+                im = imgs.get((r, x0))
+                if im is not None:
+                    ax = fig.add_axes((left / w, (h - top - im.shape[0]) / h, im.shape[1] / w,
+                                       im.shape[0] / h))
+                    ax.imshow(im, interpolation="none")
+                    ax.set_axis_off()
+                left += cw[x0]
+            top += rh[r]
+        path = os.path.join(shot_dir, f"summary_{base}.png")
         fig.savefig(path, dpi=SUMMARY_DPI)
         plt.close(fig)
         written.append(path)
-        print(f"    {path}  ({', '.join(f'{x0:g}' for x0, _ in imgs)})")
+        print(f"    {path}  ({', '.join(f'{x0:g}' for x0 in cols)}"
+              + (f"; rows {', '.join(batch_label(r) for r in rows)}" if label else "") + ")")
     # a summary of a plot no longer in SUMMARY (e.g. summary_corners_sampling.png from
     # before sampling.png moved out of corners/) would sit there stale
     keep = {f"summary_{os.path.basename(p)}.png" for p in SUMMARY}
