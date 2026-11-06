@@ -21,11 +21,15 @@ nothing is ever pending.
     python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --rounds 4 \\
         --walltime 00:45:00 --ped-grid-args "<the flags the corners were built with>"
     python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --dry-run   # round 1 pick only
-    python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --kymin-range 0.5 10 --dry-run
+    NODES_PER=2 python -m NSTXU_lithium_study.scripts.vurs_loop --shot 129038 --dry-run  # 2 x 8 ky
 
---jobs defaults to one per lane (allocation nodes / NODES_PER), so each round
-is one wave. --ky-per-job must equal NODES_PER * 4 (one GPU per ky), which is
-interactive_corners.sh's --np/--mps. --walltime sets GENE's timelim (minus
+Defaults: kymin in [0.1, 10] and NODES_PER = 4, i.e. one 16-ky job per round on
+a 4-node allocation (2026-11-06: 8 ky over 0.1-10 missed the growth-rate peak;
+vurs_fill backfills those cases). NODES_PER from the environment overrides it
+and is passed on to interactive_corners.sh. --jobs defaults to one per lane
+(allocation nodes / NODES_PER), so each round is one wave. --ky-per-job must
+equal NODES_PER * 4 (one GPU per ky), which is interactive_corners.sh's
+--np/--mps. --walltime sets GENE's timelim (minus
 corner_gene_scan.TIMELIM_MARGIN), not a SLURM limit: rounds x (cheaseBS +
 walltime) has to fit the allocation. A ky that hits timelim still counts
 through its field fit and std.
@@ -62,6 +66,8 @@ from TPED.projects.GENE_pipelines.src.scan_campaign import QoISpec
 KNOB = {"Te_ped_scale": "Teh", "Te_width_scale": "Tew",
         "ne_ped_scale": "neh", "ne_width_scale": "new"}
 PPN = 4                                    # one rank per A100, as interactive_corners.sh
+NODES_PER = 4                              # lane size [NODES_PER env]: 16 ky per job
+KYMIN_RANGE = (0.1, 10.)                   # kymin bounds the picker suggests within
 RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "interactive_corners.sh")
 
 
@@ -127,15 +133,15 @@ def main(argv=None):
     ap.add_argument("--jobs", type=int, default=None,
                     help="GENE jobs per round [allocation nodes / NODES_PER]")
     ap.add_argument("--ky-per-job", type=int, default=None,
-                    help="kymin per job [NODES_PER * 4]; must equal NODES_PER * 4")
+                    help="kymin per job [NODES_PER * 4 = 16]; must equal NODES_PER * 4")
     ap.add_argument("--walltime", default="00:45:00",
                     help="per GENE run, HH:MM:SS; sets timelim [00:45:00]")
     ap.add_argument("--model", choices=("vurs", "vwrs", "gp"), default="vurs")
     ap.add_argument("--no-clip", action="store_true",
                     help="fit gamma as it is; default floors it at 0 (stable reads as 0)")
     ap.add_argument("--seed", type=int, default=0, help="round N uses seed + N")
-    ap.add_argument("--kymin-range", type=float, nargs=2, default=None, metavar=("LO", "HI"),
-                    help=f"kymin bounds the picker suggests within [{DEFAULT_AXES['kymin']}]")
+    ap.add_argument("--kymin-range", type=float, nargs=2, default=KYMIN_RANGE, metavar=("LO", "HI"),
+                    help="kymin bounds the picker suggests within [%g %g]" % KYMIN_RANGE)
     ap.add_argument("--ped-grid-args", default="",
                     help="extra ped_grid flags for cheaseBS, quoted, e.g. \"--max-iter 40\"")
     ap.add_argument("--template", default=C.GPU_TEMPLATE)
@@ -152,7 +158,7 @@ def main(argv=None):
     diag_root = args.diag_root or d["diag_root"]
     prefix = args.prefix or f"{d['prefix']}_vurs"
     diag_x0 = os.path.join(diag_root, C.x0_label((x0,)))
-    nodes_per = int(os.environ.get("NODES_PER", 2))
+    nodes_per = int(os.environ.get("NODES_PER", NODES_PER))
     ky_per_job = args.ky_per_job or nodes_per * PPN
     if ky_per_job != nodes_per * PPN:
         ap.error(f"--ky-per-job {ky_per_job} != NODES_PER * {PPN} = {nodes_per * PPN}: "
@@ -164,9 +170,9 @@ def main(argv=None):
     rounds_dir = os.path.join(os.path.dirname(os.path.normpath(args.template)),
                               f"{prefix}_{C.x0_label((x0,))}_rounds")
     ped_args = shlex.split(args.ped_grid_args)
-    if args.kymin_range and not 0 < args.kymin_range[0] < args.kymin_range[1]:
+    if not 0 < args.kymin_range[0] < args.kymin_range[1]:
         ap.error("--kymin-range needs 0 < LO < HI (kymin is a log axis)")
-    axes = {**DEFAULT_AXES, **({"kymin": tuple(args.kymin_range)} if args.kymin_range else {})}
+    axes = {**DEFAULT_AXES, "kymin": tuple(args.kymin_range)}
 
     left = time_left()
     need = args.rounds * C.walltime_seconds(args.walltime)
@@ -223,7 +229,8 @@ def main(argv=None):
             print("no run dirs this round; stopping", flush=True)
             return 1
         print(f"\nrunning {len(run_dirs)} run dir(s): {RUNNER}", flush=True)
-        subprocess.run(["bash", RUNNER, *run_dirs], check=False)
+        subprocess.run(["bash", RUNNER, *run_dirs], check=False,
+                       env={**os.environ, "NODES_PER": str(nodes_per)})
     print(f"\n{args.rounds} round(s) done; per-round tables in {rounds_dir}")
     return 0
 
