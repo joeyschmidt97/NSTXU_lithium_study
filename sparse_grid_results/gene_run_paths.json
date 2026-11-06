@@ -131,6 +131,35 @@
         "ref_case": "U0",
         "scan_name": "NSTX-U projection 0.9 T vs unscaled"
       }
+    },
+    "132543_nstxu_U": {
+      "0.8173": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection",
+        "ped_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection_eq",
+        "cases": {
+          "U": 0.8173
+        },
+        "ref_case": null,
+        "scan_name": "NSTX-U projection 0.9 T, Te top (16 ky)"
+      },
+      "0.8539": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection",
+        "ped_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection_eq",
+        "cases": {
+          "U": 0.8539
+        },
+        "ref_case": null,
+        "scan_name": "NSTX-U projection 0.9 T, ne top (16 ky)"
+      },
+      "0.9517": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection",
+        "ped_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/nstxu_projection_eq",
+        "cases": {
+          "U": 0.9517
+        },
+        "ref_case": null,
+        "scan_name": "NSTX-U projection 0.9 T, steep (16 ky)"
+      }
     }
   }
 }
