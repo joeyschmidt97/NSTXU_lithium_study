@@ -22,7 +22,10 @@
 # Delete .interactive_ran and move the complete scanfiles aside to rerun. A dir
 # another lane has claimed in this job is skipped; a new allocation re-claims
 # unfinished dirs, and a relaunch in the same allocation (after ^C) releases
-# this job's claims on dirs not done. Log per run dir: interactive.log.
+# this job's claims on dirs not done. A dir claimed by another allocation that
+# is still running (squeue) is skipped too, so two allocations can take the
+# same glob and split it: the older claim wins a tie. Log per run dir:
+# interactive.log.
 #
 #   LIST_ONLY=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh <dirs>
 # prints which dirs are done and exits; no allocation needed. DRY_RUN=1 also
@@ -105,6 +108,22 @@ complete_scan() {
     return 1
 }
 already_done() { [ -e "$1/.interactive_ran" ] || complete_scan "$1" > /dev/null; }
+
+# Job ID of another running allocation whose claim on $1 beats this job's
+# ($1/.claim_$SLURM_JOB_ID, just made): an older claim dir, or the same age and a
+# lower job ID. Claims of jobs no longer in squeue are stale and ignored.
+rival_claim() {
+    local c j mine="$1/.claim_$SLURM_JOB_ID"
+    for c in "$1"/.claim_*; do
+        [ -d "$c" ] && [ "$c" != "$mine" ] || continue
+        j=${c##*/.claim_}
+        [ -n "$(squeue -h -j "$j" -o %T 2>/dev/null)" ] || continue
+        if [ "$c" -ot "$mine" ] || { ! [ "$mine" -ot "$c" ] && [ "$j" -lt "$SLURM_JOB_ID" ]; }; then
+            echo "$j"; return 0
+        fi
+    done
+    return 1
+}
 
 # "mps ranks nodes" of run dir $1: n_parallel_sims, x n_procs_sim, over PPN.
 dir_size() {
@@ -253,6 +272,11 @@ lane() {
             continue
         fi
         mkdir "$d/.claim_$SLURM_JOB_ID" 2>/dev/null || continue
+        if rival=$(rival_claim "$d"); then
+            rmdir "$d/.claim_$SLURM_JOB_ID"
+            echo "[lane $i] skip $d: claimed by running job $rival"
+            continue
+        fi
         [ -f "$d/geneerror.log" ] && mv "$d/geneerror.log" "$d/geneerror.log.prev"
         dd0=$(diagdir "$d")
         if [ "$LANES_PER_GPU" -gt 0 ]; then
