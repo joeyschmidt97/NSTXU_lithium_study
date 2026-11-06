@@ -15,7 +15,9 @@
 # A run dir is skipped as done (GENE finished: converged or hit timelim; check
 # the output) when it has .interactive_ran, or when any scanfilesNNNN (in the
 # run dir or beside its diagdir on pscratch) holds a complete scan: an omega_NNNN for every parameters_NNNN and at least
-# n_parallel_sims of them. GENE writes omega only when a run ends, so a scan
+# n_parallel_sims of them, with every kymin of the run dir's own input among
+# its members (so a scan of another run dir in the same diagdir, e.g. the
+# original VURS run beside a vurs_fill FILL run, does not count). GENE writes omega only when a run ends, so a scan
 # killed by SLURM or ^C fails this; runs from sbatch or by hand pass it.
 # Delete .interactive_ran and move the complete scanfiles aside to rerun. A dir
 # another lane has claimed in this job is skipped; a new allocation re-claims
@@ -62,12 +64,29 @@ FAIL_RE="aborting job|MPICH ERROR|CANCELLED AT|Exited with exit code [1-9]"
 param() { sed -n "s/^[ \t]*$2[ \t]*=[ \t]*\([0-9]*\).*/\1/p" "$1/parameters" | head -1; }
 diagdir() { sed -n "s/^[ \t]*diagdir[ \t]*=[ \t]*'\([^']*\)'.*/\1/p" "$1/parameters" | head -1; }
 
-# The scanfilesNNNN of run dir $1 holding a complete scan, if any (see header).
-# GENE output sits under the diagdir in its parameters (pscratch), which
-# scanscript rewrites to the scanfilesNNNN it opened; its parent holds them all.
+# kymin values, one per line as %g, sorted: of run dir $1's input parameters
+# (its !scanlist, else the single value), and of every member of scanfiles dir $1.
+dir_ky() {
+    local line
+    line=$(grep -m1 -E "^[ \t]*kymin[ \t]*=" "$1/parameters" 2>/dev/null) || return 0
+    if [[ $line == *'!scanlist:'* ]]; then line=${line#*!scanlist:}; else line=${line#*=}; line=${line%%!*}; fi
+    echo "$line" | tr ',' '\n' | awk 'NF {printf "%g\n", $1}' | LC_ALL=C sort -u
+}
+scan_ky() {
+    grep -h -m1 -E "^[ \t]*kymin[ \t]*=" "$1"/parameters_[0-9]* 2>/dev/null \
+        | sed 's/^[^=]*=//; s/!.*//' | awk 'NF {printf "%g\n", $1}' | LC_ALL=C sort -u
+}
+
+# The scanfilesNNNN of run dir $1 holding a complete scan of its own kymin, if
+# any (see header). GENE output sits under the diagdir in its parameters
+# (pscratch), which scanscript rewrites to the scanfilesNNNN it opened; its
+# parent holds them all, including scans of other run dirs sharing that
+# diagdir (vurs_fill FILL runs, extra ky): a scan counts only if it holds
+# every kymin of this run dir.
 complete_scan() {
-    local s np no mps base
+    local s np no mps base want
     mps=$(param "$1" n_parallel_sims)
+    want=$(dir_ky "$1")
     base=$(diagdir "$1"); base=${base%/}
     [[ $(basename "$base") =~ ^scanfiles[0-9]+$ ]] && base=$(dirname "$base")
     for s in "$1"/scanfiles*/ ${base:+"$base"/scanfiles*/}; do
@@ -75,6 +94,10 @@ complete_scan() {
         np=$(ls "$s" | grep -c '^parameters_[0-9]')
         no=$(ls "$s" | grep -c '^omega_[0-9]')
         if [ "$no" -gt 0 ] && [ "$no" -ge "$np" ] && [ "$no" -ge "${mps:-1}" ]; then
+            if [ -n "$want" ] && \
+               [ -n "$(LC_ALL=C comm -23 <(echo "$want") <(scan_ky "${s%/}"))" ]; then
+                continue                 # another run dir's scan in the same diagdir
+            fi
             echo "${s%/}"
             return 0
         fi
