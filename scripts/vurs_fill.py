@@ -31,10 +31,10 @@ template (--cases to name them instead). Values: ScanPointPicker over
 <diag-root>/x0_<x0>/, statuses converged and unconverged, field-fit std as
 the point's noise; gamma floored at 0 unless --no-clip, as vurs_loop.
 
-Output: run dir <prefix>_FILL_x0_<x0>_<tag> per case, written by
+Output: run dir <prefix>_<LABEL>_x0_<x0>_<tag> per case (--label, default FILL), written by
 corner_gene_scan.build into the same diagdir <diag-root>/x0_<x0>/<tag>, so the
 ky land in the next scanfilesNNNN and merge by ky with the original run
-(plot_corners, the picker). Picks go to <prefix>_x0_<x0>_rounds/fill/
+(plot_corners, the picker). Picks go to <prefix>_x0_<x0>_rounds/<label>/
 (picks.csv, picks.png).
 
     # pick, save and plot only: no run dirs, no allocation needed
@@ -106,17 +106,22 @@ def pick_line(ky, gamma, std, n_new, n_peak, ky_range, min_ratio=1.15, seed=0):
     ky, gamma, std  the values on disk (std NaN where GENE converged)
     Returns dict: peak (list), std (list), flags (list of str), and for the
     plot the grid, posterior mean/std of gamma and the first peak density.
+    The GP is fit to every value on disk and evaluated over ky_range plus the
+    ky on disk; picks land inside ky_range only. A peak that lies outside
+    ky_range draws no peak pick there: its budget goes to flanks or max std.
     """
     ky, gamma = np.asarray(ky, float), np.asarray(gamma, float)
     std = np.asarray(std, float)
     lo, hi = np.log(ky_range[0]), np.log(ky_range[1])
-    grid = np.linspace(lo, hi, GRID)
+    span = np.log(ky) if len(ky) else np.empty(0)
+    grid = np.linspace(min([lo, *span]), max([hi, *span]), GRID)
+    in_range = (grid >= lo - 1e-9) & (grid <= hi + 1e-9)
     sep = np.log(min_ratio)
     taken = list(np.log(ky))
     out = dict(peak=[], std=[], flags=[], grid=np.exp(grid), mean=None, sd=None, density=None)
 
     def allowed():
-        ok = np.ones(GRID, bool)
+        ok = in_range.copy()
         for t in taken:
             ok &= np.abs(grid - t) >= sep
         rounded = np.round(np.exp(grid), DECIMALS)
@@ -135,7 +140,8 @@ def pick_line(ky, gamma, std, n_new, n_peak, ky_range, min_ratio=1.15, seed=0):
             ok = allowed()
             if not ok.any():
                 break
-            gap = np.min(np.abs(grid[:, None] - np.asarray(taken)[None, :]), axis=1)
+            gap = (np.min(np.abs(grid[:, None] - np.asarray(taken)[None, :]), axis=1)
+                   if taken else np.zeros(GRID))
             gap[~ok] = -np.inf
             take(int(np.argmax(gap)), "std")
         return out
@@ -240,8 +246,8 @@ def vurs_cases(genedir, prefix, x0lab):
 
 
 def curves(diag_x0, tags, ky_range, clip):
-    """{tag: DataFrame(kymin, gamma, std)} of usable values per case."""
-    axes = {**DEFAULT_AXES, "kymin": tuple(ky_range)}
+    """{tag: DataFrame(kymin, gamma, std)} of usable values per case, every ky on disk."""
+    axes = {**DEFAULT_AXES, "kymin": (min(ky_range[0], 1e-3), max(ky_range[1], 1e3))}
     picker = ScanPointPicker("space_filling", axes, QoISpec("gamma", "max_over_ky"),
                              log_axes=["kymin"], clip_min=0. if clip else None)
     picker.fit(diag_x0)
@@ -300,6 +306,13 @@ def plot(picks, data, results, path):
         ax.plot(r["std"], np.full(len(r["std"]), lo), "|", color="C0", ms=9, mew=1.5)
         ax.set_ylim(bottom=lo)
         ax.set_xscale("log")
+        if r.get("ky_range") is not None:          # grey out where no pick may go
+            g0, g1 = r["grid"][0], r["grid"][-1]
+            k0, k1 = r["ky_range"]
+            if g0 < k0:
+                ax.axvspan(g0, k0, color="0.6", alpha=.15, lw=0)
+            if g1 > k1:
+                ax.axvspan(k1, g1, color="0.6", alpha=.15, lw=0)
         ax.set_title(p["tag"] + (f"  [{p['flags']}]" if p["flags"] else ""), fontsize=7)
         ax.set_xlabel(r"$k_y\rho_s$", fontsize=8)
         ax.set_ylabel(r"$\gamma$", fontsize=8)
@@ -323,6 +336,7 @@ def make_picks(args, diag_x0, tags, n_ky, n_peak):
         d = data[t]
         r = pick_line(d.kymin, d.gamma, d["std"], n_ky, n_peak, args.kymin_range,
                       args.min_ratio, seed=args.seed + i)
+        r["ky_range"] = tuple(args.kymin_range)
         results[t] = r
         if len(r["peak"]) + len(r["std"]) < n_ky:
             r["flags"].append(f"only {len(r['peak']) + len(r['std'])} ky")
@@ -354,7 +368,7 @@ def main(argv=None):
                     help="new kymin per case [NODES_PER * 4]; must equal NODES_PER * 4")
     ap.add_argument("--n-peak", type=int, default=None, help="of those, peak picks [n-ky // 2]")
     ap.add_argument("--kymin-range", type=float, nargs=2, default=(0.1, 10.), metavar=("LO", "HI"),
-                    help="kymin range the picks and the GP grid span [0.1 10]")
+                    help="kymin range the picks go in [0.1 10]; the GP fits every ky on disk")
     ap.add_argument("--min-ratio", type=float, default=1.15,
                     help="closest a new ky may sit to another, as a ratio [1.15]")
     ap.add_argument("--cases", nargs="+", default=None,
@@ -366,6 +380,9 @@ def main(argv=None):
     ap.add_argument("--ped-root", default=None)
     ap.add_argument("--diag-root", default=None)
     ap.add_argument("--prefix", default=None, help="vurs run dir prefix [<shot prefix>_vurs]")
+    ap.add_argument("--label", default="FILL",
+                    help="run dir tag <prefix>_<LABEL>_x0_..., picks in rounds/<label>/ [FILL]; "
+                         "a second fill of the same x0 needs its own label")
     ap.add_argument("--repick", action="store_true", help="redo the picks even if picks.csv exists")
     ap.add_argument("--submit", action="store_true",
                     help="sbatch one job per case (regular queue) instead of running here")
@@ -381,7 +398,7 @@ def main(argv=None):
     x0lab = C.x0_label((x0,))
     diag_x0 = os.path.join(diag_root, x0lab)
     genedir = os.path.dirname(os.path.normpath(args.template))
-    fill_dir = os.path.join(genedir, f"{prefix}_{x0lab}_rounds", "fill")
+    fill_dir = os.path.join(genedir, f"{prefix}_{x0lab}_rounds", args.label.lower())
     nodes_per = int(os.environ.get("NODES_PER", 2))
     n_ky = args.n_ky or nodes_per * PPN
     if not args.submit and n_ky != nodes_per * PPN:
@@ -420,7 +437,7 @@ def main(argv=None):
     if args.dry_run:
         return 0
 
-    fill_prefix = f"{prefix}_FILL"
+    fill_prefix = f"{prefix}_{args.label}"
     run_dirs = []
     for _, p in picks.iterrows():
         ky = [float(k) for k in str(p.kymin).split()]
