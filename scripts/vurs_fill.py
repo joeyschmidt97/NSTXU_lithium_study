@@ -288,14 +288,16 @@ def plot(picks, data, results, path):
         ax.errorbar(d.kymin, d.gamma, yerr=np.nan_to_num(d["std"]), fmt="o", ms=4,
                     color="k", zorder=3, label="on disk")
         # each new ky at the GP's best guess of gamma there, numbered in pick order
-        for kind, color, marker, lab in (("peak", "C3", "^", "P"), ("std", "C0", "s", "U")):
-            ks = np.asarray(r[kind], float)
+        for kind, color, marker, lab in (("peak", "C3", "^", "P"), ("std", "C0", "s", "U"),
+                                         ("fixed", "C2", "o", "F")):
+            ks = np.asarray(r.get(kind, []), float)
             if not len(ks):
                 continue
             ys = guess(r, ks)
             ax.errorbar(ks, ys, yerr=2 * guess(r, ks, "sd"), fmt=marker, ms=5.5, color=color,
                         mec="k", mew=.5, elinewidth=.8, capsize=1.5, zorder=4,
-                        label=("peak pick" if kind == "peak" else "max-std pick") + " (GP guess)")
+                        label={"peak": "peak pick", "std": "max-std pick",
+                               "fixed": "--kymin"}[kind] + " (GP guess)")
             for i, (k, y) in enumerate(zip(ks, ys), 1):
                 ax.annotate(f"{lab}{i}", (k, y), xytext=(3, 4), textcoords="offset points",
                             fontsize=6, color=color)
@@ -304,6 +306,8 @@ def plot(picks, data, results, path):
         ax.plot(d.kymin, np.full(len(d), lo), "|", color="k", ms=9, mew=1)
         ax.plot(r["peak"], np.full(len(r["peak"]), lo), "|", color="C3", ms=9, mew=1.5)
         ax.plot(r["std"], np.full(len(r["std"]), lo), "|", color="C0", ms=9, mew=1.5)
+        ax.plot(r.get("fixed", []), np.full(len(r.get("fixed", [])), lo), "|", color="C2",
+                ms=9, mew=1.5)
         ax.set_ylim(bottom=lo)
         ax.set_xscale("log")
         if r.get("ky_range") is not None:          # grey out where no pick may go
@@ -321,7 +325,7 @@ def plot(picks, data, results, path):
     for ax in list(axs.flat)[n:]:
         ax.axis("off")
     fig.legend(handles, labels, loc="upper right", fontsize=7, ncol=len(labels))
-    fig.suptitle("FILL picks: P = peak, U = max std, numbered in pick order, drawn at the GP "
+    fig.suptitle("FILL picks: P = peak, U = max std, F = --kymin, numbered in pick order, drawn at the GP "
                  "guess ± 2 sd; ticks on the bottom axis = every ky the case will have", fontsize=9,
                  x=.01, ha="left")
     fig.tight_layout()
@@ -334,12 +338,19 @@ def make_picks(args, diag_x0, tags, n_ky, n_peak):
     rows, results = [], {}
     for i, t in enumerate(tags):
         d = data[t]
-        r = pick_line(d.kymin, d.gamma, d["std"], n_ky, n_peak, args.kymin_range,
-                      args.min_ratio, seed=args.seed + i)
+        if args.kymin:                   # fixed list: GP for the plot only, no picking
+            r = pick_line(d.kymin, d.gamma, d["std"], 0, 0, args.kymin_range, seed=args.seed + i)
+            on_disk = set(np.round(d.kymin, DECIMALS))
+            r["fixed"] = [k for k in args.kymin if round(k, DECIMALS) not in on_disk]
+        else:
+            r = pick_line(d.kymin, d.gamma, d["std"], n_ky, n_peak, args.kymin_range,
+                          args.min_ratio, seed=args.seed + i)
+            r["fixed"] = []
         r["ky_range"] = tuple(args.kymin_range)
         results[t] = r
-        if len(r["peak"]) + len(r["std"]) < n_ky:
-            r["flags"].append(f"only {len(r['peak']) + len(r['std'])} ky")
+        n_new = len(r["peak"]) + len(r["std"]) + len(r["fixed"])
+        if n_new < n_ky:
+            r["flags"].append(f"only {n_new} ky")
         peak_ky = (float(r["grid"][np.argmax(r["mean"])]) if r["mean"] is not None
                    else float(d.kymin[np.argmax(d.gamma)]) if len(d) else np.nan)
         rows.append({"tag": t, **parse_tag(t), "n_on_disk": int(n_all.get(t, 0)),
@@ -350,7 +361,7 @@ def make_picks(args, diag_x0, tags, n_ky, n_peak):
                      "std_picks": " ".join(f"{k:g}" for k in sorted(r["std"])),
                      "peak_gamma_guess": " ".join(f"{g:.3g}" for g in guess(r, sorted(r["peak"]))),
                      "std_gamma_guess": " ".join(f"{g:.3g}" for g in guess(r, sorted(r["std"]))),
-                     "kymin": " ".join(f"{k:g}" for k in sorted(r["peak"] + r["std"])),
+                     "kymin": " ".join(f"{k:g}" for k in sorted(r["peak"] + r["std"] + r["fixed"])),
                      "flags": ",".join(r["flags"])})
     return pd.DataFrame(rows), data, results
 
@@ -369,6 +380,9 @@ def main(argv=None):
     ap.add_argument("--n-peak", type=int, default=None, help="of those, peak picks [n-ky // 2]")
     ap.add_argument("--kymin-range", type=float, nargs=2, default=(0.1, 10.), metavar=("LO", "HI"),
                     help="kymin range the picks go in [0.1 10]; the GP fits every ky on disk")
+    ap.add_argument("--kymin", type=float, nargs="+", default=None, metavar="K",
+                    help="fixed kymin list for every case instead of GP picks (ky already on "
+                         "disk dropped); sets --n-ky to its length")
     ap.add_argument("--min-ratio", type=float, default=1.15,
                     help="closest a new ky may sit to another, as a ratio [1.15]")
     ap.add_argument("--cases", nargs="+", default=None,
@@ -400,6 +414,13 @@ def main(argv=None):
     genedir = os.path.dirname(os.path.normpath(args.template))
     fill_dir = os.path.join(genedir, f"{prefix}_{x0lab}_rounds", args.label.lower())
     nodes_per = int(os.environ.get("NODES_PER", 2))
+    if args.kymin:
+        args.kymin = sorted(set(round(k, DECIMALS) for k in args.kymin))
+        if args.n_ky and args.n_ky != len(args.kymin):
+            ap.error("--n-ky and --kymin disagree; drop --n-ky")
+        args.n_ky = len(args.kymin)
+        if len(args.kymin) > 1:
+            args.kymin_range = (args.kymin[0], args.kymin[-1])
     n_ky = args.n_ky or nodes_per * PPN
     if not args.submit and n_ky != nodes_per * PPN:
         ap.error(f"--n-ky {n_ky} != NODES_PER * {PPN} = {nodes_per * PPN}: "
@@ -423,8 +444,9 @@ def main(argv=None):
         tags = args.cases or vurs_cases(genedir, prefix, x0lab)
         if not tags:
             ap.error(f"no vurs run dirs {prefix}_r*j*_{x0lab}_* in {genedir}; pass --cases")
-        print(f"x0 = {x0:g}; {len(tags)} case(s) to fill with {n_ky} kymin each "
-              f"({n_peak} peak, {n_ky - n_peak} std) in [{args.kymin_range[0]:g}, "
+        print(f"x0 = {x0:g}; {len(tags)} case(s) to fill with {n_ky} kymin each"
+              + (" (fixed --kymin)" if args.kymin else f" ({n_peak} peak, {n_ky - n_peak} std)")
+              + f" in [{args.kymin_range[0]:g}, "
               f"{args.kymin_range[1]:g}], from {diag_x0}", flush=True)
         picks, data, results = make_picks(args, diag_x0, tags, n_ky, n_peak)
         os.makedirs(fill_dir, exist_ok=True)
