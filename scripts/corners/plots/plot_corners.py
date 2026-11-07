@@ -221,6 +221,7 @@ from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, KYMIN, PED_
                                                          shot_defaults, tag, x0_label)
 from NSTXU_lithium_study.scripts.ped_grid import KNOBS, parse_tag
 from NSTXU_lithium_study.scripts.corners.field_omega import field_omega
+from NSTXU_lithium_study.scripts.corners import run_cache
 
 
 def default_out(x0=X0, diag_root=DIAG_ROOT) -> str:
@@ -607,7 +608,8 @@ def gene_corner(corner_dir, field_fits: bool = False):
     params: dict[str, list[float]] = {}
     for path in runs:
         try:
-            rec = read_run(path, field_fits)
+            rec = run_cache.memo("read_run", path, lambda: read_run(path, field_fits),
+                                 (field_fits,))
         except Exception as exc:                # one bad member never sinks the corner
             print(f"    unreadable {path}: {type(exc).__name__}: {exc}")
             continue
@@ -662,7 +664,8 @@ def add_modes(ds: xr.Dataset) -> xr.Dataset:
             if ds.status.values[i, j] not in ("ok", "field"):
                 continue
             try:
-                res = classify(str(ds.path.values[i, j]))
+                path = str(ds.path.values[i, j])
+                res = run_cache.memo("classify", path, lambda: classify(path))
             except Exception as exc:              # missing field/geometry: no label, no crash
                 msg = str(exc).split(" load_errors")[0].splitlines()[0][:160]
                 print(f"    {c} ky={ky:g}: no mode ({type(exc).__name__}: {msg})")
@@ -715,7 +718,8 @@ def add_outliers(ds: xr.Dataset) -> xr.Dataset:
             if not path:
                 continue
             try:
-                res = outlier_check(path)
+                res = run_cache.memo("outlier", path, lambda: outlier_check(path),
+                                     (tuple(sorted(OUTLIER_KW.items())), OUTLIER_NYQ))
             except Exception as exc:              # missing nrg/field: no verdict, no crash
                 msg = str(exc).split(" load_errors")[0].splitlines()[0][:160]
                 print(f"    {c} ky={ky:g}: no outlier check ({type(exc).__name__}: {msg})")
@@ -1417,7 +1421,7 @@ def load_profiles(ds) -> tuple[dict, set]:
             if not path:
                 continue
             try:
-                prof = mode_profile(path)
+                prof = run_cache.memo("mode_profile", path, lambda: mode_profile(path), FIELDS)
             except Exception as exc:                # one unreadable field never sinks the plot
                 print(f"    field unreadable {path}: {type(exc).__name__}: {exc}")
                 continue
@@ -1903,7 +1907,7 @@ def load_vspace_edges(ds) -> tuple[dict, dict]:
             if not path:
                 continue
             try:
-                e, g = vspace_edges(path)
+                e, g = run_cache.memo("vspace", path, lambda: vspace_edges(path), (VSP_QUANT,))
             except Exception as exc:                # one unreadable vsp never sinks the plot
                 print(f"    vsp unreadable {path}: {type(exc).__name__}: {exc}")
                 continue
@@ -3176,7 +3180,13 @@ if __name__ == "__main__":
     ap.add_argument("--ref-case", default=None, metavar="NAME",
                     help="--case drawn as the reference (black, first)")
     ap.add_argument("--scan-name", default=None, help="--case: the scan's name in titles")
+    ap.add_argument("--force-reload", action="store_true",
+                    help="reread every GENE run and overwrite its cached values "
+                         "(<scanfiles dir>/.plot_cache.pkl, see run_cache.py)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="read every GENE run without the run cache, storing nothing")
     args = ap.parse_args()
+    run_cache.FORCE, run_cache.ENABLED = args.force_reload, not args.no_cache
     d = shot_defaults(args.shot)
     cases = None
     if args.case:
@@ -3191,3 +3201,4 @@ if __name__ == "__main__":
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
         args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers, cases=cases,
         scan=args.scan_name, group_tol=args.group_tol)
+    print(run_cache.report())

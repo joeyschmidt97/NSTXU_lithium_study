@@ -55,7 +55,8 @@ import re
 import numpy as np
 
 from TPED.projects.GENE_sim_reader.src.GENE_field_data import GeneField
-from TPED.projects.GENE_sim_reader.src.GENE_omega_data import parse_omega_text
+from TPED.projects.GENE_sim_reader.src.GENE_omega_data import FIELD_TAG, parse_omega_text
+from NSTXU_lithium_study.scripts.corners import run_cache
 from NSTXU_lithium_study.scripts.corner_gene_scan import (DIAG_ROOT, SHOT, SHOTS, X0,
                                                          shot_defaults, x0_label)
 from NSTXU_lithium_study.scripts.ped_grid import parse_tag
@@ -127,6 +128,13 @@ def fit(field_path: str, window=WINDOW):
     return est, stats
 
 
+def recorded(omega_path: str, gamma: float, verdict: str) -> bool:
+    """True when the omega file already holds this fit's FIELD_TAG line."""
+    with open(omega_path) as fh:
+        return any(l.strip().startswith(FIELD_TAG) and f" gamma={gamma:.6f} " in l
+                   and f" verdict={verdict} " in l for l in fh)
+
+
 def passes(value: float, std: float, rel_tol=REL_TOL, abs_tol=ABS_TOL) -> bool:
     return bool(np.isfinite(value) and np.isfinite(std) and std <= max(rel_tol * abs(value), abs_tol))
 
@@ -160,7 +168,8 @@ def run(diag_root=DIAG_ROOT, x0=X0, write=False, window=WINDOW,
             print(f"{label:34} {ky:5.2f} {gene:>11} {'-':>18} {'-':>18}  no field file")
             continue
         try:
-            est, stats = fit(field_path, window)
+            stats = run_cache.memo("field_fit", field_path, lambda: fit(field_path, window)[1],
+                                   (tuple(window), FIELDS, TRACE_MODE))
         except Exception as exc:
             counts["fit failed"] += 1
             print(f"{label:34} {ky:5.2f} {gene:>11}  fit failed: {type(exc).__name__}: {exc}")
@@ -179,10 +188,13 @@ def run(diag_root=DIAG_ROOT, x0=X0, write=False, window=WINDOW,
                       "decaying": "DECAYING (gamma+2std<0), recorded only",
                       "ambiguous": "AMBIGUOUS (std too large), recorded only"}[v]
         if write and (v == "pass" or not passing_only):
-            with contextlib.redirect_stdout(io.StringIO()):
-                est._write_to_omega_file(stats, v)
-            counts["written"] += 1
-            result += ", appended"
+            if recorded(omega_path, g, v):            # same line already there: no rewrite
+                result += ", already recorded"
+            else:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    GeneField(field_path)._write_to_omega_file(stats, v)
+                counts["written"] += 1
+                result += ", appended"
         print(f"{label:34} {ky:5.2f} {gene:>11} {g:9.4f} ±{gs:7.1e} {w:9.4f} ±{ws:7.1e}  {result}")
     print("\n" + ", ".join(f"{v} {k}" for k, v in counts.items()))
     return counts
@@ -210,7 +222,11 @@ if __name__ == "__main__":
                     help="fraction of the field output to fit, start end")
     ap.add_argument("--rel-tol", type=float, default=REL_TOL)
     ap.add_argument("--abs-tol", type=float, default=ABS_TOL)
+    ap.add_argument("--force-reload", action="store_true",
+                    help="refit every field file, overwriting its cached fit (run_cache.py)")
     args = ap.parse_args()
+    run_cache.FORCE = args.force_reload
     d = shot_defaults(args.shot)
     run(args.diag_root or d["diag_root"], tuple(args.x0 or d["x0"]), args.write, tuple(args.window),
         args.rel_tol, args.abs_tol, args.passing_only, args.path)
+    print(run_cache.report())

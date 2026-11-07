@@ -57,6 +57,12 @@ never mixes into <shot>/:
 
 It has no res_check batches. --group picks entries by that key.
 
+What each GENE run gives (growth rate and status, field fit, mode ID, outlier
+check, mode structure, vsp edges) is cached beside it, <scanfiles dir>/.plot_cache.pkl
+(scripts/corners/run_cache.py), and reread only when that run's files change, so a
+rerun reads just the new or still-running ky. --force-reload rereads every run and
+overwrites the cache; --no-cache reads everything without it.
+
 Every enabled entry by default; --shot and --x0 pick a subset (an x0 matches
 any shot that has it). One entry failing is reported and the rest still run.
 
@@ -66,6 +72,7 @@ any shot that has it). One entry failing is reported and the rest still run.
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --x0 0.6737
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --x0 0.8447 --no-modes
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --no-field-omega
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129015 --force-reload
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --no-nz-subdir
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --paths my_paths.json
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129038 --summary-only
@@ -372,6 +379,12 @@ if __name__ == "__main__":
     ap.add_argument("--group-tol", type=float, default=None,
                     help="corners_mode_groups.png grouping distance (in mode widths); overrides the "
                          "paths file [plot_corners.GROUP_TOL]")
+    ap.add_argument("--force-reload", action="store_true",
+                    help="reread every GENE run (growth rates, mode IDs, outlier checks, mode "
+                         "structures, field fits) and overwrite the run cache, "
+                         "<scanfiles dir>/.plot_cache.pkl")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="read every GENE run without the run cache, storing nothing")
     ap.add_argument("--summary-only", action="store_true",
                     help="only rebuild the summaries from the PNGs on disk; plot nothing else")
     for k, what in (("field_omega", "fit every ky's field trace and append it to its omega file "
@@ -387,6 +400,8 @@ if __name__ == "__main__":
                         action=argparse.BooleanOptionalAction,
                         help=f"{what}; overrides the paths file [per entry]")
     args = ap.parse_args()
+    from NSTXU_lithium_study.scripts.corners import run_cache
+    run_cache.FORCE, run_cache.ENABLED = args.force_reload, not args.no_cache
 
     entries = select(load_entries(args.paths), args.shot, args.x0, args.group)
     if not entries:
@@ -418,6 +433,8 @@ if __name__ == "__main__":
         except (Exception, SystemExit) as exc:        # load_dataset exits when nothing is found
             traceback.print_exc() if isinstance(exc, Exception) else print(exc)
             failed.append(name)
+        run_cache.flush()                             # kept if a later job is killed
+    print(run_cache.report())
     if args.summary:
         for group in groups:
             print(f"\n===== {group} summary =====")
