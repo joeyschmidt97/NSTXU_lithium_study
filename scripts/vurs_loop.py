@@ -142,6 +142,10 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=0, help="round N uses seed + N")
     ap.add_argument("--kymin-range", type=float, nargs=2, default=KYMIN_RANGE, metavar=("LO", "HI"),
                     help="kymin bounds the picker suggests within [%g %g]" % KYMIN_RANGE)
+    ap.add_argument("--kymin", nargs="+", default=None, metavar="K",
+                    help="fixed kymin list for every job instead of the picker's (it still picks "
+                         "the scalings); 'corner' = corner_gene_scan.KYMIN_CASE_DIR "
+                         "(0.1 0.3 0.5 0.7 1 1.5 2 3 3.5 4 5 ... 10). Length must equal --ky-per-job")
     ap.add_argument("--ped-grid-args", default="",
                     help="extra ped_grid flags for cheaseBS, quoted, e.g. \"--max-iter 40\"")
     ap.add_argument("--template", default=C.GPU_TEMPLATE)
@@ -163,6 +167,12 @@ def main(argv=None):
     if ky_per_job != nodes_per * PPN:
         ap.error(f"--ky-per-job {ky_per_job} != NODES_PER * {PPN} = {nodes_per * PPN}: "
                  "interactive_corners.sh runs one GPU per ky")
+    fixed_ky = None
+    if args.kymin:
+        fixed_ky = (list(C.KYMIN_CASE_DIR) if args.kymin == ["corner"]
+                    else sorted({round(float(k), 3) for k in args.kymin}))
+        if len(fixed_ky) != ky_per_job:
+            ap.error(f"--kymin has {len(fixed_ky)} values; a job runs {ky_per_job}")
     n_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 0))
     if not args.dry_run and not n_nodes:
         ap.error("not inside an allocation; salloc first (or --dry-run)")
@@ -185,8 +195,9 @@ def main(argv=None):
     others = ", ".join(f"{k} {v:g}" for k, v in d["chapman"].items() if v != x0)
     print(f"x0 = {x0:g} ({x0_source}); fixed for every round: picks from and writes GENE runs "
           f"at this radius" + (f". Other Chapman radii: {others}" if others else ""))
-    print(f"{args.rounds} round(s) x {n_jobs} job(s) x {ky_per_job} kymin in "
-          f"[{axes['kymin'][0]:g}, {axes['kymin'][1]:g}], model {args.model}, "
+    print(f"{args.rounds} round(s) x {n_jobs} job(s) x {ky_per_job} kymin"
+          + (f" fixed ({' '.join(f'{k:g}' for k in fixed_ky)})" if fixed_ky else
+             f" in [{axes['kymin'][0]:g}, {axes['kymin'][1]:g}]") + f", model {args.model}, "
           f"GENE walltime {args.walltime}; picking from {diag_x0}"
           + (f"; {left / 3600:.2f} h left in the allocation" if left is not None else ""))
     if left is not None and need > left:
@@ -204,6 +215,8 @@ def main(argv=None):
         for t in jobs.tag[dup]:
             print(f"  job at {t} dropped: rounds onto another job's case this round")
         jobs = jobs[~dup].reset_index(drop=True)
+        if fixed_ky:
+            jobs["kymin"] = [list(fixed_ky) for _ in range(len(jobs))]
         with pd.option_context("display.width", 200, "display.max_colwidth", 80):
             print(jobs.assign(kymin=[", ".join(f"{k:g}" for k in ks) for ks in jobs.kymin])
                   .to_string())
