@@ -1,0 +1,2 @@
+case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
+(1, 1, 1, 1) ref,corners,False,13.0877,0.949956,3,-0.123463,ITG_TEM,max

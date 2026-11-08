@@ -1,0 +1,17 @@
+corner,Teh,Tew,neh,new,ky,status,gamma,outlier_checked,outlier,outlier_flag_grid_oscillation,outlier_flag_gamma_negative,outlier_flag_D_over_Chi,outlier_flag_Chii_over_Chie,outlier_flag_x0,outlier_nyquist_fraction,outlier_D_over_Chi_e,outlier_Chii_over_Chie
+U,nan,nan,nan,nan,0.1,ok,1.254,True,False,False,False,False,False,False,2.07379e-06,0.77528,1.13768
+U,nan,nan,nan,nan,0.3,ok,2.639,True,False,False,False,False,False,False,1.62129e-06,0.775788,1.14698
+U,nan,nan,nan,nan,0.5,ok,2.842,True,False,False,False,False,False,False,2.11332e-06,0.786526,1.16383
+U,nan,nan,nan,nan,0.7,ok,2.768,True,False,False,False,False,False,False,2.87409e-06,0.790274,1.16728
+U,nan,nan,nan,nan,1,ok,2.523,True,False,False,False,False,False,False,4.65412e-06,0.786114,1.15286
+U,nan,nan,nan,nan,1.5,ok,2.043,True,False,False,False,False,False,False,7.99365e-06,0.762814,1.09605
+U,nan,nan,nan,nan,2,ok,2.135,True,False,False,False,False,False,False,1.67069e-06,0.414065,0.374987
+U,nan,nan,nan,nan,3,ok,2.294,True,False,False,False,False,False,False,2.23615e-07,0.269391,0.220003
+U,nan,nan,nan,nan,3.5,ok,1.832,True,False,False,False,False,False,False,1.7978e-07,0.22343,0.190019
+U,nan,nan,nan,nan,4,ok,0.874,True,False,False,False,False,False,False,1.80854e-07,0.184876,0.199278
+U,nan,nan,nan,nan,5,ok,0.531,True,False,False,False,False,False,False,4.702e-06,0.393791,0.411183
+U,nan,nan,nan,nan,6,ok,0.546,True,False,False,False,False,False,False,3.23202e-06,0.3195,0.267059
+U,nan,nan,nan,nan,7,ok,0.563,True,False,False,False,False,False,False,2.45959e-06,0.266788,0.183351
+U,nan,nan,nan,nan,8,ok,0.537,True,False,False,False,False,False,False,2.15994e-06,0.230219,0.138109
+U,nan,nan,nan,nan,9,ok,0.468,True,False,False,False,False,False,False,2.02208e-06,0.202239,0.113626
+U,nan,nan,nan,nan,10,ok,0.374,True,False,False,False,False,False,False,1.87867e-06,0.179931,0.100674

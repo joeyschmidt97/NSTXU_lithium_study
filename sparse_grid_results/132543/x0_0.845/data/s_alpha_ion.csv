@@ -1,0 +1,18 @@
+case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
+(1, 1, 1, 1) ref,corners,False,12.1239,3.49336,1.5,0.901,MTM,cusp
+(0.8, 0.8, 0.8, 0.8),corners,False,6.20817,3.7267,5,2.293,MTM,cusp
+(0.8, 0.8, 0.8, 1.2),corners,False,6.87686,3.70564,3,1.442,MTM,cusp
+(0.8, 0.8, 1.2, 0.8),corners,False,9.23131,3.73018,4,1.763,MTM,cusp
+(0.8, 0.8, 1.2, 1.2),corners,False,10.4643,3.6943,1.5,0.879,MTM,cusp
+(0.8, 1.2, 0.8, 0.8),corners,False,6.69543,3.71854,4,2.027,unidentified,cusp
+(0.8, 1.2, 0.8, 1.2),corners,False,7.25178,3.6997,2,1.251,MTM,cusp
+(0.8, 1.2, 1.2, 0.8),corners,False,10.074,3.70948,2,1.183,MTM,cusp
+(0.8, 1.2, 1.2, 1.2),corners,False,11.2928,3.67991,1,0.768,MTM,cusp
+(1.2, 0.8, 0.8, 0.8),corners,False,8.19348,3.55517,5,1.894,unidentified,cusp
+(1.2, 0.8, 0.8, 1.2),corners,False,9.2656,3.53877,3,1.18,MTM,cusp
+(1.2, 0.8, 1.2, 0.8),corners,False,12.5235,3.5458,3.5,1.265,MTM,cusp
+(1.2, 0.8, 1.2, 1.2),corners,False,14.0599,3.4843,1.5,0.690153,MTM,cusp
+(1.2, 1.2, 0.8, 0.8),corners,False,9.25652,3.52871,3,1.419,unidentified,cusp
+(1.2, 1.2, 0.8, 1.2),corners,False,9.91601,3.51023,1.5,1.005,MTM,cusp
+(1.2, 1.2, 1.2, 0.8),corners,False,14.5211,3.47363,1.5,0.809,MTM,cusp
+(1.2, 1.2, 1.2, 1.2),corners,False,15.9005,3.42204,1,0.582,MTM,cusp

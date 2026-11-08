@@ -1,0 +1,2 @@
+case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
+(1, 1, 1, 1) ref,corners,False,4.32144,0.707023,1.5,0.109506,MTM,cusp
