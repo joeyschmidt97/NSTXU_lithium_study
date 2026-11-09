@@ -87,13 +87,19 @@ scan_ky() {
 # diagdir (vurs_fill FILL runs, extra ky): a scan counts only if it holds
 # every kymin of this run dir.
 complete_scan() {
-    local s np no mps base want
+    local s n np no mps base want after
     mps=$(param "$1" n_parallel_sims)
     want=$(dir_ky "$1")
     base=$(diagdir "$1"); base=${base%/}
     [[ $(basename "$base") =~ ^scanfiles[0-9]+$ ]] && base=$(dirname "$base")
+    # continue_runs.py *_cont dirs: scans up to this number are the old run's
+    after=$(cat "$1/.continue_after" 2>/dev/null | tr -dc '0-9')
     for s in "$1"/scanfiles*/ ${base:+"$base"/scanfiles*/}; do
         [ -d "$s" ] || continue
+        if [ -n "$after" ]; then
+            n=$(basename "$s"); n=${n#scanfiles}
+            [[ $n =~ ^[0-9]+$ ]] && [ $((10#$n)) -le $((10#$after)) ] && continue
+        fi
         np=$(ls "$s" | grep -c '^parameters_[0-9]')
         no=$(ls "$s" | grep -c '^omega_[0-9]')
         if [ "$no" -gt 0 ] && [ "$no" -ge "$np" ] && [ "$no" -ge "${mps:-1}" ]; then
