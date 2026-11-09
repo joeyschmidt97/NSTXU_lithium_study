@@ -37,8 +37,9 @@ updated, all of its radii (the summary needs them all, so --x0 does not narrow
 this step):
 
     sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/rescheck_<grid>x2.png
-    sparse_grid_results/<shot>/summary_rescheck_<code>_<grid>x2.png   one column per
-                                                     radius, aligned with the summaries
+    sparse_grid_results/<shot>/summary_rescheck_<grid>x2.png   every batch that doubled
+                                     <grid>, one 2x marker per batch; one column per
+                                     radius, aligned with the summaries
     sparse_grid_results/rescheck_<code>.csv
 
 --no-rescheck skips it. --summary-only leaves the rescheck summaries as they are
@@ -111,7 +112,7 @@ SUMMARY_DPI = 100
 #: corners/ plots also get one summary row per VURS batch folder <x0>/batch<i>_<j>/
 CORNER_SUB = "corners"
 BATCH_RE = re.compile(r"batch(\d+)_(\d+)")
-#: summaries plot_res_check writes (summary_rescheck_<code>_<grid>x2.png): not stale
+#: summaries plot_res_check writes (summary_rescheck_<grid>x2.png): not stale
 RESCHECK_SUMMARY = "summary_rescheck_"
 
 
@@ -257,17 +258,14 @@ def rescheck(shots, codes=None, out_root: str = HERE) -> list[str]:
     from NSTXU_lithium_study.scripts.corners.res2 import plot_res_check as prc
     codes = codes or prc.batch_codes()
     print(f"batches: {', '.join(codes) or 'none found'}")
-    written, failed = [], []
-    for code in codes:
-        print(f"\n----- rescheck {code} -----")
-        try:
-            written += prc.run(code, shots=list(shots), results=out_root)
-        except (Exception, SystemExit) as exc:
-            traceback.print_exc() if isinstance(exc, Exception) else print(exc)
-            failed.append(code)
-    if failed:
-        print(f"rescheck failed: {', '.join(failed)}")
-    return written
+    if not codes:
+        return []
+    try:                    # one call, so each summary holds every batch; run() isolates
+        return prc.run(codes, shots=list(shots), results=out_root)    # failing batches
+    except (Exception, SystemExit) as exc:
+        traceback.print_exc() if isinstance(exc, Exception) else print(exc)
+        print("rescheck failed")
+        return []
 
 
 def batch_label(row: str) -> str:
