@@ -32,6 +32,12 @@ last 30% of the run (fit_gamma/fit_omega with *_std, fit_verdict), GENE's state
     python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /pscratch/.../lithium_study --out-root NSTXU_lithium_study/data/simulation_data --skip-existing
     python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /pscratch/.../lithium_study --shot 129038 --out-root NSTXU_lithium_study/data/simulation_data
     python -m NSTXU_lithium_study.scripts.build_discharge_data --from-paths-json --shot 129038 --x0 0.6737 --out-root NSTXU_lithium_study/data/simulation_data
+
+Pingyu's runs (TPED_GENE_simulations): NSTX_KBM has no shot folder, so --shot
+names it and each run keeps its path below the diag dir
+(132588/NSTX_KBM/<scaling>/scanfilesNNNN); x0 comes from the parameters.
+
+    python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /global/cfs/cdirs/m2116/TPED_GENE_simulations/NSTX_KBM /global/cfs/cdirs/m2116/TPED_GENE_simulations/NSTX_KBM_more --shot 132588 --out-root NSTXU_lithium_study/data/simulation_data/pingyu --dry-run
 """
 
 from __future__ import annotations
@@ -62,20 +68,30 @@ def find_runs(diag_dir: str, max_depth: int = 6) -> list[str]:
     return GeneFileFinder(os.path.abspath(diag_dir)).find_files('parameters', max_depth=max_depth)
 
 
-def run_location(param_file: str, shot: int | None = None) -> tuple[int, str]:
+def run_location(param_file: str, shot: int | None = None,
+                 base: str | None = None) -> tuple[int, str]:
     """(shot, run folder below the shot folder) of one run.
 
     The shot folder is the nearest 6-digit folder above the run. Without one,
     shot must be given and the subdir is the run folder from its x0_<x0>
-    folder down (or the run folder alone)."""
-    parts = os.path.normpath(os.path.dirname(os.path.abspath(param_file))).split(os.sep)
+    folder down, else from base (the --diag-dir searched, its own name
+    included) down, else the run folder alone. base keeps runs from different
+    folders under one diag dir apart, e.g. Pingyu's NSTX_KBM/<scaling>/scanfiles0000."""
+    run_dir = os.path.normpath(os.path.dirname(os.path.abspath(param_file)))
+    parts = run_dir.split(os.sep)
     for i in range(len(parts) - 1, -1, -1):
         if SHOT_DIR.fullmatch(parts[i]):
             return int(parts[i]), os.path.join(*parts[i + 1:]) if parts[i + 1:] else '.'
     if shot is None:
         raise ValueError(f'no shot folder in {param_file}; give --shot')
     x0 = [i for i, d in enumerate(parts) if X0_DIR.fullmatch(d)]
-    return shot, os.path.join(*parts[x0[-1]:]) if x0 else parts[-1]
+    if x0:
+        return shot, os.path.join(*parts[x0[-1]:])
+    if base:
+        base = os.path.normpath(os.path.abspath(base))
+        return shot, os.path.normpath(os.path.join(os.path.basename(base),
+                                                   os.path.relpath(run_dir, base)))
+    return shot, parts[-1]
 
 
 def out_path(out_root: str, shot: int, subdir: str, param_file: str) -> str:
@@ -123,13 +139,15 @@ def corner_scales(param_file: str) -> tuple[str, dict]:
 
 
 def add_location(ds, shot: int, subdir: str):
-    """shot, x0 (NaN without an x0_<x0> folder) and run_root (first folder
-    below the shot, e.g. corners_kyhi; '' when that is x0_<x0>) as variables."""
+    """shot, x0 (from x0_<x0>; without one the parameters' x0, else NaN) and
+    run_root (first folder below the shot, e.g. corners_kyhi; '' when that is
+    x0_<x0>) as variables."""
     import numpy as np
     parts = os.path.normpath(subdir).split(os.sep)
     x0 = [float(m.group(1)) for m in map(X0_DIR.fullmatch, parts) if m]
     ds['shot'] = np.int64(shot)
-    ds['x0'] = x0[-1] if x0 else np.nan
+    if x0 or 'x0' not in ds:
+        ds['x0'] = x0[-1] if x0 else np.nan
     ds['run_root'] = parts[0] if len(parts) > 1 and not X0_DIR.fullmatch(parts[0]) else ''
     return ds
 
@@ -245,7 +263,7 @@ if __name__ == '__main__':
             continue
         for f in runs:
             try:
-                shot, sub = run_location(f, default_shot)
+                shot, sub = run_location(f, default_shot, diag)
             except ValueError as exc:
                 unplaced.append(str(exc))
                 continue
