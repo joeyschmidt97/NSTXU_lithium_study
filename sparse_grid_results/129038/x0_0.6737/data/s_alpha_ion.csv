@@ -1,5 +1,5 @@
 case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
-(1, 1, 1, 1) ref,corners,False,2.87161,2.51974,3,0.81,MTM,max
+(1, 1, 1, 1) ref,corners,False,2.87161,2.51974,3,0.81,MTM,cusp
 (0.8, 0.8, 0.8, 0.8),corners,False,1.76059,2.70948,7,1.84,unidentified,cusp
 (0.8, 0.8, 0.8, 1.2),corners,False,2.18038,2.64049,2,0.839,MTM,cusp
 (0.8, 0.8, 1.2, 0.8),corners,False,2.97024,2.50844,3,0.919,MTM,cusp
@@ -16,7 +16,7 @@ case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
 (1.2, 1.2, 0.8, 1.2),corners,False,2.58049,2.55571,2,0.703,MTM,cusp
 (1.2, 1.2, 1.2, 0.8),corners,False,3.84763,2.38876,2,0.592,MTM,cusp
 (1.2, 1.2, 1.2, 1.2),corners,False,4.62067,2.21942,1,0.263,MTM,cusp
-(1, 1, 1, 1) ref,VURS picks 1-16,False,2.87161,2.51974,3,0.81,MTM,max
+(1, 1, 1, 1) ref,VURS picks 1-16,False,2.87161,2.51974,3,0.81,MTM,cusp
 (0.842, 1.089, 1.194, 0.995),VURS picks 1-16,False,2.84638,2.54236,2.304,0.693,MTM,max
 (0.961, 0.823, 1.185, 1.001),VURS picks 1-16,False,4.29568,2.28993,0.914,0.317,MTM,cusp
 (0.969, 0.803, 0.994, 0.848),VURS picks 1-16,False,3.08704,2.48573,3,0.875,unidentified,max

@@ -16,3 +16,12 @@ case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
 (1.2, 1.2, 0.8, 1.2),corners,False,5.42897,3.2818,7,1.796,MTM,cusp
 (1.2, 1.2, 1.2, 0.8),corners,False,7.35711,3.29968,8,2.256,MTM,cusp
 (1.2, 1.2, 1.2, 1.2),corners,False,8.12274,3.28519,6,1.611,MTM,cusp
+(1, 1, 1, 1) ref,VURS picks 1-16,False,3.65435,3.48789,2,0.561,unidentified,cusp
+(0.984, 1.181, 1.182, 0.97),VURS picks 1-16,False,6.75931,3.35839,7,2.114,MTM,cusp
+(0.934, 1.004, 1.175, 0.804),VURS picks 1-16,False,5.98404,3.39395,8,2.263,MTM,cusp
+(1.182, 1.196, 0.988, 0.988),VURS picks 1-16,False,6.14942,3.29674,8,2.122,MTM,cusp
+(0.937, 0.824, 0.997, 0.809),VURS picks 1-16,False,4.80773,3.40687,7,1.703,MTM,cusp
+(0.828, 0.802, 0.972, 1.043),VURS picks 1-16,False,4.61973,3.41548,6,1.436,MTM,cusp
+(0.802, 0.998, 1.115, 1.038),VURS picks 1-16,False,5.64056,3.41178,6,1.895,MTM,cusp
+(1.049, 0.814, 1.014, 1.156),VURS picks 1-16,False,5.18969,3.38228,7,1.506,MTM,cusp
+(0.804, 1.187, 0.951, 0.953),VURS picks 1-16,False,5.23911,3.37976,6,1.979,MTM,cusp

@@ -1,5 +1,5 @@
 case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
-(1, 1, 1, 1) ref,corners,False,1.8656,3.90892,3,0.746,MTM,max
+(1, 1, 1, 1) ref,corners,False,1.8656,3.90892,3,0.746,MTM,cusp
 (0.8, 0.8, 0.8, 0.8),corners,False,1.13952,3.95645,2,0.416,ITG_TEM,cusp
 (0.8, 0.8, 0.8, 1.2),corners,False,1.45551,3.94109,3,0.554,MTM,cusp
 (0.8, 0.8, 1.2, 0.8),corners,False,1.66622,3.9375,3,0.454,MTM,cusp
@@ -14,18 +14,18 @@ case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
 (1.2, 0.8, 1.2, 1.2),corners,False,3.07688,3.8032,4,1.329,MTM,cusp
 (1.2, 1.2, 0.8, 1.2),corners,False,2.36114,3.83423,4,1.876,MTM,cusp
 (1.2, 1.2, 1.2, 1.2),corners,False,3.6561,3.76829,4,1.938,MTM,cusp
-(1, 1, 1, 1) ref,VURS picks 1-16,False,1.8656,3.90892,3,0.746,MTM,max
+(1, 1, 1, 1) ref,VURS picks 1-16,False,1.8656,3.90892,3,0.746,MTM,cusp
 (1.181, 1.166, 1.169, 0.874),VURS picks 1-16,False,2.85033,3.81154,3,1.68,MTM,max
 (1.174, 1.119, 0.826, 0.941),VURS picks 1-16,False,2.02064,3.86218,3,1.542,MTM,max
-(1.021, 1.155, 1.019, 0.843),VURS picks 1-16,False,2.14017,3.88017,3,1.553,MTM,max
+(1.021, 1.155, 1.019, 0.843),VURS picks 1-16,False,2.14017,3.88017,4,1.674,MTM,cusp
 (0.814, 0.995, 0.926, 0.847),VURS picks 1-16,False,1.46181,3.93533,3.5,0.795,MTM,max
-(1.056, 1.094, 1.187, 1.031),VURS picks 1-16,False,2.74183,3.84062,3,1.571,MTM,max
-(1.052, 1.076, 0.925, 1.197),VURS picks 1-16,False,2.29577,3.86495,3,1.52,MTM,max
-(1.022, 0.879, 1.194, 1.006),VURS picks 1-16,False,2.36297,3.87112,3,1.119,MTM,max
+(1.056, 1.094, 1.187, 1.031),VURS picks 1-16,False,2.74183,3.84062,4,1.726,MTM,cusp
+(1.052, 1.076, 0.925, 1.197),VURS picks 1-16,False,2.29577,3.86495,4,1.594,MTM,cusp
+(1.022, 0.879, 1.194, 1.006),VURS picks 1-16,False,2.36297,3.87112,4,1.195,MTM,cusp
 (1.101, 0.945, 1.01, 0.803),VURS picks 1-16,False,1.92175,3.8829,3,1.098,MTM,max
-(0.933, 1.17, 0.866, 0.987),VURS picks 1-16,False,1.81242,3.89759,3,1.488,MTM,max
-(0.977, 0.804, 0.921, 0.859),VURS picks 1-16,False,1.55879,3.92055,2.304,0.567,MTM,max
+(0.933, 1.17, 0.866, 0.987),VURS picks 1-16,False,1.81242,3.89759,3.5,1.542,MTM,cusp
+(0.977, 0.804, 0.921, 0.859),VURS picks 1-16,False,1.55879,3.92055,3.5,0.662,MTM,cusp
 (0.832, 1.079, 1.139, 1.005),VURS picks 1-16,False,2.10282,3.90695,3.5,1.38,MTM,cusp
 (1.179, 0.964, 1.036, 1.113),VURS picks 1-16,False,2.57374,3.83864,3,1.381,MTM,max
-(1.01, 0.826, 0.986, 1.142),VURS picks 1-16,False,2.07026,3.89112,3,1.042,MTM,max
+(1.01, 0.826, 0.986, 1.142),VURS picks 1-16,False,2.07026,3.89112,3.5,1.076,MTM,cusp
 (0.852, 0.993, 0.838, 1.092),VURS picks 1-16,False,1.59566,3.92343,3,1.003,MTM,max
