@@ -16,6 +16,8 @@ NSTX variable names and the NSTX mode label code path. Added on top:
   (the uploader's values from the TPED of the upload date; a cross-check, not a
   source). Its arrays (vsp f2 magnitudes, ~2.4 MB a run; kperp, omd_curv) are
   dropped;
+- shot and campaign as variables, and build_discharge_data's cost_* (NaN where
+  the parameters lack GENE's &info timing), so MGKDB and NSTX files concatenate;
 - MGKDB bookkeeping in attrs (mgkdb_id, mgkdb_user, run_collection_name, ...)
   and attrs['snapshot_zero_filled']: moments the snapshot lacked, written as 0.
 
@@ -66,7 +68,7 @@ import traceback
 
 import numpy as np
 
-from NSTXU_lithium_study.scripts.build_discharge_data import netcdf_safe
+from NSTXU_lithium_study.scripts.build_discharge_data import add_cost, netcdf_safe
 
 #: campaign name -> run_collection_name prefix (matched as ^<prefix>/)
 CAMPAIGNS = {
@@ -76,6 +78,9 @@ CAMPAIGNS = {
     'lleppin_153764': '/pscratch/sd/l/lleppin/DIIID153764/lin_loc',
     'lleppin_174082': '/pscratch/sd/l/lleppin/DIIID174082/lin_loc',
 }
+#: DIII-D discharge per campaign (Hatch pscans2/3 are equilibrium variations around 162940)
+CAMPAIGN_SHOT = {'hatch_pscans': 162940, 'drhatch_pscans2': 162940, 'drhatch_pscans3': 162940,
+                 'lleppin_153764': 153764, 'lleppin_174082': 174082}
 #: defaults: raw downloads on pscratch, netCDFs in this repo (run from the git parent dir)
 RAW_ROOT = '/pscratch/sd/j/joeschm/MGKDB_raw'
 OUT_ROOT = 'NSTXU_lithium_study/data/simulation_data/mgkdb'
@@ -361,6 +366,9 @@ def build(rec: dict, raw_root: str, campaign: str):
     ds = netcdf_safe(sim.flat_xarray, list(sim.tree['parameters'].ds.data_vars))
     for k, v in imas_values(rec).items():
         ds[f'imas_{k}'] = xr.DataArray(v)
+    ds = add_cost(ds)
+    ds['shot'] = np.int64(CAMPAIGN_SHOT.get(campaign, -1))
+    ds['campaign'] = campaign
 
     nc = xr.load_dataset(os.path.join(folder, local_name('quantity_info_NC', suffix)))
     nc = nc[[k for k in nc.data_vars if nc[k].size <= NC_MAX_SIZE]]
