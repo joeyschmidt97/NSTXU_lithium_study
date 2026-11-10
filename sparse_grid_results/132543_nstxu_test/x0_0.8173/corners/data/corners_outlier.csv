@@ -1,9 +1,0 @@
-corner,Teh,Tew,neh,new,ky,status,gamma,outlier_checked,outlier,outlier_flag_grid_oscillation,outlier_flag_gamma_negative,outlier_flag_D_over_Chi,outlier_flag_Chii_over_Chie,outlier_flag_x0,outlier_nyquist_fraction,outlier_D_over_Chi_e,outlier_Chii_over_Chie
-U,nan,nan,nan,nan,0.1,ambiguous,0.057698,True,True,False,False,True,False,False,2.22522e-07,2.92462,3.34051
-U,nan,nan,nan,nan,0.3,ok,0.233,True,True,False,False,True,True,False,4.47582e-08,23.168,22.7336
-U,nan,nan,nan,nan,0.5,ok,0.41,True,True,False,False,True,True,False,2.33378e-08,80.0346,86.9577
-U,nan,nan,nan,nan,0.7,ok,0.573,True,True,False,False,True,True,False,1.86454e-08,54.9735,64.0932
-U,nan,nan,nan,nan,1,ok,0.77,True,True,False,False,True,True,False,1.73188e-08,33.4305,40.2775
-U,nan,nan,nan,nan,1.5,ok,0.973,True,True,False,False,True,True,False,1.60458e-08,39.6624,46.3403
-U,nan,nan,nan,nan,2,ok,1.064,True,True,False,False,True,True,False,1.43176e-08,518.295,563.798
-U,nan,nan,nan,nan,3,ok,1.052,True,False,False,False,False,False,False,1.03568e-08,-16.6686,-14.5184
