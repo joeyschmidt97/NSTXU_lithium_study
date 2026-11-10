@@ -25,11 +25,17 @@ The runs restart from t = 0: no checkpoint is read (a scan's checkpoints are
 per member and per scanfiles dir, and the new scan numbers its members afresh).
 The gain is wall time and fewer dirs packed per GPU.
 
+Each _cont dir also gets the run dir's submit_gpu.cmd (or submit.cmd) resized
+as corner_gene_scan does it: -t --walltime, -q --qos, -N for one rank set per
+ky (ceil(n_ky * n_procs_sim / ntasks-per-node)), --mps n_ky, -J <dir name>.
+With --submit each is sbatch'ed as its own job, unpacked (one A100 per ky);
+a job ends as soon as all its ky have converged.
+
     python -m NSTXU_lithium_study.scripts.corners.res2.continue_runs --list ~/simulators/GENE3_gpu/NSTX_*_rc*_*/
     python -m NSTXU_lithium_study.scripts.corners.res2.continue_runs ~/simulators/GENE3_gpu/NSTX_*_rc*_*/ \\
-        --walltime 03:40:00 --exclude _rcquiv9u_nv0x2_x0_0.947
+        --exclude nv0x2_x0_0.947 --walltime 03:00:00 --submit
 
-then in an allocation:
+or, packed, in an interactive allocation (--walltime under the allocation's):
 
     LANES_PER_GPU=2 MPS=1 bash NSTXU_lithium_study/scripts/interactive_corners.sh ~/simulators/GENE3_gpu/NSTX_*_cont/
 """
@@ -39,7 +45,9 @@ from __future__ import annotations
 import glob
 import os
 import re
+import math
 import shutil
+import subprocess
 import sys
 
 from NSTXU_lithium_study.scripts import corner_gene_scan as C
@@ -47,6 +55,9 @@ from NSTXU_lithium_study.scripts import corner_gene_scan as C
 SUFFIX = "_cont"
 MARKER = ".continue_after"
 WALLTIME = "03:40:00"
+SUBMITS = (C.GPU_SUBMIT, C.SUBMIT)              # first one present in the run dir is used
+JOB = ".job_id"                                 # written on sbatch; an existing _cont dir
+                                                # without it is submitted by a later --submit
 
 
 def input_ky(text: str) -> list[float]:
@@ -93,6 +104,31 @@ def cont_parameters(text: str, ky: list[float], base: str, timelim: int) -> str:
     return C.set_param(text, "timelim", str(timelim))
 
 
+def cont_submit(template: str, n_ky: int, n_procs_sim: int, walltime: str, qos: str,
+                name: str) -> str:
+    """The run dir's submit script resized for *n_ky* ky, one n_procs_sim set each."""
+    ppn = int(re.search(r"--ntasks-per-node=(\d+)", template).group(1))
+    ntasks = n_ky * n_procs_sim
+    text = C.corner_submit(template, math.ceil(ntasks / ppn), ntasks, walltime, qos, n_ky)
+    # GENE needs exactly n_ky * n_procs_sim ranks; $SLURM_NTASKS would be N * ppn
+    text = re.sub(r"\$SLURM_NTASKS(?!_)", str(ntasks), text)
+    return re.sub(r"^#SBATCH -J .*$", f"#SBATCH -J {name[-60:]}", text, flags=re.M)
+
+
+def submit(out: str, jobs: list) -> bool:
+    """sbatch the submit script of *out*, record the job id in out/.job_id."""
+    sub = next((f for f in SUBMITS if os.path.isfile(os.path.join(out, f))), None)
+    if not sub:
+        print(f"    no {' or '.join(SUBMITS)} in {out}, NOT submitted")
+        return False
+    r = subprocess.run(["sbatch", sub], cwd=out, check=True, capture_output=True, text=True)
+    jobs.append(r.stdout.split()[-1])
+    with open(os.path.join(out, JOB), "w") as fh:
+        print(jobs[-1], file=fh)
+    print(f"    job {jobs[-1]}  {os.path.basename(out)}")
+    return True
+
+
 def main():
     import argparse
 
@@ -104,11 +140,14 @@ def main():
     ap.add_argument("--exclude", nargs="+", default=[], metavar="TEXT",
                     help="leave out run dirs whose path contains any of these")
     ap.add_argument("--force", action="store_true", help="rewrite existing *_cont dirs")
+    ap.add_argument("--qos", default=C.QOS, help=f"SLURM -q of the written submit script [{C.QOS}]")
+    ap.add_argument("--submit", action="store_true",
+                    help="sbatch each written *_cont dir as its own job")
     ap.add_argument("--list", action="store_true", help="print what would be rerun, write nothing")
     args = ap.parse_args()
     timelim = C.walltime_seconds(args.walltime) - C.TIMELIM_MARGIN
 
-    todo_dirs, n_ky = 0, 0
+    todo_dirs, n_ky, jobs = 0, 0, []
     for d in sorted({os.path.normpath(p) for p in args.dirs}):
         name = os.path.basename(d)
         if name.endswith(SUFFIX) or any(x in d for x in args.exclude):
@@ -134,17 +173,26 @@ def main():
         if args.list:
             continue
         out = d + SUFFIX
+        job_file = os.path.join(out, JOB)
         if os.path.exists(out) and not args.force:
-            print(f"    {out} exists, NOT rewritten (--force)")
+            if args.submit and not os.path.exists(job_file) and submit(out, jobs):
+                continue
+            print(f"    {out} exists, NOT rewritten (--force)"
+                  + (" or submitted" if os.path.exists(job_file) else ""))
             continue
         os.makedirs(out, exist_ok=True)
         with open(os.path.join(out, "parameters"), "w") as fh:
             fh.write(cont_parameters(text, todo, base, timelim))
         with open(os.path.join(out, MARKER), "w") as fh:
             fh.write(re.sub(r"\D", "", os.path.basename(runs[-1])) + "\n")
-        for f in ("submit.cmd",):                 # sbatch-only; interactive_corners ignores it
-            if os.path.isfile(os.path.join(d, f)):
-                shutil.copy2(os.path.join(d, f), out)
+        sub = next((f for f in SUBMITS if os.path.isfile(os.path.join(d, f))), None)
+        if sub:                                   # sbatch-only; interactive_corners ignores it
+            with open(os.path.join(d, sub)) as fh:
+                cmd = cont_submit(fh.read(), len(todo), int(C.read_param(text, "n_procs_sim")),
+                                  args.walltime, args.qos, os.path.basename(out))
+            with open(os.path.join(out, sub), "w") as fh:
+                fh.write(cmd)
+            os.chmod(os.path.join(out, sub), 0o755)
         for link in C.LINKS:
             src, dst = os.path.join(d, link), os.path.join(out, link)
             if os.path.lexists(dst):
@@ -153,8 +201,11 @@ def main():
                 os.symlink(os.readlink(src), dst)
             elif os.path.exists(src):
                 shutil.copy2(src, dst)
+        if args.submit:
+            submit(out, jobs)
     print(f"\n{todo_dirs} run dir(s), {n_ky} ky to rerun"
-          + ("" if args.list else f" -> *{SUFFIX}/, timelim {timelim} s"))
+          + ("" if args.list else f" -> *{SUFFIX}/, timelim {timelim} s")
+          + (f", {len(jobs)} job(s) submitted ({args.walltime} on {args.qos})" if jobs else ""))
     return 0
 
 
