@@ -33,11 +33,12 @@ Campaigns are matched on Metadata.DBtag.run_collection_name with an anchored
 prefix, so hatch/pscans does not also catch drhatch/pscans2 and pscans3.
 
 Run from the git parent dir (holding NSTXU_lithium_study and TPED) in an env
-with both mgkdb and TPED:
+with both mgkdb and TPED. Raw downloads go to pscratch (re-downloadable, purge
+is harmless); netCDFs go into this repo next to the NSTX data, then commit:
 
-    python -m NSTXU_lithium_study.scripts.build_mgkdb_data --raw-root /global/cfs/cdirs/m2116/MGKDB_raw --out-root /global/cfs/cdirs/m2116/MGKDB_netcdf --dry-run
-    python -m NSTXU_lithium_study.scripts.build_mgkdb_data --raw-root /global/cfs/cdirs/m2116/MGKDB_raw --out-root /global/cfs/cdirs/m2116/MGKDB_netcdf --campaign drhatch_pscans2 --limit 5
-    python -m NSTXU_lithium_study.scripts.build_mgkdb_data --raw-root /global/cfs/cdirs/m2116/MGKDB_raw --out-root /global/cfs/cdirs/m2116/MGKDB_netcdf
+    python -m NSTXU_lithium_study.scripts.build_mgkdb_data --dry-run
+    python -m NSTXU_lithium_study.scripts.build_mgkdb_data --limit 3
+    python -m NSTXU_lithium_study.scripts.build_mgkdb_data
 """
 
 from __future__ import annotations
@@ -61,6 +62,9 @@ CAMPAIGNS = {
     'lleppin_153764': '/pscratch/sd/l/lleppin/DIIID153764/lin_loc',
     'lleppin_174082': '/pscratch/sd/l/lleppin/DIIID174082/lin_loc',
 }
+#: defaults: raw downloads on pscratch, netCDFs in this repo (run from the git parent dir)
+RAW_ROOT = '/pscratch/sd/j/joeschm/MGKDB_raw'
+OUT_ROOT = 'NSTXU_lithium_study/data/simulation_data/mgkdb'
 #: MGKDB Files keys downloaded per run (gfiles, profiles, autopar skipped)
 FILES = ['parameters', 'nrg', 'omega', 'tracer_efit', 'quantity_info_NC']
 #: MGKDB Diagnostics keys downloaded per run -> local file stem
@@ -288,8 +292,8 @@ def build(rec: dict, raw_root: str, campaign: str):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument('--raw-root', required=True, help='where downloaded MGKDB files go')
-    p.add_argument('--out-root', required=True, help='where the per-run netCDFs go')
+    p.add_argument('--raw-root', default=RAW_ROOT, help=f'where downloaded MGKDB files go (default {RAW_ROOT})')
+    p.add_argument('--out-root', default=OUT_ROOT, help=f'where the per-run netCDFs go (default {OUT_ROOT})')
     p.add_argument('--campaign', nargs='+', choices=sorted(CAMPAIGNS), default=sorted(CAMPAIGNS))
     p.add_argument('--limit', type=int, default=0, help='first N records per campaign (0 = all)')
     p.add_argument('--download-only', action='store_true', help='download, do not build netCDFs')
