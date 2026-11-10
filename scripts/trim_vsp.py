@@ -228,6 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--keep must be >= 1")
 
     if a.pilot:
+        if not os.path.isfile(a.pilot):
+            p.error(f"--pilot takes one vsp file, got {a.pilot!r}; for a dir drop --pilot "
+                    "(dry run) and add --apply to trim")
         return pilot(os.path.abspath(a.pilot), a.min_age, a.keep)
     if not a.roots:
         p.error("give one or more dirs, or --pilot FILE")
