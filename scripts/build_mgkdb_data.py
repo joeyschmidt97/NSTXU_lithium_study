@@ -12,15 +12,29 @@ TPED registry analyses as build_discharge_data (fingerprints, epar, kperp,
 kperp_upar, ql_weight, mode_identifier, field_omega). So the netCDF has the
 NSTX variable names and the NSTX mode label code path. Added on top:
 
-- the quantity_info_NC variables, prefixed nc_ (the uploader's values from the
-  TPED of the upload date; a cross-check, not a source);
+- the quantity_info_NC variables with at most NC_MAX_SIZE values, prefixed nc_
+  (the uploader's values from the TPED of the upload date; a cross-check, not a
+  source). Its arrays (vsp f2 magnitudes, ~2.4 MB a run; kperp, omd_curv) are
+  dropped;
 - MGKDB bookkeeping in attrs (mgkdb_id, mgkdb_user, run_collection_name, ...)
   and attrs['snapshot_zero_filled']: moments the snapshot lacked, written as 0.
 
-field_omega sees one time step, so its field fit never passes (fit_verdict
-'ambiguous', fit_n_samples 0): converged, gamma_best and the mode label rest on
-GENE's omega alone, and GENE-unconverged runs (0/0) come out 'unidentified'.
-Compare against the GENE-converged NSTX runs (omega_source == 'GENE').
+There is no field time history, so TPED's field_omega (a field fit) is
+replaced by omega_from_file: the same variables, filled from the omega file
+alone, attached before mode_identifier runs. omega_source:
+
+    'GENE'              GENE's line, non-zero              converged
+    'field_legacy'      '# POST-PROCESSED OMEGA_FROM_FIELD' converged (as TPED reads
+                        line (field fit done before upload) pre-verdict lines), with std
+    'GENE_unconverged'  0/0 (timelim placeholder)          not converged
+    'GENE_sentinel'     -1/-1 (Hatch campaigns)            not converged
+    'empty'             no data line (a 'kymin 0 0' line   not converged
+                        is written so epar can run)
+
+Runs that are not converged get no gamma_best and come out 'unidentified'.
+fit_* are NaN, fit_verdict 'no_history'. The MGKDB IMAS eigenmode values
+(imas_growth_rate_norm, imas_frequency_norm, imas_growth_rate_tolerance) are
+saved alongside, raw: IMAS normalisation and sign, not GENE's.
 
 Two steps, both resumable (files already present are skipped):
 
@@ -69,9 +83,13 @@ OUT_ROOT = 'NSTXU_lithium_study/data/simulation_data/mgkdb'
 FILES = ['parameters', 'nrg', 'omega', 'tracer_efit', 'quantity_info_NC']
 #: MGKDB Diagnostics keys downloaded per run -> local file stem
 DIAGNOSTICS = {'Field Mom Snapshots': 'field_mom_snapshot', 'Grid': 'grid'}
-#: same registry analyses as build_discharge_data
-ANALYSES = ['fingerprints', 'epar', 'kperp', 'kperp_upar', 'ql_weight',
-            'mode_identifier', 'field_omega']
+#: build_discharge_data's registry analyses, minus field_omega (replaced by
+#: omega_from_file) and mode_identifier (run after it)
+ANALYSES = ['fingerprints', 'epar', 'kperp', 'kperp_upar', 'ql_weight']
+#: quantity_info_NC variables kept (prefixed nc_) only up to this many values
+NC_MAX_SIZE = 16
+#: IMAS eigenmode scalars saved as imas_<name>
+IMAS_KEYS = ['growth_rate_norm', 'frequency_norm', 'growth_rate_tolerance']
 #: GENE field and mom record order
 FIELDS = ['phi', 'apar', 'bpar']
 MOMS = ['dens', 'tpar', 'tperp', 'qpar', 'qperp', 'upar', 'densI1', 'TparI1', 'TppI1']
@@ -139,6 +157,8 @@ def read_pars(path: str) -> dict:
                 species.append(v)
             elif k in ('nx0', 'nky0', 'nz0', 'n_fields', 'n_moms'):
                 pars[k] = int(float(v))
+            elif k == 'kymin':
+                pars[k] = float(v)
             elif k in ('PRECISION', 'ENDIANNESS'):
                 pars[k] = v.upper()
     pars.setdefault('ENDIANNESS', 'LITTLE')
@@ -210,7 +230,9 @@ def connect():
 def records(col, prefix: str, limit: int = 0):
     """Records under one campaign prefix: _id, DBtag, Files and Diagnostics only."""
     query = {'Metadata.DBtag.run_collection_name': {'$regex': '^' + re.escape(prefix.rstrip('/')) + '/'}}
-    cursor = col.find(query, {'Files': 1, 'Diagnostics': 1, 'Metadata.DBtag': 1}).sort('_id', 1)
+    proj = {'Files': 1, 'Diagnostics': 1, 'Metadata.DBtag': 1}
+    proj.update({f'gyrokineticsIMAS.linear.wavevector.eigenmode.{k}': 1 for k in IMAS_KEYS})
+    cursor = col.find(query, proj).sort('_id', 1)
     return list(cursor.limit(limit) if limit else cursor)
 
 
@@ -255,6 +277,64 @@ def download(fs, rec: dict, raw_root: str) -> list[str]:
     return missing
 
 
+def imas_values(rec: dict) -> dict:
+    """First wavevector's first eigenmode scalars from the IMAS branch (NaN if absent)."""
+    try:
+        em = rec['gyrokineticsIMAS']['linear']['wavevector'][0]['eigenmode'][0]
+    except (KeyError, IndexError, TypeError):
+        em = {}
+    out = {}
+    for k in IMAS_KEYS:
+        try:
+            out[k] = float(np.ravel(em.get(k))[0])
+        except (TypeError, ValueError, IndexError):
+            out[k] = np.nan
+    return out
+
+
+def fill_empty_omega(path: str, kymin: float) -> bool:
+    """Write 'kymin 0 0' into an omega file with no data line (epar reads omega); True if done."""
+    text = open(path).read() if os.path.exists(path) else ''
+    if any(l.strip() and not l.strip().startswith('#') for l in text.splitlines()):
+        return False
+    with open(path, 'w') as fh:
+        fh.write(f'{kymin:10.4f} {0.0:10.4f} {0.0:10.4f}\n' + text)
+    return True
+
+
+def omega_from_file(om, empty: bool = False) -> 'xr.Dataset':
+    """field_omega's variables from the omega node alone (no field history)."""
+    import xarray as xr
+    nan = np.nan
+
+    def val(name):
+        return float(om[name].values) if name in om else nan
+
+    g, w = val('gamma_gene'), val('omega_gene')
+    best = (nan, nan, nan, nan)
+    if not np.isnan(g):
+        if g == 0 and w == 0:
+            source = 'GENE_unconverged'
+        elif g == -1 and w == -1:
+            source = 'GENE_sentinel'
+        else:
+            source, best = 'GENE', (g, w, nan, nan)
+    elif om.attrs.get('source') == 'field' and not np.isnan(val('gamma')):
+        source, best = 'field_legacy', (val('gamma'), val('omega'), val('gamma_std'), val('omega_std'))
+    else:
+        source = 'empty'
+    if empty:
+        source, best = 'empty', (nan, nan, nan, nan)
+    return xr.Dataset({
+        'fit_gamma': nan, 'fit_omega': nan, 'fit_gamma_std': nan, 'fit_omega_std': nan,
+        'fit_t_min': nan, 'fit_t_max': nan, 'fit_n_samples': 0, 'fit_verdict': 'no_history',
+        'omega_source': source,
+        'converged': source in ('GENE', 'field_legacy'),
+        'gamma_best': best[0], 'omega_best': best[1],
+        'gamma_best_std': best[2], 'omega_best_std': best[3],
+    })
+
+
 def build(rec: dict, raw_root: str, campaign: str):
     """Snapshot -> GENE binaries, TPED registry, then the nc_-prefixed quantity_info_NC."""
     import xarray as xr
@@ -268,13 +348,22 @@ def build(rec: dict, raw_root: str, campaign: str):
         snap = pickle.load(fh)  # MGKDB's own pickle (group database)
     with open(os.path.join(folder, local_name('Grid', suffix)), 'rb') as fh:
         grid = pickle.load(fh)
-    zero_filled = snapshot_to_binaries(snap, read_pars(param_file), folder, suffix, grid)
+    pars = read_pars(param_file)
+    zero_filled = snapshot_to_binaries(snap, pars, folder, suffix, grid)
+    empty = fill_empty_omega(os.path.join(folder, f'omega{suffix}'), pars.get('kymin', np.nan))
 
     sim = GeneSimulationPlus(param_file)
     sim.analysis(ANALYSES)
+    sim.return_sim_xarray(['omega'])
+    sim.add_derived('field_omega', omega_from_file(sim.tree['omega'].ds, empty), derived_from=['omega'],
+                    method='omega_from_file')
+    sim.analysis(['mode_identifier'])
     ds = netcdf_safe(sim.flat_xarray, list(sim.tree['parameters'].ds.data_vars))
+    for k, v in imas_values(rec).items():
+        ds[f'imas_{k}'] = xr.DataArray(v)
 
     nc = xr.load_dataset(os.path.join(folder, local_name('quantity_info_NC', suffix)))
+    nc = nc[[k for k in nc.data_vars if nc[k].size <= NC_MAX_SIZE]]
     nc = netcdf_safe(nc, list(nc.data_vars))
     nc = nc.rename({k: f'nc_{k}' for k in nc.data_vars})
     nc = nc.rename({d: f'nc_{d}' for d in nc.dims if d in ds.dims})
@@ -326,7 +415,7 @@ def main(argv=None):
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 ds.to_netcdf(dest + '.part', format='NETCDF4')
                 os.replace(dest + '.part', dest)
-                print(f"saved {dest}  [gamma {ds['gamma'].item():.3g}, omega {ds['omega'].item():.3g}, "
+                print(f"saved {dest}  [{ds['omega_source'].item()}, gamma_best {ds['gamma_best'].item():.3g}, "
                       f"{ds['mode_ID'].item()}]")
             except Exception:
                 print(f"FAILED {rec['_id']} {rec['Metadata']['DBtag'].get('run_collection_name')}")
