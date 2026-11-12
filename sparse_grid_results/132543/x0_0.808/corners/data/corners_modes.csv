@@ -11,10 +11,10 @@ Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,3.5,missing,nan,nan,nan,nan,,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,4,ok,0.328,nan,2.851,nan,unidentified,9.41281,3.25988,-0.017952,0.955805,0.0814795,0.98104,1.40293
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,5,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,6,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
-Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,7,field,0.042242,0.000851,3.85046,0.000829,unidentified,56.0962,20.959,-0.0124639,0.954688,0.118895,0.921587,1.08272
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,7,ok,0.042,nan,3.85,nan,unidentified,55.6156,20.8942,-0.0124256,0.954712,0.118921,0.921656,1.08259
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,8,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,9,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
-Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,10,field,0.039686,0.000482,4.10344,0.000545,unidentified,29.0819,13.5249,-0.00762669,0.973184,0.136797,0.928371,0.807697
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,10,ok,0.04,nan,4.103,nan,unidentified,29.0642,13.5276,-0.00761973,0.973194,0.136704,0.928417,0.807609
 Teh0.80_Tew0.80_neh0.80_new0.80,0.8,0.8,0.8,0.8,0.1,ambiguous,0.02167,0.0798,0.120227,0.0568,,nan,nan,nan,nan,nan,nan,nan
 Teh0.80_Tew0.80_neh0.80_new0.80,0.8,0.8,0.8,0.8,0.3,ok,0.135,nan,0.384,nan,KBM,4.90786,3.75573,-0.0891187,0.323581,0.0033665,0.982089,0.678448
 Teh0.80_Tew0.80_neh0.80_new0.80,0.8,0.8,0.8,0.8,0.5,ok,0.252,nan,0.585,nan,KBM,3.65421,3.1189,-0.0688688,0.398001,0.00906437,0.988308,0.620144
