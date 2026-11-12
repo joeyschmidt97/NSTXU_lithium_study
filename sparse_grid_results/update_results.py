@@ -37,8 +37,8 @@ updated, all of its radii (the summary needs them all, so --x0 does not narrow
 this step):
 
     sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/rescheck_<grid>x2.png
-    sparse_grid_results/<shot>/summary_rescheck_<grid>x2.png   every batch that doubled
-                                     <grid>, one 2x marker per batch; one column per
+    sparse_grid_results/<shot>/summary_rescheck_all.png   every batch and doubled grid,
+                                     gamma/omega and their % change; one column per
                                      radius, aligned with the summaries
     sparse_grid_results/rescheck_<code>.csv
 
@@ -120,7 +120,7 @@ SUMMARY_DPI = 100
 #: corners/ plots also get one summary row per VURS batch folder <x0>/batch<i>_<j>/
 CORNER_SUB = "corners"
 BATCH_RE = re.compile(r"batch(\d+)_(\d+)")
-#: summaries plot_res_check writes (summary_rescheck_<grid>x2.png): not stale
+#: summaries plot_res_check writes (summary_rescheck_all.png): not stale
 RESCHECK_SUMMARY = "summary_rescheck_"
 
 

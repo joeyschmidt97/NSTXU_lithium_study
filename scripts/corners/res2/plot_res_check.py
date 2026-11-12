@@ -17,19 +17,24 @@ were rerun, so each 1x line has its own 2x diamonds and nothing else:
     sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/rescheck_<grid>x2.png
     sparse_grid_results/<shot>/x0_<x0>/rescheck_<code>/data/rescheck_<grid>x2.csv
     sparse_grid_results/rescheck_<code>.csv        every row of the batch, one table
-    sparse_grid_results/<shot>/summary_rescheck_<grid>x2.png
+    sparse_grid_results/<shot>/summary_rescheck_all.png
 
-Each summary (one per shot and doubled grid, every batch of the call that
-doubled that grid on it, each batch its own 2x marker: diamond, pentagon,
-hexagon, ... in the order the codes are given) has one column per radius of the
-shot (every x0_<x0>/ folder under sparse_grid_results/<shot>/, smallest x0 left,
-so the columns line up with update_results' summaries; "no res check" where a
-radius was not rerun), gamma over omega: every rerun scaling at that radius on the same axes in
-its plot_corners colour, its 1x line (circles for the reference) and its 2x
-diamonds beside it, the gamma change over --tol written next to the diamond.
-2x markers mark 2x points only. A summary holds only the batches of the call
-(--all or several --code), and replaces the per-batch summary_rescheck_<code>_*
-files of earlier versions.
+The summary (one per shot: every doubled grid of every batch of the call) has
+one column per radius of the shot (every x0_<x0>/ folder under
+sparse_grid_results/<shot>/, smallest x0 left, so the columns line up with
+update_results' summaries; "no res check" where a radius was not rerun) and four
+rows. gamma and omega: every rerun scaling at that radius in its plot_corners
+colour, its 1x line, each 2x point beside its ky with marker and colour by grid
+(GRID_MARKERS, GRID_COLORS), a dotted line in the scaling colour back to its 1x
+point; a 2x point far off the 1x range sits on the edge with its value. Below,
+the % change (2x - 1x) / |1x| of each: symlog, linear inside +-tol (the shaded
+band, PCT_LINEAR_SHARE of the height) and log beyond, one range per row over
+every radius, every point outside the band labelled with its %. PCT_LIM = N
+instead gives a linear +-N% zoom, values beyond pinned to the edge. Grids
+doubled by two batches sit side by side at small ky offsets; the legend names
+the batches per grid. A summary holds only the batches of the call (--all or
+several --code), and replaces the per-grid summary_rescheck_<grid>x2.png and
+per-batch summary_rescheck_<code>_* files of earlier versions.
 
 A 2x ky GENE did not converge (timelim reached: these are spot checks) is read
 from a live field_omega fit of its field file, hollow +-1 std, faded unless the
@@ -60,6 +65,7 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter, NullLocator
 
 from NSTXU_lithium_study.scripts import corner_gene_scan as C
 from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
@@ -76,8 +82,16 @@ DIR_RE = re.compile(r"(?P<shot>\d+)[/\\]rescheck_(?P<code>[0-9a-z]+)[/\\](?P<gri
 #: |gamma 2x - gamma 1x| / |gamma 1x| above this is flagged in the table
 TOL = 0.1
 FLAG_COLOR = "#e34948"
-#: 2x marker per batch in a summary (code_markers); none is a 1x corner marker
-CODE_MARKERS = ("D", "p", "h", "*", "8", "d")
+#: 2x marker per doubled grid in the summary; none is a 1x corner marker
+GRID_MARKERS = {"nx0": "D", "nv0": "s", "nw0": "p", "nz0": "h"}
+#: summary % change rows: colour per doubled grid (none of the scaling hues)
+GRID_COLORS = {"nx0": "#5b4bb7", "nv0": "#d4a017", "nw0": "#0f8b8d", "nz0": "#8c564b"}
+#: summary % change rows: None = symlog, linear inside +-tol and log beyond, every
+#: point drawn; a number = linear +-that, a value beyond pinned to the edge, labelled
+PCT_LIM = None
+#: symlog: share of the panel height the linear +-tol part keeps, however many decades
+PCT_LINEAR_SHARE = 0.4
+SUMMARY_NAME = "summary_rescheck_all.png"
 SUMMARY_KEYS = ("shot", "x0", "grid", "corner", "ky", "status_1x", "gamma_1x", "omega_1x",
                 "source_2x", "gamma_2x", "gamma_2x_std", "omega_2x", "omega_2x_std",
                 "gamma_rel_diff", "omega_rel_diff", "dir_2x")
@@ -182,33 +196,100 @@ def summary_rows(path: str, shot: int, x0: float, grid: str, alt: str) -> list[d
              **{k: r[k.replace("_2x", f"_{ak}")] for k in SUMMARY_KEYS[3:]}} for r in rows]
 
 
-def code_markers(codes) -> dict:
-    """2x marker per batch code, in the order given (the first keeps the diamond)."""
-    return {c: CODE_MARKERS[i % len(CODE_MARKERS)] for i, c in enumerate(codes)}
+def pinned(ax, x, y, lo, hi, color, mfc, alpha, label=None, labelled=True):
+    """A value outside [lo, hi] drawn as a triangle on that edge, its value beside it
+    unless *labelled* is False (faded field fits: triangle only, value in the CSV);
+    labels near an earlier one on the same edge step inward so they never overlap."""
+    up = y > hi
+    ax.plot(x, hi if up else lo, "^" if up else "v", ms=7, color=color, mfc=mfc, mec=color,
+            mew=1.4, alpha=alpha, zorder=7, clip_on=False)
+    if not labelled:
+        return
+    xs = ax.__dict__.setdefault("_pinned", {}).setdefault(up, [])
+    x_lo, x_hi = ax.get_xlim()
+    n = sum(abs(x - p) < 0.12 * (x_hi - x_lo) for p in xs)
+    xs.append(x)
+    ax.annotate(label if label is not None else f"{y:.3g}", (x, hi if up else lo),
+                xytext=(5, (-9 - 8 * n) if up else (3 + 8 * n)), textcoords="offset points",
+                fontsize=6.5, color=color)
 
 
-def plot_summary(shot, grid, panels, codes, out, written, tol=TOL, radii=()):
-    """<out>/summary_rescheck_<grid>x2.png: every batch in *codes* that doubled
-    *grid* on one figure, one column per radius, gamma (top) and omega (bottom).
+def place_labels(ax, labels, fontsize=6.5):
+    """Write each (x, %, colour, faded) of *labels* beside its point on *ax*, moved up
+    or down in steps until its box clears every label already placed."""
+    k = 72.0 / ax.figure.dpi                       # display pixels -> points
+    h = fontsize + 2.0
+    boxes = []
+    for x, v, color, weak in sorted(labels, key=lambda q: (q[0], -abs(q[1]))):
+        text = pct_label(v)
+        px, py = (c * k for c in ax.transData.transform((x, v)))
+        w = 0.62 * fontsize * len(text) + 3
+        for step in [0] + [s for n in range(1, 12) for s in (n, -n)]:
+            x0, y0 = px + 5, py - h / 2 + step * h
+            if all(x0 + w <= bx or bx + bw <= x0 or y0 + h <= by or by + bh <= y0
+                   for bx, by, bw, bh in boxes):
+                break
+        boxes.append((x0, y0, w, h))
+        ax.annotate(text, (x, v), xytext=(5, step * h), textcoords="offset points",
+                    va="center", fontsize=fontsize, color=color, alpha=0.6 if weak else 1.0,
+                    zorder=8, annotation_clip=False)
 
-    *panels* = [(x0, [(1x Dataset, summary rows of *grid*), ...])], one
-    (Dataset, rows) per batch at that radius; each row carries its "code". A
-    scaling's 1x line is drawn once per radius (first batch holding it) and every
-    batch's 2x points go beside it, told apart by marker (code_markers) and a
-    small extra ky offset. *radii* not in *panels* get an empty "no res check"
-    column."""
-    markers = code_markers(codes)
-    present = {r["code"] for _, sets in panels for _, rows in sets for r in rows}
-    order = {c: i for i, c in enumerate(c for c in codes if c in present)}   # ky offset
+
+def pct_tick(v: float, _pos=None) -> str:
+    """Symlog % axis tick: 0, 10, -100, 1e3, -1e6."""
+    if v == 0:
+        return "0"
+    return f"{v:g}" if abs(v) < 1000 else f"{'-' if v < 0 else ''}1e{int(round(np.log10(abs(v))))}"
+
+
+def pct_label(v: float) -> str:
+    """Short signed % for a pinned point: +35%, -101%, +2.5e5%."""
+    if abs(v) < 1000:
+        return f"{v:+.0f}%"
+    m, e = f"{v:+.1e}".split("e")
+    return f"{m.rstrip('0').rstrip('.')}e{int(e)}%"
+
+
+def value_limits(values, pad=0.08):
+    """(lo, hi) around *values* (and 0), padded."""
+    v = np.asarray([x for x in values if np.isfinite(x)] + [0.0])
+    span = (v.max() - v.min()) or 1.0
+    return v.min() - pad * span, v.max() + pad * span
+
+
+def plot_summary(shot, panels, codes, out, written, tol=TOL, radii=(), lim=PCT_LIM):
+    """<out>/summary_rescheck_all.png: every doubled grid of every batch in *codes*
+    on one figure, one column per radius; rows gamma, omega, then their % change
+    2x vs 1x.
+
+    *panels* = [(x0, [(1x Dataset, summary rows), ...])]; each row carries its
+    "code" and "grid". Top rows: a scaling's 1x line once per radius in its
+    plot_corners colour, each 2x point beside its ky in that colour, marker =
+    grid (GRID_MARKERS). The y range follows the 1x lines and the 2x points within
+    100% of them; a 2x point beyond is a triangle on the edge with its value. %
+    rows: (2x - 1x) / |1x| per ky, colour and marker = grid (GRID_COLORS), the
+    +-tol band shaded, values beyond +-lim pinned to the edge with their value. In
+    every row filled = GENE converged, hollow = field fit passing, faded = field fit
+    ambiguous or decaying, x = no 2x output. *radii* not in *panels* get an empty
+    "no res check" column."""
+    present = {(r["grid"], r["code"]) for _, sets in panels for _, rows in sets for r in rows}
+    pairs = sorted(present, key=lambda gc: (GRIDS.index(gc[0]),
+                                            codes.index(gc[1]) if gc[1] in codes else 99))
+    order = {gc: i for i, gc in enumerate(pairs)}                  # ky offset per grid, batch
+    grids = [g for g in GRIDS if any(g == gc[0] for gc in pairs)]
     have = [p[0] for p in panels]
     panels = list(panels) + [(x, []) for x in radii
                              if not any(abs(x - h) < X0_TOL for h in have)]
     panels = sorted(panels, key=lambda p: p[0])
-    fig, axes = plt.subplots(2, len(panels), figsize=(4.6 * len(panels) + 3, 8.5), squeeze=False)
-    handles, faded, missing, used = {}, False, False, []
+    fig, axes = plt.subplots(4, len(panels), figsize=(4.8 * len(panels) + 3.2, 17),
+                             squeeze=False, gridspec_kw={"height_ratios": (3, 3, 3, 3)})
+    handles, faded, missing = {}, False, False
+    pct_labels = {}                            # % axes: [(x, %, colour, faded)], placed last
+    pct_axes, pct_max = {"gamma": [], "omega": []}, {"gamma": (0.0, 0.0), "omega": (0.0, 0.0)}
     for col, (x0, sets) in enumerate(panels):
+        axes[0, col].set_title(f"x0 = {x0:g}", loc="left", fontsize=10, color=pc.INK)
         if not sets:
-            for row in range(2):
+            for row in range(4):
                 ax = axes[row, col]
                 ax.set_xticks([])
                 ax.set_yticks([])
@@ -216,9 +297,10 @@ def plot_summary(shot, grid, panels, codes, out, written, tol=TOL, radii=()):
                     sp.set_color(pc.GRID)
             axes[0, col].text(0.5, 0.5, "no res check", ha="center", va="center",
                               fontsize=10, color=pc.MUTED, transform=axes[0, col].transAxes)
-            axes[0, col].set_title(f"x0 = {x0:g}", loc="left", fontsize=10, color=pc.INK)
             continue
-        drawn = set()
+        for row in (1, 2, 3):                          # one ky axis per column
+            axes[row, col].sharex(axes[0, col])
+        drawn, ones, twos = set(), {"gamma": [], "omega": []}, []
         for ds, rows in sets:
             ky = ds.ky.values
             nudge = pc.RES2_NUDGE * (np.ptp(ky) if ky.size > 1 else 1.0)
@@ -234,6 +316,7 @@ def plot_summary(shot, grid, panels, codes, out, written, tol=TOL, radii=()):
                         ax = axes[row, col]
                         y, err, conv = pc.one_x(ds, i, var)
                         ok = np.isfinite(y)
+                        ones[var] += list(y[ok])
                         ax.plot(ky[ok], y[ok], lw=1.2, color=st["color"], ls=st["ls"],
                                 alpha=0.7, zorder=3)
                         ax.plot(ky[ok & conv], y[ok & conv], st["marker"], ms=4,
@@ -243,66 +326,114 @@ def plot_summary(shot, grid, panels, codes, out, written, tol=TOL, radii=()):
                                     mfc=pc.SURFACE, mec=st["color"], color=st["color"],
                                     capsize=2, lw=0.8, zorder=4)
                 for r in (r for r in rows if r["corner"] == c):
-                    code = r["code"]
-                    if code not in used:
-                        used.append(code)
                     k = float(r["ky"])
-                    x2 = k + nudge * (1 + 0.6 * order[code])
-                    filled = r["source_2x"] == "GENE"
-                    weak = r["source_2x"] not in ("GENE", "pass")
-                    for row, var in enumerate(("gamma", "omega")):
-                        ax = axes[row, col]
-                        v1, v2, e2 = (float(r[f"{var}_1x"]), float(r[f"{var}_2x"]),
-                                      float(r[f"{var}_2x_std"]))
-                        if not np.isfinite(v2):
-                            missing = True
-                            ax.plot(x2, 0, "x", color=st["color"], ms=7, mew=1.6, zorder=6)
-                            continue
-                        faded |= weak
-                        if np.isfinite(v1):
-                            ax.plot([k, x2], [v1, v2], ":", color=st["color"], lw=1, zorder=4)
-                        ax.errorbar(x2, v2, yerr=e2, fmt=markers[code], ms=7,
-                                    mfc=st["color"] if filled else pc.SURFACE, mec=st["color"],
-                                    mew=1.6, color=st["color"], capsize=2, lw=0.9,
-                                    alpha=0.45 if weak else 1.0, zorder=7)
-                        rel = float(r[f"{var}_rel_diff"])
-                        if var == "gamma" and np.isfinite(rel) and abs(rel) > tol:
-                            ax.annotate(f"{100 * rel:+.0f}%", (x2, v2), xytext=(4, 4),
-                                        textcoords="offset points", fontsize=7,
-                                        color=FLAG_COLOR)
-        for row, sym in enumerate((r"\gamma", r"\omega")):
+                    twos.append((r, k + nudge * (1 + 0.7 * order[(r["grid"], r["code"])]),
+                                 st["color"]))
+        for row, var in enumerate(("gamma", "omega")):   # 2x after every 1x: shared y range
+            ax = axes[row, col]
+            near = [float(r[f"{var}_2x"]) for r, _, _ in twos
+                    if abs(float(r[f"{var}_rel_diff"])) <= 1.0]
+            lo, hi = value_limits(ones[var] + near)
+            pct = axes[row + 2, col]
+            pct.axhspan(-100 * tol, 100 * tol, color=pc.GRID, lw=0, zorder=1)
+            for r, x2, color in twos:
+                gm = GRID_MARKERS[r["grid"]]
+                gc = GRID_COLORS[r["grid"]]
+                filled = r["source_2x"] == "GENE"
+                weak = r["source_2x"] not in ("GENE", "pass")
+                alpha = 0.45 if weak else 1.0
+                v1, v2, e2 = (float(r[f"{var}_1x"]), float(r[f"{var}_2x"]),
+                              float(r[f"{var}_2x_std"]))
+                if not np.isfinite(v2):
+                    missing = True
+                    ax.plot(x2, 0, "x", color=gc, ms=7, mew=1.6, zorder=6)
+                    continue
+                faded |= weak
+                mfc = gc if filled else pc.SURFACE
+                if not lo <= v2 <= hi:
+                    pinned(ax, x2, v2, lo, hi, gc, mfc, alpha, labelled=not weak)
+                else:
+                    if np.isfinite(v1):
+                        ax.plot([float(r["ky"]), x2], [v1, v2], ":", color=color, lw=1,
+                                zorder=4)
+                    ax.errorbar(x2, v2, yerr=e2, fmt=gm, ms=7, mfc=mfc, mec=gc, mew=1.6,
+                                color=gc, capsize=2, lw=0.9, alpha=alpha, zorder=7)
+                rel = 100 * float(r[f"{var}_rel_diff"])
+                if not np.isfinite(rel):
+                    continue
+                mfc = gc if filled else pc.SURFACE
+                pct_max[var] = (max(pct_max[var][0], -rel), max(pct_max[var][1], rel))
+                if lim and abs(rel) > lim:
+                    pinned(pct, x2, rel, -lim, lim, gc, mfc, alpha, pct_label(rel),
+                           labelled=not weak)
+                else:
+                    pct.plot(x2, rel, gm, ms=7, mfc=mfc, mec=gc, mew=1.6, alpha=alpha,
+                             zorder=5)
+                    if abs(rel) > 100 * tol:
+                        pct_labels.setdefault(pct, []).append((x2, rel, gc, weak))
+            ax.set_ylim(lo, hi)
+            if lim:
+                pct.set_ylim(-lim, lim)
+                pct.set_yticks(np.arange(-lim, lim + 1e-9, 10 if lim <= 40 else 50))
+            pct_axes[var].append(pct)
+        for row, lab in enumerate((r"$\gamma$ [$c_{ref}/L_{ref}$]",
+                                   r"$\omega$ [$c_{ref}/L_{ref}$]",
+                                   r"$\gamma$: (2x $-$ 1x) / |1x| [%]",
+                                   r"$\omega$: (2x $-$ 1x) / |1x| [%]")):
             ax = axes[row, col]
             ax.axhline(0, color=pc.MUTED, lw=0.8)
             ax.set_xlabel(r"$k_y\rho_{ref}$")
             if col == 0:
-                ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
+                ax.set_ylabel(lab)
             pc.tidy(ax)
-        axes[0, col].set_title(f"x0 = {x0:g}", loc="left", fontsize=10, color=pc.INK)
-    used = sorted(used, key=order.get)
-    m0 = CODE_MARKERS[0]
+    if not lim:                                # one symlog range per row, over every radius
+        t = 100 * tol
+        for var, axs in pct_axes.items():
+            # decades beyond the band on each side, at least one
+            dn, up = (int(max(1, np.ceil(np.log10(max(m, t) / t)))) for m in pct_max[var])
+            half = PCT_LINEAR_SHARE * (dn + up) / (2 * (1 - PCT_LINEAR_SHARE))
+            step = 1 if dn + up <= 6 else 2
+            ticks = ([-t * 10 ** k for k in range(dn, 0, -step)] + [-t, 0, t]
+                     + [t * 10 ** k for k in range(step, up + 1, step)])
+            for a in axs:
+                a.set_yscale("symlog", linthresh=t, linscale=half)
+                a.set_ylim(-t * 10 ** dn, t * 10 ** up)
+                a.set_yticks(ticks)
+                a.yaxis.set_minor_locator(NullLocator())
+                a.yaxis.set_major_formatter(FuncFormatter(pct_tick))
+                a.axhline(t, color=pc.MUTED, lw=0.5, ls=(0, (2, 2)), zorder=2)
+                a.axhline(-t, color=pc.MUTED, lw=0.5, ls=(0, (2, 2)), zorder=2)
+    gm0 = GRID_MARKERS[grids[0]] if grids else "D"
     extra = [Line2D([], [], ls="none", marker="o", color=pc.MUTED, ms=4,
                     label="1x GENE converged"),
              Line2D([], [], ls="none", marker="o", mfc=pc.SURFACE, mec=pc.MUTED, ms=4,
                     label="1x recorded field fit ±1σ")]
-    extra += [Line2D([], [], ls="none", marker=markers[c], color=pc.MUTED, ms=7,
-                     label=f"{grid}x2 batch {c}") for c in used]
-    extra += [Line2D([], [], ls="none", marker=m0, color=pc.MUTED, ms=7,
+    for g in grids:
+        cs = ", ".join(c for gg, c in pairs if gg == g)
+        extra.append(Line2D([], [], ls="none", marker=GRID_MARKERS[g], color=GRID_COLORS[g],
+                            ms=7, label=f"{g}x2 ({cs})"))
+    extra += [Line2D([], [], ls="none", marker=gm0, color=pc.MUTED, ms=7,
                      label="2x filled: GENE converged"),
-              Line2D([], [], ls="none", marker=m0, mfc=pc.SURFACE, mec=pc.MUTED, mew=1.6,
+              Line2D([], [], ls="none", marker=gm0, mfc=pc.SURFACE, mec=pc.MUTED, mew=1.6,
                      ms=7, label="2x hollow: field fit, passing ±1σ")]
     if faded:
-        extra.append(Line2D([], [], ls="none", marker=m0, mfc=pc.SURFACE, mec=pc.MUTED,
+        extra.append(Line2D([], [], ls="none", marker=gm0, mfc=pc.SURFACE, mec=pc.MUTED,
                             mew=1.6, ms=7, alpha=0.45,
                             label="2x faded: field fit, ambiguous/decaying"))
+    extra.append(Line2D([], [], ls="none", marker="^", mfc=pc.SURFACE, mec=pc.MUTED, mew=1.4,
+                        ms=7, label="off scale: value written (faded: CSV only)"))
     if missing:
         extra.append(Line2D([], [], ls="none", marker="x", color=pc.MUTED, ms=7, mew=1.6,
-                            label=f"{grid}x2, no field output yet"))
+                            label="2x, no field output yet"))
     pc.legend_right(fig, handles.values(), extra)
-    fig.suptitle(f"NSTX {shot} res check, {grid} doubled ({', '.join(used)}): 1x line, "
-                 f"2x points by batch (red: gamma change > {100 * tol:g}%)", x=0.02,
+    fig.suptitle(f"NSTX {shot} res check, every doubled grid ({', '.join(grids)}): 1x line, "
+                 f"2x marker by grid; % change below "
+                 f"(band ±{100 * tol:g}%{'' if lim else ': linear inside, log outside'})", x=0.02,
                  ha="left", fontsize=12, color=pc.INK)
-    fig.tight_layout(rect=(0, 0, 0.8, 0.95))
-    pc.save(fig, out, f"summary_rescheck_{grid}x2.png", written)
+    fig.tight_layout(rect=(0, 0, 0.82, 0.96))
+    for a, labels in pct_labels.items():       # after the layout: final display positions
+        place_labels(a, labels)
+    pc.save(fig, out, SUMMARY_NAME, written)
 
 
 def print_table(rows, tol=TOL):
@@ -414,23 +545,21 @@ def run(codes, shots=None, x0s=None, grids=None, root=ROOT, genedir=GENEDIR,
     if list_only:
         return []
 
-    panels: dict[tuple, dict] = {}
+    panels: dict[int, dict] = {}
     for shot, grid, x0, ds, rows in items:
-        panels.setdefault((shot, grid), {}).setdefault(round(x0, 6), []).append((ds, rows))
+        panels.setdefault(shot, {}).setdefault(round(x0, 6), []).append((ds, rows))
     done = [c for c in codes if c not in failed]
-    for (shot, grid), by_x0 in sorted(panels.items()):
+    for shot, by_x0 in sorted(panels.items()):
         if x0s:
-            print(f"  --x0 given: summary_rescheck_{grid}x2.png for {shot} left as is")
+            print(f"  --x0 given: {SUMMARY_NAME} for {shot} left as is")
             continue
-        plot_summary(shot, grid, sorted(by_x0.items()), done,
-                     os.path.join(results, str(shot)), written, tol, shot_radii(results, shot))
-    if not x0s:                   # one summary per batch (before 2026-11-08): superseded
-        for shot in sorted({s for s, _ in panels}):
-            for code in done:
-                for old in glob.glob(os.path.join(results, str(shot),
-                                                  f"summary_rescheck_{code}_*x2.png")):
-                    os.remove(old)
-                    print(f"  removed superseded {old}")
+        plot_summary(shot, sorted(by_x0.items()), done, os.path.join(results, str(shot)),
+                     written, tol, shot_radii(results, shot))
+        # superseded: one summary per grid (to 2026-11-12), per batch (to 2026-11-08)
+        for old in sorted(glob.glob(os.path.join(results, str(shot),
+                                                 "summary_rescheck_*x2.png"))):
+            os.remove(old)
+            print(f"  removed superseded {old}")
     if failed:
         print(f"rescheck failed: {', '.join(failed)}")
     print("\nwrote\n  " + "\n  ".join(written))
