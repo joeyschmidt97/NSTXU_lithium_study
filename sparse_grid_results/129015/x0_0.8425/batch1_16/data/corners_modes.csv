@@ -37,10 +37,10 @@ Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,3.5,missing,nan,nan,nan,nan,,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,4,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,5,ok,0.454,nan,-6.666,nan,MTM,0.0999703,0.00188256,14.1395,0.594874,0.990589,0.315332,-1.0316
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,6,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
-Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,7,ambiguous,-0.04686,0.819,-0.486863,1.58,,nan,nan,nan,nan,nan,nan,nan
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,7,ambiguous,0.021921,0.217,2.48565,0.226,,nan,nan,nan,nan,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,8,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
 Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,9,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
-Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,10,field,-0.018706,0.000339,0.513126,0.000663,unidentified,33.4636,3.25531,-0.0107114,0.999389,0.253988,0.74745,0.0397046
+Teh1.00_Tew1.00_neh1.00_new1.00,1,1,1,1,10,ok,-0.018,nan,0.511,nan,unidentified,33.5108,3.28523,-0.011076,0.999358,0.255727,0.750158,0.0395401
 Teh1.181_Tew1.166_neh1.169_new0.874,1.181,1.166,1.169,0.874,0.05,ambiguous,0.006634,0.15,-0.477393,0.0799,,nan,nan,nan,nan,nan,nan,nan
 Teh1.181_Tew1.166_neh1.169_new0.874,1.181,1.166,1.169,0.874,0.065,ambiguous,0.013347,0.065,-0.159317,0.0746,,nan,nan,nan,nan,nan,nan,nan
 Teh1.181_Tew1.166_neh1.169_new0.874,1.181,1.166,1.169,0.874,0.074,missing,nan,nan,nan,nan,,nan,nan,nan,nan,nan,nan,nan
