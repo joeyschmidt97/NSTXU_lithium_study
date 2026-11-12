@@ -64,6 +64,13 @@ check, mode structure, vsp edges) is cached beside it, <scanfiles dir>/.plot_cac
 rerun reads just the new or still-running ky. --force-reload rereads every run and
 overwrites the cache; --no-cache reads everything without it.
 
+Wildcards: a diag_root or extra_roots path with glob characters (*, ?, [...])
+is expanded when the paths file is read. The matches, sorted, become one scan:
+the first is diag_root, the rest are added to extra_roots, so their runs merge
+per ky as any extra root's do (the same ky in two roots keeps the better one:
+GENE converged > field estimate > neither). A pattern with no match is kept as
+written, so --list shows it missing. E.g. "diag_root": ".../132588/corners_nx0*".
+
 Every enabled entry by default; --shot and --x0 pick a subset (an x0 matches
 any shot that has it). One entry failing is reported and the rest still run.
 
@@ -84,6 +91,7 @@ any shot that has it). One entry failing is reported and the rest still run.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -116,21 +124,43 @@ BATCH_RE = re.compile(r"batch(\d+)_(\d+)")
 RESCHECK_SUMMARY = "summary_rescheck_"
 
 
+def expand_roots(diag_root, extra_roots=()) -> tuple:
+    """(diag_root, extra_roots) with glob patterns expanded: every match, sorted,
+    in order, the first being diag_root and the rest extra roots; only
+    directories match, duplicates dropped. A pattern with no match stays as
+    written."""
+    roots, seen = [], set()
+    for p in ([diag_root] if diag_root else []) + list(extra_roots):
+        hits = sorted(h for h in glob.glob(p.rstrip("/\\")) if os.path.isdir(h)) \
+            if glob.has_magic(p) else []
+        for r in hits or [p]:
+            if os.path.normpath(r) not in seen:
+                seen.add(os.path.normpath(r))
+                roots.append(r)
+    if not diag_root:
+        return diag_root, tuple(roots)
+    return roots[0], tuple(roots[1:])
+
+
 def load_entries(path: str = PATHS) -> list[dict]:
-    """Every (shot, x0) entry of the paths file, sorted, with "defaults" folded in."""
+    """Every (shot, x0) entry of the paths file, sorted, with "defaults" folded in
+    and glob patterns in diag_root / extra_roots expanded (expand_roots)."""
     with open(path) as fh:
         cfg = json.load(fh)
     defaults = cfg.get("defaults", {})
     out = []
     for key, by_x0 in cfg["runs"].items():
         for x0, e in by_x0.items():
+            diag, extra = e.get("diag_root"), tuple(e.get("extra_roots") or ())
+            if not e.get("cases"):                    # a case entry's diag_root is a parent dir
+                diag, extra = expand_roots(diag, extra)
             out.append({"shot": int(key.split("_")[0]), "group": key,
                         "x0": float(x0), "label": f"x0_{float(x0):g}",
                         "cases": dict(e.get("cases") or {}), "ref_case": e.get("ref_case"),
                         "scan_name": e.get("scan_name"),
-                        "enabled": e.get("enabled", True), "diag_root": e.get("diag_root"),
+                        "enabled": e.get("enabled", True), "diag_root": diag,
                         "ped_root": e.get("ped_root"), "res2_roots": tuple(e.get("res2_roots") or ()),
-                        "extra_roots": tuple(e.get("extra_roots") or ()),
+                        "extra_roots": extra,
                         "nz_compare": e.get("nz_compare"), "nz_root": e.get("nz_root"),
                         "field_omega": e.get("field_omega", defaults.get("field_omega", True)),
                         "nz_subdir": e.get("nz_subdir", defaults.get("nz_subdir", True)),
