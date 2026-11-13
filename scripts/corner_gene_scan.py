@@ -267,10 +267,21 @@ def read_param(text: str, key: str) -> str:
 
 def corner_submit(template: str, nodes: int, ntasks: int, walltime: str, qos: str,
                   n_parallel: int | None = None) -> str:
-    """The template submit script resized; n_parallel also sets scanscript's --mps."""
+    """The template submit script resized; n_parallel also sets scanscript's --mps.
+
+    GENE needs exactly *ntasks* ranks: $SLURM_NTASKS is nodes x ntasks-per-node,
+    so a 3-ky scan on one node got 4 ranks, scanscript set n_parallel_sims 4 for
+    3 problems and GENE hung at start-up (2026-11-13). It is replaced by the
+    number. GPU binding follows interactive_corners.sh: every rank sees all 4
+    GPUs (--gpus-per-node=4 --gpu-bind=none); --gpus-per-task=1 breaks
+    GPU-aware MPI.
+    """
     text = re.sub(r"^#SBATCH -t .*$", f"#SBATCH -t {walltime}", template, flags=re.M)
     text = re.sub(r"^#SBATCH -q .*$", f"#SBATCH -q {qos}", text, flags=re.M)
     text = re.sub(r"^#SBATCH -N .*$", f"#SBATCH -N {nodes}", text, flags=re.M)
+    text = re.sub(r"\$SLURM_NTASKS(?!_)", str(ntasks), text)
+    text = re.sub(r"^#SBATCH --gpus-per-task=\d+$", "#SBATCH --gpus-per-node=4", text, flags=re.M)
+    text = re.sub(r"(srun .*?)--gpus-per-task=\d+", r"\1--gpus-per-node=4 --gpu-bind=none", text)
     text = re.sub(r"--np \d+", f"--np {ntasks}", text)
     if n_parallel is not None:
         text = re.sub(r"--mps \d+", f"--mps {n_parallel}", text)
