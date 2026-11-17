@@ -56,7 +56,7 @@ from TPED.projects.GENE_sim_reader.src.GENE_vsp_data import GeneVsp
 VSP_NAME = re.compile(r"^vsp(_\d{4}|\.dat)$")
 TIME_REC = 8                    # bytes in the time record
 HEAD = 4 + TIME_REC + 4 + 4     # bytes before the data in a block (= 20)
-GENEVSP_DATA_OFFSET = 4         # where GeneVsp.vsp_filepath_to_dict starts reading data in a block
+GENEVSP_DATA_OFFSET = 20        # where GeneVsp.vsp_filepath_to_dict starts reading data in a block (TPED 5366cd5; was 4)
 KEEP = 3                        # dumps kept per file by default
 
 
