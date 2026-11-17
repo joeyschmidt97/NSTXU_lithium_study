@@ -21,8 +21,17 @@ folder below the shot, e.g. corners_kyhi). Parameters names are made netCDF-safe
 steps' -> number_of_computed_time_steps, ...), the corner folder name
 (Teh0.80_Tew0.80_neh0.80_new0.80) becomes Te_ped_scale, Te_width_scale,
 ne_ped_scale, ne_width_scale and attrs['corner_tag'], complex arrays are split into
-<name>_re / <name>_im, and cost_* variables are added (see add_cost). vsp is
-not loaded: it was ~97% of each file and no analysis reads it.
+<name>_re / <name>_im, and cost_* variables are added (see add_cost). The full
+vsp is not loaded (it was ~97% of each file).
+
+--vsp adds 2D velocity-space slices (see add_vsp): the last vsp dump at the
+outboard midplane (z index nz0 // 2), every quantity and species, as float32
+vsp_<quantity>_<species> with dims (vsp_w, vsp_v) = (mu, v_par), plus
+vsp_time, vsp_z_index and vsp_status ('ok', 'no file', 'no dumps', 'read
+failed'; runs that stop before step istep_vsp write no dump). --vsp-only adds
+them to .nc files that already exist, without rerunning the TPED analyses.
+
+    python -m NSTXU_lithium_study.scripts.build_discharge_data --diag-dir /pscratch/.../lithium_study/129038/corners/x0_0.6737 --out-root NSTXU_lithium_study/data/simulation_data --vsp-only
 
 field_omega gives every run a convergence measure: the field_phi fit over the
 last 30% of the run (fit_gamma/fit_omega with *_std, fit_verdict), GENE's state
@@ -198,8 +207,71 @@ def add_cost(ds):
     return ds
 
 
-def build(param_file: str, shot: int, subdir: str):
-    """Load and analyse one run into a netCDF-ready Dataset."""
+def vsp_path(param_file: str) -> str:
+    """The run's vsp file: parameters_0001 -> vsp_0001, parameters.dat -> vsp.dat."""
+    d, name = os.path.split(param_file)
+    return os.path.join(d, 'vsp' + name[len('parameters'):])
+
+
+def add_vsp(ds, param_file: str):
+    """Midplane (mu, v_par) slices of the run's last vsp dump; see the module doc.
+
+    Replaces any vsp_* variables already in ds (istep_vsp is a parameter and stays)."""
+    import numpy as np
+    from TPED.projects.GENE_sim_reader.src.GENE_vsp_data import GeneVsp
+
+    ds = ds.drop_vars([v for v in ds.data_vars if str(v).startswith('vsp_')])
+    path = vsp_path(param_file)
+    status, x = 'ok', None
+    if not os.path.exists(path):
+        status = 'no file'
+    else:
+        reader = GeneVsp(path)
+        if not reader.param_valid or not reader.all_time_values:
+            status = 'no dumps'
+        else:
+            x = reader.vsp_filepath_to_xarray('last', 'all', 'all')
+            if x is None or not x.data_vars:
+                status = 'read failed'
+    ds['vsp_status'] = status
+    if x is None or status != 'ok':
+        return ds
+    iz = int(x.sizes['nz']) // 2
+    for v in x.data_vars:
+        ds[v] = (('vsp_w', 'vsp_v'), x[v].values[-1, :, :, iz].astype(np.float32))
+        ds[v].attrs = {'description': f'last vsp dump at z index {iz} of {int(x.sizes["nz"])} '
+                                      '(outboard midplane); dims (mu, v_par) as in GENE'}
+    ds['vsp_time'] = float(x['vsp_time'].values[-1])
+    ds['vsp_z_index'] = np.int32(iz)
+    return ds
+
+
+def write_nc(ds, dest: str):
+    """ds to dest, written to a temp file first; vsp_* arrays zlib-compressed when netCDF4 is installed."""
+    try:
+        import netCDF4  # noqa: F401
+        enc = {v: {'zlib': True, 'complevel': 4} for v in ds.data_vars
+               if str(v).startswith('vsp_') and ds[v].ndim == 2}
+    except ImportError:
+        enc = {}
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    tmp = dest + '.tmp'
+    ds.to_netcdf(tmp, encoding=enc or None)
+    os.replace(tmp, dest)
+
+
+def add_vsp_to_existing(param_file: str, dest: str) -> str:
+    """Add the vsp slices to an already built .nc; returns vsp_status."""
+    import xarray as xr
+    with xr.open_dataset(dest) as old:
+        ds = old.load()
+    ds = add_vsp(ds, param_file)
+    write_nc(ds, dest)
+    return str(ds['vsp_status'].item())
+
+
+def build(param_file: str, shot: int, subdir: str, vsp: bool = False):
+    """Load and analyse one run into a netCDF-ready Dataset (with vsp slices if vsp)."""
     from TPED.projects.GENE_sim_analysis.src.sim_assembler import GeneSimulationPlus
     from TPED.projects.MGKDB_tools.src.upload.quantity_info_xarray import prepare_attrs_for_netcdf
 
@@ -214,6 +286,8 @@ def build(param_file: str, shot: int, subdir: str):
     ds = add_cost(ds)
     ds = add_corner(ds, param_file)
     ds = add_location(ds, shot, subdir)
+    if vsp:
+        ds = add_vsp(ds, param_file)
     ds.attrs = prepare_attrs_for_netcdf(ds.attrs)
     return ds
 
@@ -244,7 +318,14 @@ if __name__ == '__main__':
                     help='folder depth searched below each diag dir (lithium_study/<shot>/<root>/x0_*/<tag>/scanfiles* is 5)')
     ap.add_argument('--skip-existing', action='store_true', help='leave runs whose .nc already exists')
     ap.add_argument('--dry-run', action='store_true', help='list runs and output paths; load nothing')
+    vsp_mode = ap.add_mutually_exclusive_group()
+    vsp_mode.add_argument('--vsp', action='store_true',
+                          help='also save midplane (mu, v_par) slices of the last vsp dump')
+    vsp_mode.add_argument('--vsp-only', action='store_true',
+                          help='only add the vsp slices to .nc files that already exist (no TPED analyses)')
     args = ap.parse_args()
+    if args.vsp_only and args.skip_existing:
+        ap.error('--vsp-only works on existing files; drop --skip-existing')
 
     if args.diag_dir is not None:
         jobs = [(args.shot[0] if args.shot and len(args.shot) == 1 else None, d) for d in args.diag_dir]
@@ -272,6 +353,9 @@ if __name__ == '__main__':
             dest = out_path(args.out_root, shot, sub, f)
             if args.skip_existing and os.path.exists(dest):
                 continue
+            if args.vsp_only and not os.path.exists(dest):
+                unplaced.append(f'no built .nc for {f} (expected {dest})')
+                continue
             groups[(shot, sub)].append((f, dest))
     for msg in unplaced:
         print(f'skipped: {msg}')
@@ -283,20 +367,29 @@ if __name__ == '__main__':
     if args.dry_run:
         raise SystemExit(0)
 
-    failed = []
+    failed, vsp_count = [], defaultdict(int)
     for (shot, sub), items in sorted(groups.items()):
         print(f'\n===== {shot}/{sub} =====')
         for f, dest in items:
             try:
-                ds = build(f, shot, sub)
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                ds.to_netcdf(dest)
+                if args.vsp_only:
+                    status = add_vsp_to_existing(f, dest)
+                    vsp_count[status] += 1
+                    print(f'vsp {status:11s} {dest}')
+                    continue
+                ds = build(f, shot, sub, vsp=args.vsp)
+                write_nc(ds, dest)
+                if args.vsp:
+                    vsp_count[str(ds['vsp_status'].item())] += 1
                 print(f'saved {dest}  [{ds["omega_source"].item()}, fit {ds["fit_verdict"].item()}, '
-                      f'{ds["mode_ID"].item()}]')
+                      f'{ds["mode_ID"].item()}'
+                      + (f', vsp {ds["vsp_status"].item()}' if args.vsp else '') + ']')
             except Exception:
                 traceback.print_exc()
                 failed.append(f)
     print(f'\nbuilt {n - len(failed)}/{n} runs'
           + (''.join(f'\n  failed: {f}' for f in failed) if failed else ''))
+    if vsp_count:
+        print('vsp: ' + ', '.join(f'{k} {v}' for k, v in sorted(vsp_count.items())))
     if failed:
         raise SystemExit(1)
