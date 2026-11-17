@@ -179,8 +179,8 @@ if __name__ == "__main__":
         print(flush=True)
 
     cols = ("MB", "steps", "window", "open", "sweep", "lookup", "fit")
-    print(f"{"run":60}" + "".join(f"{c:>9}" for c in cols) + "  note")
+    print(f"{'run':60}" + "".join(f"{c:>9}" for c in cols) + "  note")
     for r in rows:
         cells = "".join(f"{r[c]:>9.2f}" if isinstance(r.get(c), float) else
                         f"{r[c]:>9d}" if isinstance(r.get(c), int) else f"{'-':>9}" for c in cols)
-        print(f"{r["label"][-60:]:60}{cells}  {r.get('note', '')}")
+        print(f"{r['label'][-60:]:60}{cells}  {r.get('note', '')}")
