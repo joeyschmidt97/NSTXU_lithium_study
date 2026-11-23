@@ -11,10 +11,10 @@
     "outliers: corners_outlier.png, TPED's outlier analysis per corner and ky (grid-scale oscillation, gamma < 0, D/chi_e, chi_i/chi_e, x0).",
     "Any option key (field_omega, modes, mode_extent, outliers, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
     "enabled: false keeps an entry listed but skipped unless named with --shot and --x0.",
-    "cases: {NAME: x0} named case dirs to plot instead of the ped_grid corners (plot_corners --case): GENE under <diag_root>/x0_<x0>/<NAME>/, profiles under <ped_root>/<NAME>/; x0 null for the entry's own. ref_case: the one drawn as reference. scan_name: title text.",
+    "cases: {NAME: x0} named case dirs to plot instead of the ped_grid corners (plot_corners --case): GENE under <diag_root>/x0_<x0>/<NAME>/, profiles under <ped_root>/<NAME>/; x0 null for the entry's own. ref_case: the one drawn as reference. scan_name: title text. cases \"auto\": every case dir under <extra_root>/x0_<x0>/.",
     "A discharge key '<shot>_<name>' (e.g. 132543_nstxu_test) is its own results folder and summary group (update_results --group); its shot is the part before the first '_'.",
     "ky_log: log ky axis, symlog gamma/omega on the growth plots (plot_corners --ky-log); for entries that stitch ion- and electron-scale ky.",
-    "'<shot>_elec' (e.g. 132543_elec): named-case entry listing only the profiles run at electron scale; each case's ion-scale ky (diag_root corners, its _ky* siblings) stitched by ky with its electron-scale kymin runs (extra_roots, .../elec_scale_kymin), own results folder. Add a case (or an x0) when its elec_scale_kymin runs exist.",
+    "'<shot>_elec' (e.g. 132543_elec): named-case entry with cases \"auto\": every case dir under <extra_root>/x0_<x0>/ (the electron-scale kymin runs), each stitched by ky with its ion-scale runs (diag_root corners, its _ky* siblings); own results folder. New runs are picked up without editing this file.",
     "extra_roots also apply to named-case entries: each case is read under every root."
   ],
   "defaults": {
@@ -95,11 +95,9 @@
         "extra_roots": [
           "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/elec_scale_kymin"
         ],
-        "cases": {
-          "Teh1.00_Tew1.00_neh1.00_new1.00": null
-        },
-        "ref_case": null,
-        "scan_name": "nominal, ion + electron scale ky",
+        "cases": "auto",
+        "ref_case": "Teh1.00_Tew1.00_neh1.00_new1.00",
+        "scan_name": "ion + electron scale ky",
         "ky_log": true
       }
     },

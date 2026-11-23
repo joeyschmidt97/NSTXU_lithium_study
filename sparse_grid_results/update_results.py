@@ -59,14 +59,14 @@ never mixes into <shot>/:
 It has no res_check batches. --group picks entries by that key.
 
 Stitched ion + electron scale (132543_elec): a named-case entry under its own
-key "<shot>_elec" whose cases are only the profiles run at electron scale (for
-now the nominal Teh1.00_Tew1.00_neh1.00_new1.00), diag_root the ion-scale
+key "<shot>_elec" with "cases": "auto", i.e. every case dir found under
+<extra_root>/x0_<x0>/ (only the profiles run at electron scale), diag_root the ion-scale
 corners and extra_roots the electron-scale kymin root (corner_gene_scan --prefix
 ..._elec_scale_kymin): each case's ky from every root (corners, corners_ky*,
 elec_scale_kymin) merge into one scan with the full plot set, in its own folder
 beside <shot>/. "ky_log": true draws the growth plots on a log ky axis (symlog
-gamma/omega) so ky 0.1-200 reads on one axis. Add a case when its
-electron-scale runs exist:
+gamma/omega) so ky 0.1-200 reads on one axis. New electron-scale runs are
+picked up on the next update, no paths-file edit:
 
     sparse_grid_results/132543_elec/x0_0.845/corners/    the same plots, ky stitched
     sparse_grid_results/132543_elec/summary_<plot>.png
@@ -157,6 +157,18 @@ def expand_roots(diag_root, extra_roots=()) -> tuple:
     return roots[0], tuple(roots[1:])
 
 
+def auto_cases(extra_roots, x0) -> dict:
+    """{case name: None} for every case dir under <root>/x0_<x0>/ of each extra root
+    ("cases": "auto"), so new runs there are picked up without editing the paths
+    file; {} when none exists (e.g. off NERSC)."""
+    names = set()
+    for root in extra_roots:
+        d = os.path.join(root, f"x0_{float(x0):g}")
+        if os.path.isdir(d):
+            names.update(n for n in os.listdir(d) if os.path.isdir(os.path.join(d, n)))
+    return {n: None for n in sorted(names)}
+
+
 def load_entries(path: str = PATHS) -> list[dict]:
     """Every (shot, x0) entry of the paths file, sorted, with "defaults" folded in
     and glob patterns in diag_root / extra_roots expanded (expand_roots)."""
@@ -167,11 +179,13 @@ def load_entries(path: str = PATHS) -> list[dict]:
     for key, by_x0 in cfg["runs"].items():
         for x0, e in by_x0.items():
             diag, extra = e.get("diag_root"), tuple(e.get("extra_roots") or ())
+            auto = e.get("cases") == "auto"
             if not e.get("cases"):                    # a case entry's diag_root is a parent dir
                 diag, extra = expand_roots(diag, extra)
+            cases = auto_cases(extra, x0) if auto else dict(e.get("cases") or {})
             out.append({"shot": int(key.split("_")[0]), "group": key,
                         "x0": float(x0), "label": f"x0_{float(x0):g}",
-                        "cases": dict(e.get("cases") or {}), "ref_case": e.get("ref_case"),
+                        "cases": cases, "auto_cases": auto, "ref_case": e.get("ref_case"),
                         "scan_name": e.get("scan_name"),
                         "enabled": e.get("enabled", True), "diag_root": diag,
                         "ped_root": e.get("ped_root"), "res2_roots": tuple(e.get("res2_roots") or ()),
@@ -208,8 +222,9 @@ def describe(e) -> str:
     def where(p):
         return f"{p}  [{'ok' if p and os.path.isdir(p) else 'MISSING'}]"
     dirs = os.path.join(e["diag_root"] or "", e["label"])
-    lines = [f"{e['group']} {e['label']}" + ("" if e["enabled"] else "  (disabled)")]
-    if e["cases"]:
+    lines = [f"{e['group']} {e['label']}" + ("" if e["enabled"] else "  (disabled)")
+             + (f"  (cases: auto, {len(e['cases'])} found in extra_roots)" if e["auto_cases"] else "")]
+    if e["cases"] or e["auto_cases"]:
         for name, cx0 in case_x0s(e).items():
             ref = "  (ref)" if name == e["ref_case"] else ""
             lines += [f"    {name:<9} GENE {where(case_dir(e, name, cx0))}{ref}",
@@ -244,6 +259,9 @@ def update_cases(e, out_root: str = HERE):
         raise SystemExit(f"{e['group']}: a named-case entry needs diag_root and ped_root")
     out = os.path.join(out_root, e["group"], e["label"])
     x0s = case_x0s(e)
+    if not x0s:
+        raise SystemExit(f"{e['group']} {e['label']}: no case dirs under "
+                         + ", ".join(os.path.join(r, e["label"]) for r in e["extra_roots"]))
     if e["field_omega"]:
         from NSTXU_lithium_study.scripts.corners.field_omega import field_omega as fo
         print("--- field fits (field_omega --write)")
@@ -273,7 +291,7 @@ def update(e, out_root: str = HERE, nz: bool = False):
     cover every ky_roots root (diag_root, its _ky* siblings, extra_roots); the nz
     runs get only their own root's _ky* siblings. A named-case entry goes to
     update_cases."""
-    if e["cases"]:
+    if e["cases"] or e["auto_cases"]:
         return update_cases(e, out_root)
     from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
     d = pc.shot_defaults(e["shot"])
@@ -472,7 +490,8 @@ if __name__ == "__main__":
         raise SystemExit(0)
     groups = sorted({e["group"] for e in entries})
     # res_check: plain <shot> corner entries only (not 132543_elec, 132543_nstxu_*)
-    shots = sorted({e["shot"] for e in entries if not e["cases"] and e["group"] == str(e["shot"])})
+    shots = sorted({e["shot"] for e in entries
+                    if not (e["cases"] or e["auto_cases"]) and e["group"] == str(e["shot"])})
     if args.summary_only:
         for group in groups:
             print(f"\n===== {group} summary =====")
