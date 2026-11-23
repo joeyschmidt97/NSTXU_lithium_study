@@ -977,6 +977,15 @@ def legend_right(fig, handles, extra=(), title=LEGEND_TITLE):
                frameon=False, fontsize=8, title_fontsize=9)
 
 
+def shade_y(ax, lo, hi, **kw):
+    """axhspan(lo, hi) that leaves the y range to the data: a reference band (the
+    symlog linear region, a +-10% tolerance) is clipped to the data's limits instead
+    of stretching them. Call after the data is plotted."""
+    lim = ax.get_ylim()
+    ax.axhspan(lo, hi, **kw)
+    ax.set_ylim(lim)
+
+
 def save(fig, out, name, written):
     path = os.path.join(out, name)
     fig.savefig(path, dpi=DPI, facecolor=SURFACE)
@@ -1046,8 +1055,11 @@ def plot_growth(ds, out, written, guesses=False):
         if ky_log:          # ion and electron scale on one axis: log ky, symlog gamma/omega
             ax.set_xscale("log")
             ax.set_yscale("symlog", linthresh=KY_LOG_LINTHRESH)
-            ax.axhspan(-KY_LOG_LINTHRESH, KY_LOG_LINTHRESH, color=GRID, alpha=0.35, lw=0,
-                       zorder=0)
+            lo = ax.dataLim.y0                    # before the band, which spans -linthresh
+            shade_y(ax, -KY_LOG_LINTHRESH, KY_LOG_LINTHRESH, color=GRID, alpha=0.35, lw=0,
+                    zorder=0)
+            if lo >= 0:     # no negative data: the symlog margin below 0 is a whole decade
+                ax.set_ylim(bottom=-0.25 * KY_LOG_LINTHRESH)
         if not modes:
             ax.set_xlabel(r"$k_y\rho_{ref}$")
         ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
@@ -2430,8 +2442,8 @@ def pct_violins(ax, ky, pct, var, base, alt):
             vp["cmedians"].set_color(INK)
         for v, color, weak in pct[k]:
             ax.plot(k, v, "D", ms=5, color=color, alpha=0.45 if weak else 1.0, zorder=5)
-    ax.axhspan(-10, 10, color=GRID, alpha=0.5, lw=0, zorder=0)
     ax.axhline(0, color=MUTED, lw=0.8)
+    shade_y(ax, -10, 10, color=GRID, alpha=0.5, lw=0, zorder=0)
     ax.set_xlabel(r"$k_y\rho_{ref}$")
     ax.set_ylabel(f"{var}: ({alt} - {base}) / |{base}| [%]")
     ax.set_title(f"{var} % difference per ky (violin: KDE over corners; band: ±10%)",
