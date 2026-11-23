@@ -58,14 +58,15 @@ never mixes into <shot>/:
 
 It has no res_check batches. --group picks entries by that key.
 
-Stitched ion + electron scale (132543_elec): a corner entry under its own key
-"<shot>_elec" with diag_root the ion-scale corners and extra_roots the
-electron-scale kymin root (corner_gene_scan --prefix ..._elec_scale_kymin), so
-every ky of a corner, ion and electron scale, merges into one scan and gets the
-full plot set, in its own folder beside <shot>/; "ky_log": true draws the growth
-plots on a log ky axis (symlog gamma/omega) so ky 0.1-200 reads on one axis.
-A corner with no electron-scale runs keeps its ion-scale ky only. Only the plain
-<shot> key runs the res_check batches:
+Stitched ion + electron scale (132543_elec): a named-case entry under its own
+key "<shot>_elec" whose cases are only the profiles run at electron scale (for
+now the nominal Teh1.00_Tew1.00_neh1.00_new1.00), diag_root the ion-scale
+corners and extra_roots the electron-scale kymin root (corner_gene_scan --prefix
+..._elec_scale_kymin): each case's ky from every root (corners, corners_ky*,
+elec_scale_kymin) merge into one scan with the full plot set, in its own folder
+beside <shot>/. "ky_log": true draws the growth plots on a log ky axis (symlog
+gamma/omega) so ky 0.1-200 reads on one axis. Add a case when its
+electron-scale runs exist:
 
     sparse_grid_results/132543_elec/x0_0.845/corners/    the same plots, ky stitched
     sparse_grid_results/132543_elec/summary_<plot>.png
@@ -235,7 +236,9 @@ def case_dir(e, name, x0) -> str:
 
 def update_cases(e, out_root: str = HERE):
     """update() for a named-case entry: field fits on each case dir, then
-    plot_corners.run(cases=...) into <out_root>/<group>/x0_<x0>/."""
+    plot_corners.run(cases=...) into <out_root>/<group>/x0_<x0>/. Each case is
+    read (and fitted) under every ky_roots root: diag_root, its _ky* siblings and
+    extra_roots, merged by ky."""
     from NSTXU_lithium_study.scripts.corners.plots import plot_corners as pc
     if not (e["diag_root"] and e["ped_root"]):
         raise SystemExit(f"{e['group']}: a named-case entry needs diag_root and ped_root")
@@ -245,20 +248,22 @@ def update_cases(e, out_root: str = HERE):
         from NSTXU_lithium_study.scripts.corners.field_omega import field_omega as fo
         print("--- field fits (field_omega --write)")
         for name, x0 in x0s.items():
-            path = case_dir(e, name, x0)
-            if not os.path.isdir(path):
-                print(f"{name}: no {path}; no fits")
-                continue
-            try:
-                fo.run(x0=(x0,), write=True, path=path)
-            except Exception:
-                traceback.print_exc()
-                print(f"field fits failed under {path}; plotting with the fits already there")
+            for root in pc.ky_roots(e["diag_root"], e["extra_roots"]):
+                path = case_dir({**e, "diag_root": root}, name, x0)
+                if not os.path.isdir(path):
+                    print(f"{name}: no {path}; no fits")
+                    continue
+                try:
+                    fo.run(x0=(x0,), write=True, path=path)
+                except Exception:
+                    traceback.print_exc()
+                    print(f"field fits failed under {path}; plotting with the fits already there")
     kw = {k: e[k] for k in OPTIONS if e[k] is not None}
     cases = [pc.case_point(n, x, n == e["ref_case"]) for n, x in x0s.items()]
     print("--- plots (plot_corners --case)")
     return pc.run(e["diag_root"], e["ped_root"], out=out, x0=(e["x0"],), shot=e["shot"],
-                  cases=cases, scan=e["scan_name"] or e["group"], **kw)
+                  cases=cases, scan=e["scan_name"] or e["group"],
+                  extra_roots=e["extra_roots"], **kw)
 
 
 def update(e, out_root: str = HERE, nz: bool = False):
