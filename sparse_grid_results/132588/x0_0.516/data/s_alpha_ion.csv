@@ -1,2 +1,14 @@
 case,scan,ref,alpha_MHD,shat,ky_ion,gamma_ion,mode_ion,peak
 (1, 1, 1, 1) ref,corners,False,4.32144,0.707023,1.5,0.109,MTM,cusp
+(0.8, 0.8, 0.8, 0.8),corners,False,2.47595,0.935012,1.5,0.065004,MTM,cusp
+(0.8, 0.8, 0.8, 1.2),corners,False,3.70541,0.760044,3,-0.014,ITG_TEM,max
+(0.8, 0.8, 1.2, 0.8),corners,False,3.79092,0.629025,2,0.177,MTM,cusp
+(0.8, 0.8, 1.2, 1.2),corners,False,7.21498,0.335471,2,0.403,MTM,cusp
+(0.8, 1.2, 0.8, 0.8),corners,False,2.42841,0.936089,1.5,0.038727,MTM,max
+(0.8, 1.2, 0.8, 1.2),corners,False,3.74683,0.754719,3,-0.014,ITG_TEM,max
+(0.8, 1.2, 1.2, 0.8),corners,False,3.72987,0.632403,1.5,0.137,MTM,cusp
+(0.8, 1.2, 1.2, 1.2),corners,False,7.26198,0.340467,2,0.355,MTM,cusp
+(1.2, 0.8, 0.8, 0.8),corners,False,2.18213,1.07263,0.7,0.000864,MTM,max
+(1.2, 0.8, 0.8, 1.2),corners,False,3.73147,0.853121,3,-0.026393,ITG_TEM,max
+(1.2, 0.8, 1.2, 0.8),corners,False,3.58428,0.806239,1,0.034579,MTM,max
+(1.2, 0.8, 1.2, 1.2),corners,False,8.26954,0.445355,1.5,0.169,MTM,max
