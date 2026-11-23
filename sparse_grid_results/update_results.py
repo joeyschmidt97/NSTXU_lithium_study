@@ -117,12 +117,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PATHS = os.path.join(HERE, "gene_run_paths.json")
 #: plot_corners.run options an entry (or "defaults") may set
 OPTIONS = ("modes", "mode_extent", "outliers", "field_fits", "spread", "max_params",
-           "group_tol", "ky_log")
+           "group_tol", "ky_log", "group_parity_tol", "group_diag")
 #: on/off switches an entry (or "defaults", or the CLI) may set: the plot_corners
 #: options above, field_omega, the field fits written before plotting, and
 #: nz_subdir, the full plot set for the nz_compare runs in x0_<x0>/nz<N>/
 SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "outliers", "field_fits",
-            "ky_log")
+            "ky_log", "group_diag")
 #: two x0 are the same scan when closer than this (rho_tor)
 X0_TOL = 1e-4
 #: plots put side by side across radii in <shot>/summary_<plot>.png, as paths
@@ -426,6 +426,10 @@ if __name__ == "__main__":
     ap.add_argument("--group-tol", type=float, default=None,
                     help="corners_mode_groups.png grouping distance (in mode widths); overrides the "
                          "paths file [plot_corners.GROUP_TOL]")
+    ap.add_argument("--group-parity-tol", type=float, default=None,
+                    help="corners_mode_groups.png: also split by phi/Apar parity, a parity "
+                         "difference of this much counting as --group-tol apart; overrides the "
+                         "paths file [off]")
     ap.add_argument("--force-reload", action="store_true",
                     help="reread every GENE run (growth rates, mode IDs, outlier checks, mode "
                          "structures, field fits) and overwrite the run cache, "
@@ -443,7 +447,9 @@ if __name__ == "__main__":
                                     "corners_mode_groups.png"),
                     ("outliers", "corners_outlier.png: TPED outlier analysis per ky"),
                     ("field_fits", "carry decaying/ambiguous field fits"),
-                    ("ky_log", "log ky axis, symlog gamma/omega on the growth plots")):
+                    ("ky_log", "log ky axis, symlog gamma/omega on the growth plots"),
+                    ("group_diag", "corners_mode_groups_diag.png (with --mode-extent): can "
+                                   "the group distance separate the modes?")):
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, default=None,
                         action=argparse.BooleanOptionalAction,
                         help=f"{what}; overrides the paths file [per entry]")
@@ -459,6 +465,8 @@ if __name__ == "__main__":
         e.update({k: getattr(args, k) for k in SWITCHES if getattr(args, k) is not None})
         if args.group_tol is not None:
             e["group_tol"] = args.group_tol
+        if args.group_parity_tol is not None:
+            e["group_parity_tol"] = args.group_parity_tol
     print("\n".join(describe(e) for e in entries))
     if args.list:
         raise SystemExit(0)
