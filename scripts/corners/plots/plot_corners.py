@@ -362,7 +362,7 @@ STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 #: on average, not by a chain. Panels per row; points of the common z grid. 0.4, not
 #: 0.3: with parity and omega sign splitting the modes, 0.3 cut the one ETG branch
 #: of 132543_elec in two at ky ~ 24 (A_par parity drifts smoothly along it).
-GROUP_TOL = 0.3
+GROUP_TOL = 0.4
 GROUP_COLS = 4
 GROUP_NZ = 801
 #: --group-parity-tol: parity factor |sum f| / sum |f| along z per field (as David's
@@ -371,7 +371,7 @@ GROUP_NZ = 801
 #: ITG/KBM (phi even) of one envelope land together. A parity difference of this
 #: much counts as GROUP_TOL apart. 0 or None: off (EMD alone). On since 132543_elec
 #: (it took the MTM out of the ITG/TEM group).
-GROUP_PARITY_TOL = None
+GROUP_PARITY_TOL = 0.3
 #: corners_mode_groups.png: runs whose omega has opposite sign (ion vs electron
 #: diamagnetic direction) never share a group. Shape and parity cannot tell a narrow
 #: ion-scale KBM/ITG from a narrow ETG at ky > 100 (132543_elec group 4); the drift

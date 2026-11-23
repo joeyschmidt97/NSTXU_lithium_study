@@ -447,7 +447,7 @@ if __name__ == "__main__":
     ap.add_argument("--group-parity-tol", type=float, default=None,
                     help="corners_mode_groups.png: also split by phi/Apar parity, a parity "
                          "difference of this much counting as --group-tol apart; overrides the "
-                         "paths file [off]")
+                         "paths file; 0: off [plot_corners.GROUP_PARITY_TOL]")
     ap.add_argument("--force-reload", action="store_true",
                     help="reread every GENE run (growth rates, mode IDs, outlier checks, mode "
                          "structures, field fits) and overwrite the run cache, "
