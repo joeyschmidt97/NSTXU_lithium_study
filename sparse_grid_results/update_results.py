@@ -58,6 +58,18 @@ never mixes into <shot>/:
 
 It has no res_check batches. --group picks entries by that key.
 
+Stitched ion + electron scale (132543_elec): a corner entry under its own key
+"<shot>_elec" with diag_root the ion-scale corners and extra_roots the
+electron-scale kymin root (corner_gene_scan --prefix ..._elec_scale_kymin), so
+every ky of a corner, ion and electron scale, merges into one scan and gets the
+full plot set, in its own folder beside <shot>/; "ky_log": true draws the growth
+plots on a log ky axis (symlog gamma/omega) so ky 0.1-200 reads on one axis.
+A corner with no electron-scale runs keeps its ion-scale ky only. Only the plain
+<shot> key runs the res_check batches:
+
+    sparse_grid_results/132543_elec/x0_0.845/corners/    the same plots, ky stitched
+    sparse_grid_results/132543_elec/summary_<plot>.png
+
 What each GENE run gives (growth rate and status, field fit, mode ID, outlier
 check, mode structure, vsp edges) is cached beside it, <scanfiles dir>/.plot_cache.pkl
 (scripts/corners/run_cache.py), and reread only when that run's files change, so a
@@ -87,6 +99,7 @@ any shot that has it). One entry failing is reported and the rest still run.
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --shot 129015 --rescheck-code h3r94s
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --no-rescheck
     python -m NSTXU_lithium_study.sparse_grid_results.update_results --group 132543_nstxu_test --modes --mode-extent --outliers
+    python -m NSTXU_lithium_study.sparse_grid_results.update_results --group 132543_elec
 """
 
 from __future__ import annotations
@@ -103,11 +116,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PATHS = os.path.join(HERE, "gene_run_paths.json")
 #: plot_corners.run options an entry (or "defaults") may set
 OPTIONS = ("modes", "mode_extent", "outliers", "field_fits", "spread", "max_params",
-           "group_tol")
+           "group_tol", "ky_log")
 #: on/off switches an entry (or "defaults", or the CLI) may set: the plot_corners
 #: options above, field_omega, the field fits written before plotting, and
 #: nz_subdir, the full plot set for the nz_compare runs in x0_<x0>/nz<N>/
-SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "outliers", "field_fits")
+SWITCHES = ("field_omega", "nz_subdir", "modes", "mode_extent", "outliers", "field_fits",
+            "ky_log")
 #: two x0 are the same scan when closer than this (rho_tor)
 X0_TOL = 1e-4
 #: plots put side by side across radii in <shot>/summary_<plot>.png, as paths
@@ -423,7 +437,8 @@ if __name__ == "__main__":
                     ("mode_extent", "corners_mode_extent.png, corners_mode_structure.png, "
                                     "corners_mode_groups.png"),
                     ("outliers", "corners_outlier.png: TPED outlier analysis per ky"),
-                    ("field_fits", "carry decaying/ambiguous field fits")):
+                    ("field_fits", "carry decaying/ambiguous field fits"),
+                    ("ky_log", "log ky axis, symlog gamma/omega on the growth plots")):
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, default=None,
                         action=argparse.BooleanOptionalAction,
                         help=f"{what}; overrides the paths file [per entry]")
@@ -443,7 +458,8 @@ if __name__ == "__main__":
     if args.list:
         raise SystemExit(0)
     groups = sorted({e["group"] for e in entries})
-    shots = sorted({e["shot"] for e in entries if not e["cases"]})    # res_check: corners only
+    # res_check: plain <shot> corner entries only (not 132543_elec, 132543_nstxu_*)
+    shots = sorted({e["shot"] for e in entries if not e["cases"] and e["group"] == str(e["shot"])})
     if args.summary_only:
         for group in groups:
             print(f"\n===== {group} summary =====")

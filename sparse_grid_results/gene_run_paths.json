@@ -12,7 +12,9 @@
     "Any option key (field_omega, modes, mode_extent, outliers, field_fits, spread, max_params) set in an entry overrides 'defaults'; a CLI flag overrides both.",
     "enabled: false keeps an entry listed but skipped unless named with --shot and --x0.",
     "cases: {NAME: x0} named case dirs to plot instead of the ped_grid corners (plot_corners --case): GENE under <diag_root>/x0_<x0>/<NAME>/, profiles under <ped_root>/<NAME>/; x0 null for the entry's own. ref_case: the one drawn as reference. scan_name: title text.",
-    "A discharge key '<shot>_<name>' (e.g. 132543_nstxu_test) is its own results folder and summary group (update_results --group); its shot is the part before the first '_'."
+    "A discharge key '<shot>_<name>' (e.g. 132543_nstxu_test) is its own results folder and summary group (update_results --group); its shot is the part before the first '_'.",
+    "ky_log: log ky axis, symlog gamma/omega on the growth plots (plot_corners --ky-log); for entries that stitch ion- and electron-scale ky.",
+    "'<shot>_elec' (e.g. 132543_elec): ion-scale corners (diag_root, its _ky* siblings) stitched by ky with the electron-scale kymin runs (extra_roots, .../elec_scale_kymin), own results folder; add an x0 here when its elec_scale_kymin runs exist."
   ],
   "defaults": {
     "field_omega": true,
@@ -83,6 +85,19 @@
         "res2_roots": [],
         "nz_compare": null,
         "nz_root": null
+      }
+    },
+    "132543_elec": {
+      "0.845": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/corners",
+        "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
+        "extra_roots": [
+          "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/elec_scale_kymin"
+        ],
+        "res2_roots": [],
+        "nz_compare": null,
+        "nz_root": null,
+        "ky_log": true
       }
     },
     "132588": {
