@@ -33,7 +33,7 @@ NAME = ".plot_cache.pkl"
 HASH_MAX = 1 << 20          # bytes; larger files are matched by size and mtime
 FLUSH_EVERY = 50            # new values between writes
 # bump one when what it computes changes: its stored values are then recomputed
-VERSION = {"read_run": 1, "classify": 1, "outlier": 1, "mode_profile": 1, "vspace": 1,
+VERSION = {"read_run": 1, "classify": 1, "outlier": 1, "mode_profile": 2, "vspace": 1,
            "field_fit": 1}
 FILES = {"read_run": ("parameters", "omega"), "classify": None, "outlier": None,
          "mode_profile": ("parameters", "field"), "vspace": ("parameters", "vsp"),

@@ -57,7 +57,15 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
                                 --group-tol, one column per group with its members'
                                 |phi| (top) and |Apar| (bottom) overlaid, coloured by mode (under --modes), runs
                                 in no group together in a last "outliers" panel;
-                                + corners_mode_groups.csv
+                                + corners_mode_groups.csv (with each run's parity
+                                factor |sum f| / sum |f| of phi and Apar);
+                                --group-parity-tol also splits by that parity
+    corners_mode_groups_diag.png (--mode-extent --group-diag) does the group distance
+                                separate the modes? the pairwise distance sorted by
+                                mode (--modes), same- vs different-mode distance
+                                histograms against --group-tol, phi vs Apar EMD per
+                                pair, phi vs Apar parity per run;
+                                + corners_mode_groups_diag.csv (one row per pair)
     corners_vspace_edge.png     (--vspace-edge) has f decayed by the edges of the velocity
                                 box? GENE's vsp <|f|^2>^1/2 (per species, over x and ky)
                                 at v_par = -lv (<) and +lv (>) (left) and at the top mu
@@ -355,6 +363,12 @@ STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 GROUP_TOL = 0.3
 GROUP_COLS = 4
 GROUP_NZ = 801
+#: --group-parity-tol: parity factor |sum f| / sum |f| along z per field (as David's
+#: info_for_astra.py; ~1 even in that field, ~0 odd). EMD on |f| cannot see the null
+#: an odd field has at z = 0 (it holds almost no weight), so an MTM (phi odd) and an
+#: ITG/KBM (phi even) of one envelope land together. With a tol set, a parity
+#: difference of that much counts as GROUP_TOL apart. None: off (EMD alone).
+GROUP_PARITY_TOL = None
 #: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
 STRUCT_BOX_IN = 0.95
 STRUCT_MAX_W = 18
@@ -1408,20 +1422,24 @@ def plot_outliers(ds, out, written):
 
 
 def mode_profile(par_path: str) -> dict:
-    """{"zgrid": ballooning angle / pi, field: |f| / max|f|} on the ballooning grid
-    (nx0 nz0 points), last field time; a field the run does not have is left out."""
+    """{"zgrid": ballooning angle / pi, field: |f| / max|f|, "parity": {field:
+    |sum f| / sum |f|}} on the ballooning grid (nx0 nz0 points), last field time;
+    a field the run does not have is left out. Parity is of the complex field, so
+    phase-free: ~1 even (ballooning in phi), ~0 odd (tearing in phi)."""
     field = re.sub(r"parameters_(\d{4})$", r"field_\1", par_path)
     if not os.path.isfile(field) or os.path.getsize(field) == 0:
         return {}
     fx = GeneField(field).field_filepath_to_xarray("last", list(FIELDS))
     if fx is None:
         return {}
-    out = {"zgrid": fx.zgrid.values}
+    out = {"zgrid": fx.zgrid.values, "parity": {}}
     for name in FIELDS:
         if name in fx:
-            f = np.abs(fx[name].values[-1])
+            c = fx[name].values[-1]
+            f = np.abs(c)
             if f.max() > 0:
                 out[name] = f / f.max()
+                out["parity"][name] = float(np.abs(c.sum()) / f.sum())
     return out
 
 
@@ -1652,20 +1670,32 @@ def mode_width(f, z) -> float:
     return float(np.sqrt(((z - mu) ** 2 * f).sum() / f.sum()))
 
 
-def mode_emd(a: dict, b: dict, z) -> float:
-    """Distance between two mode_profile shapes on the common grid *z*: each field
-    a distribution of |f| along z, earth mover's distance between the two over
-    their mean rms width (mode_width), so the result is in mode widths, not z/pi;
-    the largest over the fields both runs have, so a narrow |phi| does not hide a
-    wide |Apar|."""
-    d = []
+def mode_emd_fields(a: dict, b: dict, z) -> dict:
+    """{field: distance} between two mode_profile shapes on the common grid *z*,
+    for the fields both runs have: |f| along z as a distribution, earth mover's
+    distance between the two over their mean rms width (mode_width), so in mode
+    widths, not z/pi."""
+    d = {}
     for f in FIELDS:
         if f in a and f in b:
             ca = np.cumsum(a[f]) / a[f].sum()
             cb = np.cumsum(b[f]) / b[f].sum()
             w = (mode_width(a[f], z) + mode_width(b[f], z)) / 2
-            d.append(np.abs(ca - cb).sum() * (z[1] - z[0]) / max(w, z[1] - z[0]))
-    return float(max(d)) if d else np.inf
+            d[f] = float(np.abs(ca - cb).sum() * (z[1] - z[0]) / max(w, z[1] - z[0]))
+    return d
+
+
+def mode_emd(a: dict, b: dict, z) -> float:
+    """mode_emd_fields' largest field, so a narrow |phi| does not hide a wide |Apar|;
+    inf when the runs share no field."""
+    d = mode_emd_fields(a, b, z)
+    return max(d.values()) if d else np.inf
+
+
+def parity_gap(pa: dict, pb: dict) -> float:
+    """Largest |parity difference| over the fields both runs have (mode_profile's
+    "parity"); 0 when they share none."""
+    return max((abs(pa[f] - pb[f]) for f in FIELDS if f in pa and f in pb), default=0.0)
 
 
 def group_modes(dist: np.ndarray, tol=GROUP_TOL) -> list[list[int]]:
@@ -1687,7 +1717,8 @@ def group_modes(dist: np.ndarray, tol=GROUP_TOL) -> list[list[int]]:
     return sorted(groups, key=lambda g: (-len(g), g[0]))
 
 
-def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
+def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL, parity_tol=GROUP_PARITY_TOL,
+                     diag=False):
     """Converged runs (GENE or a field fit) grouped by mode structure: each
     mode_profile put on one z grid (zero beyond a run's own domain), the earth
     mover's distance between every pair (mode_emd) and average-linkage groups
@@ -1695,7 +1726,11 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     |phi| overlaid on top and |Apar| below (shared z), each in its mode's colour
     (grey without --modes); runs in no group share a last "outliers" panel. Panels are
     zoomed to where any member is above 1% of its peak. corners_mode_groups.csv
-    holds each run's group (0: outlier) and distance to its group's medoid."""
+    holds each run's group (0: outlier) and distance to its group's medoid.
+
+    parity_tol: also split by parity (GROUP_PARITY_TOL): the distance becomes the
+    larger of the EMD and tol * parity gap / parity_tol. diag: also
+    corners_mode_groups_diag.png (plot_mode_groups_diag)."""
     status, gam, ky = ds.status.values, ds.gamma.values, ds.ky.values
     m = ds["mode"].values if "mode" in ds else None
     runs = sorted(k for k in profiles if status[k] in ("ok", "field"))
@@ -1706,11 +1741,22 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     z = np.linspace(-zmax, zmax, GROUP_NZ)
     shapes = [{f: np.interp(z, profiles[k]["zgrid"], profiles[k][f], left=0, right=0)
                for f in FIELDS if f in profiles[k]} for k in runs]
+    parity = [profiles[k].get("parity", {}) for k in runs]   # {} from an old cache entry
     n = len(runs)
-    dist = np.zeros((n, n))
+    emd_f = {f: np.full((n, n), np.nan) for f in FIELDS}
+    gap = np.zeros((n, n))
     for p in range(n):
+        for f in FIELDS:
+            emd_f[f][p, p] = 0.0
         for q in range(p + 1, n):
-            dist[p, q] = dist[q, p] = mode_emd(shapes[p], shapes[q], z)
+            for f, v in mode_emd_fields(shapes[p], shapes[q], z).items():
+                emd_f[f][p, q] = emd_f[f][q, p] = v
+            gap[p, q] = gap[q, p] = parity_gap(parity[p], parity[q])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)          # pairs sharing no field
+        emd = np.fmax.reduce([emd_f[f] for f in FIELDS])
+    emd[np.isnan(emd)] = np.inf
+    dist = np.maximum(emd, tol * gap / parity_tol) if parity_tol else emd
     groups = group_modes(dist, tol)
     off = dist[np.triu_indices(n, 1)]
     if off.size:
@@ -1783,7 +1829,9 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     legend_right(fig, handles, title="mode")
     skipped = sum(1 for k in profiles if k not in runs)
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode structures grouped by "
-                 f"shape (earth mover's distance along z / mode width, average linkage <= {tol:g})\n"
+                 f"shape (earth mover's distance along z / mode width"
+                 + (f", parity gap / {parity_tol:g}" if parity_tol else "")
+                 + f", average linkage <= {tol:g})\n"
                  f"{n} converged run(s) in {len(groups) - len(lone)} group(s)"
                  f" + {len(lone)} outlier(s); {skipped} unconverged left out",
                  x=0.02, ha="left", fontsize=11, color=INK)
@@ -1795,12 +1843,141 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL):
     path = data_path(out, "corners_mode_groups.csv")
     with open(path, "w") as fh:
         fh.write(",".join(["corner", *ORDER, "ky", "status", "gamma", "mode", "group",
-                           "emd_to_medoid"]) + "\n")
+                           "emd_to_medoid", "parity_phi", "parity_apar"]) + "\n")
         for k, (i, j) in enumerate(runs):
             fh.write(",".join([str(ds.corner.values[i]),
                                *(f"{ds[q].values[i]:g}" for q in ORDER), f"{ky[j]:g}",
                                str(status[i, j]), f"{gam[i, j]:.6g}", mode_of(k),
-                               str(group_of[k]), f"{medoid_d[k]:.4g}"]) + "\n")
+                               str(group_of[k]), f"{medoid_d[k]:.4g}",
+                               *(f"{parity[k].get(f, np.nan):.4g}" for f in FIELDS)]) + "\n")
+    written.append(path)
+    if diag:
+        plot_mode_groups_diag(ds, out, written, runs, emd_f, dist, parity,
+                              [mode_of(k) for k in range(n)], group_of, tol, parity_tol)
+
+
+def plot_mode_groups_diag(ds, out, written, runs, emd_f, dist, parity, labels, group_of, tol,
+                          parity_tol):
+    """Can the corners_mode_groups.png distance tell the modes apart? Runs sorted by
+    mode label (from --modes) then ky. (a) the pairwise distance as a heatmap,
+    label blocks outlined, cells the grouping would join (<= tol) dotted; (b) that
+    distance for same-label vs different-label pairs: a different-label pair under
+    tol is a wrong merge, a same-label pair over it a needless split, and overlapping
+    histograms mean no tol separates them; (c) |phi| EMD vs |Apar| EMD per pair,
+    which field sets the max; (d) parity factor of phi vs Apar per run (tearing:
+    phi odd, Apar even, lower right; ballooning: upper left), labelled by ky.
+    + corners_mode_groups_diag.csv, one row per pair."""
+    ky = ds.ky.values
+    n = len(runs)
+    lab = [x or "–" for x in labels]
+    order = sorted(range(n), key=lambda k: (lab[k], ky[runs[k][1]]))
+    colour = [MODE_COLOR.get(x, MODE_COLOR["unidentified"]) if x != "–" else MUTED for x in lab]
+    iu = np.triu_indices(n, 1)
+    same = np.array([lab[p] == lab[q] for p, q in zip(*iu)], dtype=bool)
+    d = dist[iu]
+    finite = np.isfinite(d)
+    cap = 4 * tol
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 11.5))
+    (hm, hist), (sc, par) = axes
+
+    # (a) heatmap, sorted; sequential one hue, dark = close
+    shown = np.clip(dist[np.ix_(order, order)], 0, cap)
+    im = hm.imshow(shown, cmap="Blues_r", vmin=0, vmax=cap, interpolation="nearest")
+    close = (dist[np.ix_(order, order)] <= tol) & ~np.eye(n, dtype=bool)
+    yy, xx = np.nonzero(close)
+    hm.scatter(xx, yy, s=6, color=SURFACE, marker="o", lw=0)
+    edges = [0] + [r for r in range(1, n) if lab[order[r]] != lab[order[r - 1]]] + [n]
+    for a, b in zip(edges[:-1], edges[1:]):
+        hm.add_patch(plt.Rectangle((a - 0.5, a - 0.5), b - a, b - a, fill=False, ec=INK, lw=1.4))
+    ticks = [f"{MODE_SHORT.get(lab[k], lab[k])} {ky[runs[k][1]]:g}" for k in order]
+    hm.set_xticks(range(n), ticks, rotation=90, fontsize=6.5)
+    hm.set_yticks(range(n), ticks, fontsize=6.5)
+    for t, k in zip(hm.get_xticklabels(), order):
+        t.set_color(colour[k])
+    for t, k in zip(hm.get_yticklabels(), order):
+        t.set_color(colour[k])
+    cb = fig.colorbar(im, ax=hm, fraction=0.046, pad=0.03)
+    cb.set_label(f"distance (mode widths), capped at {cap:g}", fontsize=8)
+    cb.ax.axhline(tol, color=INK, lw=1)
+    hm.set_title("(a) pairwise distance, sorted by mode then ky; boxes: one mode;\n"
+                 f"dots: pairs <= tol {tol:g}", loc="left", fontsize=9, color=INK)
+
+    # (b) same vs different label
+    bins = np.linspace(0, cap, 33)
+    for sel, name, c in ((same, "same mode", MUTED), (~same, "different mode", "#e34948")):
+        v = np.clip(d[sel & finite], 0, cap)
+        if v.size:
+            hist.hist(v, bins=bins, histtype="step", lw=2, color=c, label=f"{name} ({v.size})")
+    hist.axvline(tol, color=INK, ls="--", lw=1, label=f"tol {tol:g}")
+    wrong = int(((d <= tol) & ~same).sum())
+    split = int(((d > tol) & same).sum())
+    hist.set_xlabel(f"distance (mode widths), capped at {cap:g}")
+    hist.set_ylabel("pairs")
+    hist.set_title(f"(b) {wrong} different-mode pair(s) <= tol (wrong merges), "
+                   f"{split} same-mode pair(s) > tol", loc="left", fontsize=9, color=INK)
+    hist.legend(frameon=False, fontsize=8)
+    tidy(hist)
+
+    # (c) which field sets the EMD
+    ep, ea = emd_f[FIELDS[0]][iu], emd_f[FIELDS[1]][iu]
+    for sel, name, c in ((same, "same mode", MUTED), (~same, "different mode", "#e34948")):
+        sc.scatter(np.clip(ep[sel], 0, cap), np.clip(ea[sel], 0, cap), s=14, color=c,
+                   alpha=0.7, lw=0, label=name)
+    sc.plot([0, cap], [0, cap], color=GRID, lw=1)
+    sc.axvline(tol, color=INK, ls="--", lw=0.8)
+    sc.axhline(tol, color=INK, ls="--", lw=0.8)
+    sc.set_xlim(0, cap * 1.03)
+    sc.set_ylim(0, cap * 1.03)
+    sc.set_xlabel(r"$|\phi|$ EMD (mode widths)")
+    sc.set_ylabel(r"$|A_\parallel|$ EMD (mode widths)")
+    sc.set_title("(c) per-field EMD per pair; the grouping uses the larger\n"
+                 "(below both dashed lines: EMD joins them)", loc="left", fontsize=9, color=INK)
+    sc.legend(frameon=False, fontsize=8)
+    tidy(sc)
+
+    # (d) parity per run
+    pp = np.array([parity[k].get(FIELDS[0], np.nan) for k in range(n)])
+    pa = np.array([parity[k].get(FIELDS[1], np.nan) for k in range(n)])
+    if np.isfinite(pp).any() and np.isfinite(pa).any():
+        for k in range(n):
+            par.scatter(pp[k], pa[k], s=40, color=colour[k], ec=SURFACE, lw=1.5, zorder=3)
+            par.annotate(f"{ky[runs[k][1]]:g} g{group_of[k]}", (pp[k], pa[k]), fontsize=6.5,
+                         color=INK, xytext=(4, 3), textcoords="offset points")
+        par.set_xlim(-0.03, 1.03)
+        par.set_ylim(-0.03, 1.03)
+        par.set_xlabel(r"parity of $\phi$  $|\sum\phi|/\sum|\phi|$ (1 even, 0 odd)")
+        par.set_ylabel(r"parity of $A_\parallel$  $|\sum A_\parallel|/\sum|A_\parallel|$")
+    else:
+        par.text(0.5, 0.5, "no parity in the profiles\n(rerun with --force-reload)",
+                 ha="center", va="center", color=MUTED, transform=par.transAxes)
+    par.set_title("(d) parity per run, label: ky and group (g0: outlier)"
+                  + (f"; parity tol {parity_tol:g} on" if parity_tol else
+                     "; not used (no --group-parity-tol)"), loc="left", fontsize=9, color=INK)
+    tidy(par)
+
+    handles = [Line2D([], [], color=MODE_COLOR.get(x, MUTED), marker="o", lw=0, label=x)
+               for x in dict.fromkeys(lab[k] for k in order)]
+    legend_right(fig, handles, title="mode")
+    fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: does the mode-group distance "
+                 f"separate the modes? {n} converged run(s), {len(d)} pair(s)",
+                 x=0.02, ha="left", fontsize=11, color=INK)
+    w, h = fig.get_size_inches()
+    fig.subplots_adjust(left=0.9 / w, right=1 - 2.2 / w, bottom=0.9 / h, top=1 - 0.8 / h,
+                        wspace=0.3, hspace=0.35)
+    save(fig, out, "corners_mode_groups_diag.png", written)
+    print(f"    mode groups diag: {wrong} different-mode pair(s) <= tol, "
+          f"{split} same-mode pair(s) > tol, of {len(d)}")
+
+    path = data_path(out, "corners_mode_groups_diag.csv")
+    with open(path, "w") as fh:
+        fh.write("corner_a,ky_a,mode_a,corner_b,ky_b,mode_b,emd_phi,emd_apar,parity_gap,distance,same_mode\n")
+        for p, q in zip(*iu):
+            g = parity_gap(parity[p], parity[q])
+            fh.write(",".join([str(ds.corner.values[runs[p][0]]), f"{ky[runs[p][1]]:g}", lab[p],
+                               str(ds.corner.values[runs[q][0]]), f"{ky[runs[q][1]]:g}", lab[q],
+                               f"{emd_f[FIELDS[0]][p, q]:.4g}", f"{emd_f[FIELDS[1]][p, q]:.4g}",
+                               f"{g:.4g}", f"{dist[p, q]:.4g}", str(lab[p] == lab[q])]) + "\n")
     written.append(path)
 
 
@@ -3050,7 +3227,8 @@ def batches(cases, size=BATCH) -> list[tuple[str, list[dict]]]:
 
 def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots=(),
               nz_compare=None, nz_root=None, mode_extent=False, vspace_edge=False,
-              vspace_tol=VSP_TOL, group_tol=GROUP_TOL):
+              vspace_tol=VSP_TOL, group_tol=GROUP_TOL, group_parity_tol=GROUP_PARITY_TOL,
+              group_diag=False):
     """Every per-scan plot of one dataset (the corners, or a VURS batch) into out/."""
     os.makedirs(out, exist_ok=True)
     plot_growth(ds, out, written)
@@ -3069,7 +3247,7 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
         profiles, nx0 = load_profiles(ds)
         plot_mode_extent(ds, out, written, profiles=profiles, nx0=nx0)
         plot_mode_structure(ds, out, written, profiles)
-        plot_mode_groups(ds, out, written, profiles, group_tol)
+        plot_mode_groups(ds, out, written, profiles, group_tol, group_parity_tol, group_diag)
     if vspace_edge:
         plot_vspace_edge(ds, out, written, vspace_tol)
     if "outlier" in ds:
@@ -3083,7 +3261,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
         nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH,
         extra_roots=(), outliers=False, cases=None, scan=None, group_tol=GROUP_TOL,
-        ky_log=False):
+        ky_log=False, group_parity_tol=GROUP_PARITY_TOL, group_diag=False):
     """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
     and the sampling plot of all of them into <out>/. Returns the corner dataset
     (None when there are no corners but batches were plotted). GENE runs come from
@@ -3106,7 +3284,8 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             ds.attrs["ky_log"] = bool(ky_log)
             plot_scan(ds, os.path.join(out, CORNER_DIR), written, spread, max_params,
                       mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol,
-                      group_tol=group_tol)
+                      group_tol=group_tol, group_parity_tol=group_parity_tol,
+                      group_diag=group_diag)
         print("\nwrote\n  " + "\n  ".join(written))
         return ds
     cases = sampled_cases(diag_root, x0)
@@ -3126,11 +3305,13 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             if pts is None:
                 corner_ds = ds
                 plot_scan(ds, os.path.join(out, name), written, spread, max_params, res2_roots,
-                          nz_compare, nz_root, mode_extent, vspace_edge, vspace_tol, group_tol)
+                          nz_compare, nz_root, mode_extent, vspace_edge, vspace_tol, group_tol,
+                          group_parity_tol, group_diag)
             else:                                      # 2x and nz0 checks are corner-only
                 plot_scan(ds, os.path.join(out, name), written, spread, max_params,
                           mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol,
-                          group_tol=group_tol)
+                          group_tol=group_tol, group_parity_tol=group_parity_tol,
+                          group_diag=group_diag)
             plotted += 1
             s_alpha += ion_rows(ds)
         plot_sampling(cases, ped_root, x0, shot, out, written)
@@ -3187,6 +3368,14 @@ if __name__ == "__main__":
     ap.add_argument("--group-tol", type=float, default=GROUP_TOL,
                     help="corners_mode_groups.png: earth mover's distance along z, in mode "
                          "widths, under which mode structures share a group (average linkage)")
+    ap.add_argument("--group-parity-tol", type=float, default=GROUP_PARITY_TOL,
+                    help="corners_mode_groups.png: also split by parity |sum f|/sum |f| of phi "
+                         "and Apar; a parity difference of this much counts as --group-tol "
+                         "apart (e.g. 0.3) [off: EMD alone]")
+    ap.add_argument("--group-diag", action="store_true",
+                    help="(with --mode-extent) corners_mode_groups_diag.png: the group distance "
+                         "sorted by mode, same- vs different-mode distances, per-field EMD and "
+                         "parity per run; tells whether --group-tol can separate the modes")
     ap.add_argument("--vspace-edge", action="store_true",
                     help="corners_vspace_edge.png: <|f|^2>^1/2 at the v_par = +-lv and top-mu "
                          "edges of the velocity box over its peak, per species, corner and ky "
@@ -3231,5 +3420,6 @@ if __name__ == "__main__":
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
         args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers, cases=cases,
-        scan=args.scan_name, group_tol=args.group_tol, ky_log=args.ky_log)
+        scan=args.scan_name, group_tol=args.group_tol, ky_log=args.ky_log,
+        group_parity_tol=args.group_parity_tol, group_diag=args.group_diag)
     print(run_cache.report())
