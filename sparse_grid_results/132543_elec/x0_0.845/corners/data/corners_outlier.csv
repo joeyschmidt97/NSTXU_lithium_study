@@ -92,7 +92,7 @@ Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,24,ok,2.058,True,False,False,Fal
 Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,40,ok,3.506,True,False,False,False,False,False,False,1.47916e-08,-0.0547959,0.0199227
 Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,64,ok,4.853,True,False,False,False,False,False,False,1.48833e-08,-0.0332977,0.0133157
 Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,113,ok,4.873,True,False,False,False,False,False,False,2.73026e-08,-0.0172607,0.00951726
-Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,200,empty,nan,False,False,False,False,False,False,False,nan,nan,nan
+Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,200,ambiguous,-6.46608,True,False,False,False,False,False,False,0.000283747,-0.0245005,0.0139236
 Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,300,ambiguous,-12.5972,True,False,False,False,False,False,False,0.136394,-2.43868,0.0397111
 Teh1.20_Tew0.80_neh0.80_new1.20,nan,nan,nan,nan,450,ambiguous,-15.6217,True,False,False,False,False,False,False,0.165785,-2.35877,0.0634183
 Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,0.1,ambiguous,0.052238,True,False,False,False,False,False,False,7.99668e-06,0.150328,0.0984612
@@ -116,7 +116,7 @@ Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,24,ok,4.416,True,False,False,Fal
 Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,40,ok,6.811,True,False,False,False,False,False,False,1.80936e-08,-0.128932,0.0188271
 Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,64,ok,9.041,True,False,False,False,False,False,False,2.09541e-08,-0.0830165,0.0130964
 Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,113,ok,8.747,True,False,False,False,False,False,False,3.43498e-08,-0.0546289,0.0103527
-Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,200,empty,nan,False,False,False,False,False,False,False,nan,nan,nan
+Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,200,ambiguous,-6.12311,True,False,False,False,False,False,False,7.00351e-06,-0.0666829,0.0139633
 Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,300,ambiguous,-13.5696,True,False,False,False,False,False,False,0.10138,-7.47358,0.129785
 Teh1.20_Tew1.20_neh0.80_new0.80,nan,nan,nan,nan,450,ambiguous,-16.5911,True,False,False,False,False,False,False,0.146295,-7.18273,0.0758064
 Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,0.1,ambiguous,0.050301,True,False,False,False,False,False,False,7.68131e-06,0.0661522,0.067995
@@ -140,7 +140,7 @@ Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,24,ok,4.335,True,False,False,Fal
 Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,40,ok,6.691,True,False,False,False,False,False,False,1.98028e-08,-0.0448428,0.0182497
 Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,64,ok,8.899,True,False,False,False,False,False,False,2.18509e-08,-0.0260798,0.0122638
 Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,113,ok,8.917,True,False,False,False,False,False,False,4.80314e-08,-0.0148811,0.00947255
-Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,200,empty,nan,False,False,False,False,False,False,False,nan,nan,nan
+Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,200,ambiguous,-4.18099,True,False,False,False,False,False,False,2.40096e-08,-0.01761,0.0127878
 Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,300,ambiguous,-12.9079,True,False,False,False,False,False,False,0.111164,-3.31593,0.0405206
 Teh1.20_Tew1.20_neh0.80_new1.20,nan,nan,nan,nan,450,ambiguous,-15.792,True,False,False,False,False,False,False,0.178624,-3.15587,0.0311439
 Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,0.1,ambiguous,0.027969,True,False,False,False,False,False,False,3.25161e-06,0.478406,0.180579
@@ -164,6 +164,6 @@ Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,24,ok,2.771,True,False,False,Fal
 Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,40,ok,4.461,True,False,False,False,False,False,False,3.10546e-08,-0.0284173,0.016676
 Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,64,ok,4.043,True,False,False,False,False,False,False,3.72426e-08,-0.0114168,0.0129688
 Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,113,ok,3.129,True,False,False,False,False,False,False,2.09865e-08,-0.00998283,0.0197179
-Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,200,empty,nan,False,False,False,False,False,False,False,nan,nan,nan
-Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,300,empty,nan,False,False,False,False,False,False,False,nan,nan,nan
-Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,450,empty,nan,False,False,False,False,False,False,False,nan,nan,nan
+Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,200,ambiguous,-6.03907,True,False,False,False,False,False,False,4.39498e-08,-0.00289755,0.0239063
+Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,300,ambiguous,-10.3011,True,False,False,False,False,False,False,0.0934614,-3.19261,-0.00703061
+Teh1.20_Tew1.20_neh1.20_new1.20,nan,nan,nan,nan,450,ambiguous,-14.2129,True,False,False,False,False,False,False,0.124229,-2.98864,0.0804529

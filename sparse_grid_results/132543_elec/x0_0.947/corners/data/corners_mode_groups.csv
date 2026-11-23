@@ -1,0 +1,9 @@
+corner,Teh,Tew,neh,new,ky,status,gamma,mode,group,emd_to_medoid,parity_phi,parity_apar
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.1,ok,3.532,KBM,0,nan,0.9916,0.006123
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.3,ok,4.93,KBM,1,0.06313,0.9742,0.005346
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.5,ok,4.688,KBM,1,0.0431,0.9608,0.003046
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.7,ok,3.85,KBM,1,0,0.9396,0.002231
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,1,ok,1.67,KBM,1,0.1334,0.854,0.014
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,1.5,ok,0.752,ITG_TEM,2,0,0.5631,0.1941
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,2,ok,0.656,ITG_TEM,2,0.1191,0.6525,0.187
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,6,ok,-0.09,ITG_TEM,0,nan,0.5341,0.09331

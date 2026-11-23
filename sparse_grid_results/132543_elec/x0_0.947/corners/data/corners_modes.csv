@@ -1,0 +1,12 @@
+corner,Teh,Tew,neh,new,ky,status,gamma,gamma_std,omega,omega_std,mode,mode_De_Xe,mode_Xi_Xe,mode_QEM_e,mode_Epar_norm,mode_parity_apar,mode_parity_phi,mode_w_wstar
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.1,ok,3.532,nan,-1.023,nan,KBM,0.856271,1.31991,-0.0361739,0.039132,0.00612328,0.991569,-0.428034
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.3,ok,4.93,nan,1.608,nan,KBM,0.900824,1.36499,-0.0408867,0.0569893,0.00534581,0.974234,0.224268
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.5,ok,4.688,nan,2.935,nan,KBM,0.92878,1.42268,-0.0507342,0.0694257,0.00304608,0.960795,0.245607
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.7,ok,3.85,nan,3.947,nan,KBM,0.949389,1.50208,-0.0661187,0.0796119,0.0022305,0.93962,0.235924
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,1,ok,1.67,nan,4.369,nan,KBM,0.994718,1.86121,-0.132885,0.104422,0.0140009,0.853979,0.182803
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,1.5,ok,0.752,nan,-0.386,nan,ITG_TEM,0.864255,0.451967,-0.105039,0.652701,0.19414,0.563131,-0.0107671
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,2,ok,0.656,nan,-0.229,nan,ITG_TEM,0.679875,0.462645,-0.0610941,0.735612,0.187007,0.652456,-0.0047908
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,3,ambiguous,0.548375,3.57,-54.7161,11.6,,nan,nan,nan,nan,nan,nan,nan
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,3.5,ambiguous,0.505222,0.0524,-92.578,0.0515,,nan,nan,nan,nan,nan,nan,nan
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,4,ambiguous,0.133825,4.18,-6.14009,7.62,,nan,nan,nan,nan,nan,nan,nan
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,6,ok,-0.09,nan,-0.196,nan,ITG_TEM,0.0264746,0.258081,0.124839,0.986431,0.0933088,0.534075,-0.00136681

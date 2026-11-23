@@ -1,0 +1,12 @@
+corner,Teh,Tew,neh,new,ky,status,phi_end_over_peak,apar_end_over_peak,phi_left,phi_right,apar_left,apar_right
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.1,ok,0.0001907,8.451e-06,0.0001907,0.0001796,6.92e-06,8.451e-06
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.3,ok,0.0002288,2.158e-06,0.0002111,0.0002288,1.512e-06,2.158e-06
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.5,ok,0.0003251,1.297e-06,0.0002677,0.0003251,8.257e-07,1.297e-06
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,0.7,ok,0.0004331,9.569e-07,0.0003178,0.0004331,5.563e-07,9.569e-07
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,1,ok,0.0006997,7.176e-07,0.0004381,0.0006997,3.677e-07,7.176e-07
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,1.5,ok,0.001021,1.932e-07,0.001021,0.0003375,1.932e-07,8.425e-08
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,2,ok,8.674e-05,2.064e-08,8.674e-05,3.627e-05,2.064e-08,1.141e-08
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,3,ambiguous,4.342e-07,1.491e-10,9.499e-09,4.342e-07,2.662e-11,1.491e-10
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,3.5,ambiguous,7.098e-10,1.451e-13,1.234e-10,7.098e-10,3.393e-14,1.451e-13
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,4,ambiguous,6.386e-11,3.273e-15,3.005e-11,6.386e-11,1.375e-15,3.273e-15
+Teh1.00_Tew1.00_neh1.00_new1.00,nan,nan,nan,nan,6,ok,1.776e-16,9.44e-21,3.928e-17,1.776e-16,1.57e-21,9.44e-21
