@@ -99,6 +99,17 @@
         "ref_case": "Teh1.00_Tew1.00_neh1.00_new1.00",
         "scan_name": "ion + electron scale ky",
         "ky_log": true
+      },
+      "0.947": {
+        "diag_root": "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/corners",
+        "ped_root": "/pscratch/sd/j/joeschm/ped_grid/132543/132543",
+        "extra_roots": [
+          "/pscratch/sd/j/joeschm/NSXTU_discharges/lithium_study/132543/elec_scale_kymin"
+        ],
+        "cases": "auto",
+        "ref_case": "Teh1.00_Tew1.00_neh1.00_new1.00",
+        "scan_name": "ion + electron scale ky",
+        "ky_log": true
       }
     },
     "132588": {
