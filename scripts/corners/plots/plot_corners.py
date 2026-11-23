@@ -307,6 +307,10 @@ MODE_COLOR = {"ITG_TEM": "#1baf7a", "ETG": "#eda100", "KBM": "#2a78d6", "MTM": "
 TABLE_SHADE = (0.82, -0.3)
 #: Gaussian width (in ky) of the smoothed mode fraction under the growth plot.
 MODE_KDE_BW = 0.12
+#: the same width in decades of ky, when the growth plot's ky axis is log (ky_log)
+MODE_KDE_LOG_BW = 0.06
+#: symlog linear range of the growth plot's y axis when ky_log (c_ref/L_ref)
+KY_LOG_LINTHRESH = 1.0
 #: corners_q_offset.png: |delta| / 0.5, dark on a rational surface to light midway
 Q_OFFSET_CMAP = LinearSegmentedColormap.from_list("q_offset", ["#5b2a86", "#b58fd0", "#f4f1f8"])
 #: corners_mode_extent.png: end/peak above this is flagged as cut off (dashed line,
@@ -1014,13 +1018,21 @@ def plot_growth(ds, out, written, guesses=False):
     if modes:
         mode_strip(mode_axes[0], ds, weighted=False)
         mode_strip(mode_axes[1], ds, weighted=True)
+    ky_log = bool(ds.attrs.get("ky_log", False))
     for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
         ax.axhline(0, color=MUTED, lw=0.8)
+        if ky_log:          # ion and electron scale on one axis: log ky, symlog gamma/omega
+            ax.set_xscale("log")
+            ax.set_yscale("symlog", linthresh=KY_LOG_LINTHRESH)
+            ax.axhspan(-KY_LOG_LINTHRESH, KY_LOG_LINTHRESH, color=GRID, alpha=0.35, lw=0,
+                       zorder=0)
         if not modes:
             ax.set_xlabel(r"$k_y\rho_{ref}$")
         ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
         tidy(ax)
     what = "GENE converged + field-fit guess" if guesses else "GENE converged only"
+    if ky_log:
+        what += f"; symlog y, linear in ±{KY_LOG_LINTHRESH:g} (shaded)"
     axes[0].set_title(f"growth rate, {what}", loc="left", fontsize=10, color=INK)
     axes[1].set_title(f"real frequency, {what}", loc="left", fontsize=10, color=INK)
     extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=6,
@@ -1058,7 +1070,13 @@ def mode_strip(ax, ds, weighted):
     rows = corner_rows(ds)                         # the reference is no corner
     ky, m, g = ds.ky.values, ds["mode"].values[rows], ds.gamma.values[rows]
     found = [x for x in MODE_COLOR if (m == x).any()]
-    width = 0.6 * (np.diff(ky).min() if ky.size > 1 else 0.2)
+    ky_log = bool(ds.attrs.get("ky_log", False))
+    if ky_log:              # bars of equal width in decades, so ky 200 shows like ky 0.1
+        u = np.log10(ky)
+        hw = 0.3 * (np.diff(u).min() if ky.size > 1 else 0.1)
+        xs, width, align = 10 ** (u - hw), 10 ** (u + hw) - 10 ** (u - hw), "edge"
+    else:
+        xs, width, align = ky, 0.6 * (np.diff(ky).min() if ky.size > 1 else 0.2), "center"
     bottom = np.zeros(ky.size)
     gpos = np.where(np.isfinite(g) & (m != ""), np.clip(np.nan_to_num(g), 0, None), 0.0)
     total = gpos.sum(axis=0)
@@ -1068,14 +1086,18 @@ def mode_strip(ax, ds, weighted):
                           out=np.zeros(ky.size), where=total > 0)
         else:
             h = (m == mode).sum(axis=0) / m.shape[0]
-        ax.bar(ky, h, width, bottom=bottom, color=MODE_COLOR[mode], edgecolor=SURFACE, lw=1,
-               label=mode, zorder=3)
+        ax.bar(xs, h, width, bottom=bottom, color=MODE_COLOR[mode], edgecolor=SURFACE, lw=1,
+               label=mode, zorder=3, align=align)
         bottom += h
     if not weighted and found:
-        x = np.linspace(ky.min() - 2 * MODE_KDE_BW, ky.max() + 2 * MODE_KDE_BW, 400)
         # Kernel-weighted average of each ky's fraction (Nadaraya-Watson): stays in
-        # 0-1 however closely the ky are spaced, unlike a summed KDE.
-        w = np.exp(-0.5 * ((x[None] - ky[:, None]) / MODE_KDE_BW) ** 2)
+        # 0-1 however closely the ky are spaced, unlike a summed KDE. With ky_log the
+        # kernel is Gaussian in log10(ky).
+        bw = MODE_KDE_LOG_BW if ky_log else MODE_KDE_BW
+        k = np.log10(ky) if ky_log else ky
+        s = np.linspace(k.min() - 2 * bw, k.max() + 2 * bw, 400)
+        x = 10 ** s if ky_log else s
+        w = np.exp(-0.5 * ((s[None] - k[:, None]) / bw) ** 2)
         for mode in found:
             frac = (m == mode).sum(axis=0) / m.shape[0]
             ax.plot(x, (w * frac[:, None]).sum(axis=0) / w.sum(axis=0), color=MODE_COLOR[mode],
@@ -1083,7 +1105,7 @@ def mode_strip(ax, ds, weighted):
         ax.set_ylim(0, 1.02)
         ax.set_ylabel("fraction of corners")
         ax.set_title(f"mode fraction per ky (bars), kernel-smoothed over ky (lines, bw "
-                     f"{MODE_KDE_BW:g})", loc="left", fontsize=9, color=INK)
+                     f"{bw:g}{' decades' if ky_log else ''})", loc="left", fontsize=9, color=INK)
         ax.legend(frameon=False, fontsize=7.5, ncols=len(found), loc="upper left",
                   bbox_to_anchor=(0, -0.28))
     else:
@@ -3060,14 +3082,18 @@ def plot_scan(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS, res2_roots
 def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_params=MAX_PARAMS,
         x0=X0, modes=False, field_fits=False, shot=SHOT, res2_roots=(), nz_compare=None,
         nz_root=None, mode_extent=False, vspace_edge=False, vspace_tol=VSP_TOL, batch=BATCH,
-        extra_roots=(), outliers=False, cases=None, scan=None, group_tol=GROUP_TOL):
+        extra_roots=(), outliers=False, cases=None, scan=None, group_tol=GROUP_TOL,
+        ky_log=False):
     """The corners into <out>/corners/, each VURS batch into <out>/batch<i>_<j>/,
     and the sampling plot of all of them into <out>/. Returns the corner dataset
     (None when there are no corners but batches were plotted). GENE runs come from
     diag_root, its _ky* siblings and extra_roots (ky_roots).
 
     cases: named cases (case_point) to plot instead, into <out>/corners/ with the
-    same per-scan plots (no batches, sampling, 2x or nz0 checks); scan titles them."""
+    same per-scan plots (no batches, sampling, 2x or nz0 checks); scan titles them.
+
+    ky_log: log ky axis (and symlog gamma/omega) on the growth plots and their mode
+    strips, for scans that join ion- and electron-scale ky."""
     x0 = tuple(x0)
     out = out or default_out(x0, diag_root)
     os.makedirs(out, exist_ok=True)
@@ -3077,6 +3103,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             warnings.simplefilter("ignore", RuntimeWarning)
             ds = load_dataset(diag_root, ped_root, x0, modes, field_fits, shot, list(cases),
                               scan or "named cases", extra_roots, outliers)
+            ds.attrs["ky_log"] = bool(ky_log)
             plot_scan(ds, os.path.join(out, CORNER_DIR), written, spread, max_params,
                       mode_extent=mode_extent, vspace_edge=vspace_edge, vspace_tol=vspace_tol,
                       group_tol=group_tol)
@@ -3095,6 +3122,7 @@ def run(diag_root=DIAG_ROOT, ped_root=PED_ROOT, out=None, spread=SPREAD, max_par
             except SystemExit as exc:                  # no corner (or pick) has anything yet
                 print(exc)
                 continue
+            ds.attrs["ky_log"] = bool(ky_log)
             if pts is None:
                 corner_ds = ds
                 plot_scan(ds, os.path.join(out, name), written, spread, max_params, res2_roots,
@@ -3180,6 +3208,9 @@ if __name__ == "__main__":
     ap.add_argument("--ref-case", default=None, metavar="NAME",
                     help="--case drawn as the reference (black, first)")
     ap.add_argument("--scan-name", default=None, help="--case: the scan's name in titles")
+    ap.add_argument("--ky-log", action="store_true",
+                    help="log ky axis, symlog gamma/omega on the growth plots (ion + "
+                         "electron scale in one scan)")
     ap.add_argument("--force-reload", action="store_true",
                     help="reread every GENE run and overwrite its cached values "
                          "(<scanfiles dir>/.plot_cache.pkl, see run_cache.py)")
@@ -3200,5 +3231,5 @@ if __name__ == "__main__":
         args.max_params, args.x0 or d["x0"], args.modes, args.field_fits, args.shot,
         args.res2_root, args.nz_compare, args.nz_root, args.mode_extent, args.vspace_edge,
         args.vspace_tol, extra_roots=args.extra_root, outliers=args.outliers, cases=cases,
-        scan=args.scan_name, group_tol=args.group_tol)
+        scan=args.scan_name, group_tol=args.group_tol, ky_log=args.ky_log)
     print(run_cache.report())
