@@ -356,19 +356,27 @@ FIELDS = ("field_phi", "field_apar")
 STRUCT_COLOR = {"field_phi": "#2a78d6", "field_apar": "#eb6834"}
 #: corners_mode_groups.png: two runs whose |phi| (and |Apar|) along z are closer than
 #: this can share a group. Distance: earth mover's distance along z over the pair's
-#: mean rms width (mode_emd), the largest over the fields both have, so 0.3 = the
-#: weight moves 30% of a mode width: scale-free, a narrow ETG and a narrow KBM differ
+#: mean rms width (mode_emd), the largest over the fields both have, so 0.4 = the
+#: weight moves 40% of a mode width: scale-free, a narrow ETG and a narrow KBM differ
 #: as much as wide ones would. Average linkage, so a group's members are this close
-#: on average, not by a chain. Panels per row; points of the common z grid.
+#: on average, not by a chain. Panels per row; points of the common z grid. 0.4, not
+#: 0.3: with parity and omega sign splitting the modes, 0.3 cut the one ETG branch
+#: of 132543_elec in two at ky ~ 24 (A_par parity drifts smoothly along it).
 GROUP_TOL = 0.3
 GROUP_COLS = 4
 GROUP_NZ = 801
 #: --group-parity-tol: parity factor |sum f| / sum |f| along z per field (as David's
 #: info_for_astra.py; ~1 even in that field, ~0 odd). EMD on |f| cannot see the null
 #: an odd field has at z = 0 (it holds almost no weight), so an MTM (phi odd) and an
-#: ITG/KBM (phi even) of one envelope land together. With a tol set, a parity
-#: difference of that much counts as GROUP_TOL apart. None: off (EMD alone).
+#: ITG/KBM (phi even) of one envelope land together. A parity difference of this
+#: much counts as GROUP_TOL apart. 0 or None: off (EMD alone). On since 132543_elec
+#: (it took the MTM out of the ITG/TEM group).
 GROUP_PARITY_TOL = None
+#: corners_mode_groups.png: runs whose omega has opposite sign (ion vs electron
+#: diamagnetic direction) never share a group. Shape and parity cannot tell a narrow
+#: ion-scale KBM/ITG from a narrow ETG at ky > 100 (132543_elec group 4); the drift
+#: direction can. A run with no omega (NaN) is not split.
+GROUP_SPLIT_OMEGA = True
 #: corners_mode_structure.png: width of one eigenfunction box and of the figure, inches
 STRUCT_BOX_IN = 0.95
 STRUCT_MAX_W = 18
@@ -1718,7 +1726,7 @@ def group_modes(dist: np.ndarray, tol=GROUP_TOL) -> list[list[int]]:
 
 
 def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL, parity_tol=GROUP_PARITY_TOL,
-                     diag=False):
+                     diag=False, split_omega=GROUP_SPLIT_OMEGA):
     """Converged runs (GENE or a field fit) grouped by mode structure: each
     mode_profile put on one z grid (zero beyond a run's own domain), the earth
     mover's distance between every pair (mode_emd) and average-linkage groups
@@ -1729,7 +1737,8 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL, parity_tol=GROUP
     holds each run's group (0: outlier) and distance to its group's medoid.
 
     parity_tol: also split by parity (GROUP_PARITY_TOL): the distance becomes the
-    larger of the EMD and tol * parity gap / parity_tol. diag: also
+    larger of the EMD and tol * parity gap / parity_tol. split_omega: runs whose
+    omega differs in sign are infinitely apart (GROUP_SPLIT_OMEGA). diag: also
     corners_mode_groups_diag.png (plot_mode_groups_diag)."""
     status, gam, ky = ds.status.values, ds.gamma.values, ds.ky.values
     m = ds["mode"].values if "mode" in ds else None
@@ -1757,8 +1766,17 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL, parity_tol=GROUP
         emd = np.fmax.reduce([emd_f[f] for f in FIELDS])
     emd[np.isnan(emd)] = np.inf
     dist = np.maximum(emd, tol * gap / parity_tol) if parity_tol else emd
+    n_flip = 0
+    if split_omega and "omega" in ds:
+        sign = np.sign([ds.omega.values[k] for k in runs])          # NaN: no split
+        flip = (sign[:, None] * sign[None, :]) < 0
+        dist = np.where(flip, np.inf, dist)
+        n_flip = int(flip[np.triu_indices(n, 1)].sum())
     groups = group_modes(dist, tol)
     off = dist[np.triu_indices(n, 1)]
+    off = off[np.isfinite(off)]
+    if n_flip:
+        print(f"    mode groups: {n_flip} pair(s) split by omega sign")
     if off.size:
         q = np.percentile(off, (10, 50, 90))
         print(f"    mode groups: pairwise distance 10/50/90% {q[0]:.3g}/{q[1]:.3g}/{q[2]:.3g} "
@@ -1831,6 +1849,7 @@ def plot_mode_groups(ds, out, written, profiles, tol=GROUP_TOL, parity_tol=GROUP
     fig.suptitle(f"NSTX {ds.shot} {ds.scan} at {x0_text(ds)}: mode structures grouped by "
                  f"shape (earth mover's distance along z / mode width"
                  + (f", parity gap / {parity_tol:g}" if parity_tol else "")
+                 + (", split by omega sign" if n_flip else "")
                  + f", average linkage <= {tol:g})\n"
                  f"{n} converged run(s) in {len(groups) - len(lone)} group(s)"
                  f" + {len(lone)} outlier(s); {skipped} unconverged left out",
@@ -3371,7 +3390,7 @@ if __name__ == "__main__":
     ap.add_argument("--group-parity-tol", type=float, default=GROUP_PARITY_TOL,
                     help="corners_mode_groups.png: also split by parity |sum f|/sum |f| of phi "
                          "and Apar; a parity difference of this much counts as --group-tol "
-                         "apart (e.g. 0.3) [off: EMD alone]")
+                         "apart; 0: off, EMD alone")
     ap.add_argument("--group-diag", action="store_true",
                     help="(with --mode-extent) corners_mode_groups_diag.png: the group distance "
                          "sorted by mode, same- vs different-mode distances, per-field EMD and "
