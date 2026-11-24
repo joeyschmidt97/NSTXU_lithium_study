@@ -319,6 +319,9 @@ MODE_KDE_BW = 0.12
 MODE_KDE_LOG_BW = 0.06
 #: symlog linear range of the growth plot's y axis when ky_log (c_ref/L_ref)
 KY_LOG_LINTHRESH = 1.0
+#: ky_log growth plots: gamma/omega go symlog only when some |value| exceeds this many
+#: linthresh; an ion-scale-only scan (132543_elec x0 0.947, |omega| < 3) stays linear
+SYMLOG_MIN_DECADE = 10
 #: corners_q_offset.png: |delta| / 0.5, dark on a rational surface to light midway
 Q_OFFSET_CMAP = LinearSegmentedColormap.from_list("q_offset", ["#5b2a86", "#b58fd0", "#f4f1f8"])
 #: corners_mode_extent.png: end/peak above this is flagged as cut off (dashed line,
@@ -1050,25 +1053,31 @@ def plot_growth(ds, out, written, guesses=False):
         mode_strip(mode_axes[0], ds, weighted=False)
         mode_strip(mode_axes[1], ds, weighted=True)
     ky_log = bool(ds.attrs.get("ky_log", False))
-    for ax, var, sym in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega")):
+    what = "GENE converged + field-fit guess" if guesses else "GENE converged only"
+    for ax, var, sym, title in zip(axes, ("gamma", "omega"), (r"\gamma", r"\omega"),
+                                   ("growth rate", "real frequency")):
         ax.axhline(0, color=MUTED, lw=0.8)
-        if ky_log:          # ion and electron scale on one axis: log ky, symlog gamma/omega
+        ax_what = what
+        if ky_log:          # ion and electron scale on one axis: log ky
             ax.set_xscale("log")
-            ax.set_yscale("symlog", linthresh=KY_LOG_LINTHRESH)
-            lo = ax.dataLim.y0                    # before the band, which spans -linthresh
-            shade_y(ax, -KY_LOG_LINTHRESH, KY_LOG_LINTHRESH, color=GRID, alpha=0.35, lw=0,
-                    zorder=0)
-            if lo >= 0:     # no negative data: the symlog margin below 0 is a whole decade
-                ax.set_ylim(bottom=-0.25 * KY_LOG_LINTHRESH)
+            lo, hi = ax.dataLim.y0, ax.dataLim.y1     # before any band
+            # symlog y only when the data reach a decade past linthresh; below that the
+            # linear region would fill the axis and squash the data
+            if max(abs(lo), abs(hi)) > SYMLOG_MIN_DECADE * KY_LOG_LINTHRESH:
+                ax.set_yscale("symlog", linthresh=KY_LOG_LINTHRESH)
+                shade_y(ax, -KY_LOG_LINTHRESH, KY_LOG_LINTHRESH, color=GRID, alpha=0.35,
+                        lw=0, zorder=0)
+                # no negative data (the 0 line adds ~1e-14): keep the margin below 0 small
+                if lo > -1e-9:
+                    ax.set_ylim(bottom=-0.25 * KY_LOG_LINTHRESH)
+                if hi < 1e-9:  # no positive data (omega all electron direction): same above
+                    ax.set_ylim(top=0.25 * KY_LOG_LINTHRESH)
+                ax_what += f"; symlog y, linear in ±{KY_LOG_LINTHRESH:g} (shaded)"
         if not modes:
             ax.set_xlabel(r"$k_y\rho_{ref}$")
         ax.set_ylabel(rf"${sym}$ [$c_{{ref}}/L_{{ref}}$]")
         tidy(ax)
-    what = "GENE converged + field-fit guess" if guesses else "GENE converged only"
-    if ky_log:
-        what += f"; symlog y, linear in ±{KY_LOG_LINTHRESH:g} (shaded)"
-    axes[0].set_title(f"growth rate, {what}", loc="left", fontsize=10, color=INK)
-    axes[1].set_title(f"real frequency, {what}", loc="left", fontsize=10, color=INK)
+        ax.set_title(f"{title}, {ax_what}", loc="left", fontsize=10, color=INK)
     extra = [Line2D([], [], ls="none", marker="o", color=MUTED, ms=6,
                     label="GENE converged (filled)")]
     if guesses:
