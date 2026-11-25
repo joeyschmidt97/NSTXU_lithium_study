@@ -31,8 +31,10 @@ into one xarray Dataset with dims (corner, ky, rho_tor), and writes to <out>/cor
                                 ion-scale peak: the first local max of gamma over the
                                 converged ky confirmed by a quadratic fit in log ky,
                                 else (hollow) the max gamma
-    corners_local_params.png    the local parameters that vary most: % from the corner
-                                mean, or the absolute difference for those that change sign
+    corners_local_params.png    the local parameters that vary most (less LOCAL_DROP), plus
+                                PINNED_PARAMS (+ ELEC_PARAMS on a ky_log scan): one
+                                histogram of the case values per
+                                parameter, each case a tick in its colour below
     corners_local_table.png     their values per corner, as a table
     corners_local_params.csv    every local parameter per corner (+ gamma_max)
     corners_q_offset.png        rational-surface offset per corner and ky: delta =
@@ -132,7 +134,7 @@ with corner_gene_scan.py --case into the same diag root), is read too when it
 is there: listed first as (1, 1, 1, 1) ref, solid black with diamond markers
 on every plot, table and CSV. It is no corner, so the corner statistics leave
 it out: the mode fractions under the growth plot, the knob-level mode mix,
-and the spread and mean of corners_local_params.png.
+and the spread of corners_local_params.png (it is a tick there, not counted).
 
 --case reads named case dirs instead of ped_grid tags (case_point; the NSTX-U
 projection's U and U0 from nstxu_scaling_check prep): GENE under
@@ -252,6 +254,19 @@ Q_ZOOM = 0.05
 #: mean near zero would inflate their spread.
 SPREAD = 0.05
 MAX_PARAMS = 12
+#: Always in corners_local_params.png and its table, varying or not (q0, shat sit near
+#: the SPREAD cut, so in or out by chance otherwise) ...
+PINNED_PARAMS = ("q0", "shat")
+#: ... and on a ky_log (electron-scale) scan, ahead of them: the ETG drive (eta_e,
+#: omega_star_e = omega_star / ky, see derived_params), tau = Ti/Te and rhostar.
+ELEC_PARAMS = ("eta_e", "omega_star_e", "omt_e", "omn_e", "tau", "rhostar")
+#: Never picked for the plot and table (still in the CSV): copies of a shown one
+#: (temp_c = temp_i = tau; omn_c by quasineutrality; coll, nu_ei ~ nustar_e; dpdx_pm in
+#: alpha_MHD; Tref = Te) or reference values that say nothing about the mode.
+LOCAL_DROP = ("temp_c", "temp_i", "omn_c", "coll", "nu_ei", "dpdx_pm", "Tref", "nref",
+              "debye2", "Lref", "Bref", "major_R", "minor_r")
+#: Panels per row of corners_local_params.png.
+LOCAL_NCOLS = 4
 
 #: Local parameters read from each run's parameters file (GENE names; species
 #: quantities carry TPED's _<species> suffix, e.g. omn_e, omt_i).
@@ -613,6 +628,20 @@ def alpha_mhd(pr: dict) -> float:
     return pr.get("q0", np.nan) ** 2 * pr.get("major_R", np.nan) * dpdx
 
 
+def derived_params(pr: dict) -> dict:
+    """eta_e, eta_i = omt / omn (nan where omn ~ 0); omega_star_e = temp_e (omn_e + omt_e):
+    TPED mode_identifier's omega_star over kymin, the electron diamagnetic frequency per
+    unit ky rho_ref (c_ref/L_ref), so one number per case; tau = temp_i / temp_e (Ti/Te)."""
+    out = {}
+    for s in ("e", "i"):
+        omn, omt = pr.get(f"omn_{s}", np.nan), pr.get(f"omt_{s}", np.nan)
+        out[f"eta_{s}"] = omt / omn if abs(omn) > 1e-6 else np.nan
+    te = pr.get("temp_e", 1.0)
+    out["omega_star_e"] = te * (pr.get("omn_e", np.nan) + pr.get("omt_e", np.nan))
+    out["tau"] = pr.get("temp_i", np.nan) / te if te else np.nan
+    return out
+
+
 def ky_roots(diag_root: str, extra_roots=()) -> list[str]:
     """diag_root, its <diag_root>_ky* siblings (extra-ky scans; no _nz/_res2/_test
     grid), then extra_roots: every root whose x0_<x0>/<tag>/ holds this scan's runs."""
@@ -659,6 +688,7 @@ def gene_corner(corner_dir, field_fits: bool = False):
         local[k] = float(np.median(vals))
     if local:
         local["alpha_MHD"] = alpha_mhd(local)
+        local.update(derived_params(local))
     return by_ky, local
 
 
@@ -2988,6 +3018,8 @@ def varying(ds, spread=SPREAD, max_params=MAX_PARAMS) -> list[tuple[str, float]]
     out = []
     rows = corner_rows(ds)
     for k in local_params(ds):
+        if k in LOCAL_DROP or k.startswith("dens_"):
+            continue
         v = ds[k].values[rows]
         v = v[np.isfinite(v)]
         if v.size < 2:
@@ -3001,7 +3033,7 @@ def varying(ds, spread=SPREAD, max_params=MAX_PARAMS) -> list[tuple[str, float]]
 def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     keys = local_params(ds)
     if not keys:
-        print("no local parameters (no GENE parameters read); bar chart and table skipped")
+        print("no local parameters (no GENE parameters read); histograms and table skipped")
         return
     csv = data_path(out, "corners_local_params.csv")
     cols = ["gamma_max", "ky_at_max"] + keys
@@ -3013,46 +3045,55 @@ def plot_local(ds, out, written, spread=SPREAD, max_params=MAX_PARAMS):
     written.append(csv)
 
     picked = varying(ds, spread, max_params)
-    if not picked:
-        print(f"no local parameter varies by more than {spread:g} across corners")
-        return
     print("varying local parameters, (max-min)/max|value|: "
-          + ", ".join(f"{k} {r:.3f}" for k, r in picked))
-    names = [k for k, _ in picked]
-    # % from the mean means nothing when the mean sits near zero, so parameters
-    # that change sign across the corners get their own panel in absolute units.
-    rows = corner_rows(ds)                         # mean and sign over the corners only
-    crosses = [k for k in names
-               if np.nanmin(ds[k].values[rows]) < 0 < np.nanmax(ds[k].values[rows])]
-    groups = [(r"% from the corner mean", [k for k in names if k not in crosses], True),
-              ("value - corner mean", crosses, False)]
-    groups = [grp for grp in groups if grp[1]]
+          + (", ".join(f"{k} {r:.3f}" for k, r in picked) or f"none above {spread:g}"))
+    pinned = [k for k in (ELEC_PARAMS if ds.attrs.get("ky_log") else ()) + PINNED_PARAMS
+              if k in ds]
+    names = (pinned + [k for k, _ in picked if k not in pinned])[:max(max_params, len(pinned))]
+    if not names:
+        return
     spread_of = dict(picked)
+    rows = corner_rows(ds)                         # histogram over the corners only
     n = ds.sizes["corner"]
-    width = 0.84 / n
-    fig, axes = plt.subplots(1, len(groups), figsize=(max(10, 1.25 * len(names) + 4), 5.8),
-                             width_ratios=[len(grp[1]) + 0.6 for grp in groups], squeeze=False)
-    for ax, (ylabel, keys_, pct) in zip(axes[0], groups):
-        mean = [np.nanmean(ds[k].values[rows]) for k in keys_]
+    ncols = min(LOCAL_NCOLS, len(names))
+    nrows = -(-len(names) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.1 * ncols + 2.2, 2.5 * nrows + 0.6),
+                             squeeze=False)
+    for ax, k in zip(axes.flat, names):
+        v = ds[k].values.astype(float)
+        fin = v[rows][np.isfinite(v[rows])]
+        top = 1
+        if fin.size:
+            lo, hi = fin.min(), fin.max()
+            pad = 0.05 * (hi - lo) if hi > lo else 0.05 * max(abs(hi), 1e-12)
+            counts, _, _ = ax.hist(fin, bins=min(10, max(3, fin.size // 2)),
+                                   range=(lo - pad, hi + pad), color=MUTED, alpha=0.4,
+                                   edgecolor=SURFACE, lw=1, zorder=1)
+            top = max(counts.max(), 1)
+        ax.set_ylim(-0.3 * top, 1.1 * top)        # the band below 0 holds the case ticks
+        tick_y = -0.15 * top
         for i, c in enumerate(ds.corner.values):
-            dev = [100 * (ds[k].values[i] / m - 1) if pct else ds[k].values[i] - m
-                   for k, m in zip(keys_, mean)]
-            ax.bar(np.arange(len(keys_)) - 0.42 + (i + 0.5) * width, dev, width * 0.9,
-                   color=style(point_of(ds, c))["color"],
-                   label=str(ds.label.values[i]) if ax is axes[0, 0] else None)
-        ax.axhline(0, color=MUTED, lw=0.8)
-        ax.set_xticks(np.arange(len(keys_)),
-                      [f"{k}\n{100 * spread_of[k]:.0f}%" for k in keys_], fontsize=8)
-        ax.set_ylabel(ylabel)
+            if np.isfinite(v[i]):
+                st = style(point_of(ds, c))
+                ax.plot(v[i], tick_y, marker="|", ms=11, mew=2, color=st["color"], zorder=3,
+                        label=str(ds.label.values[i]) if ax is axes.flat[0] else None)
+        ax.axhline(0, color=MUTED, lw=0.6)
+        ax.set_yticks(range(0, int(top) + 1, max(1, int(top) // 4)))   # counts only
+        note = (f"spread {100 * spread_of[k]:.0f}%" if k in spread_of
+                else "pinned" if k in pinned else "")
+        ax.set_title(f"{k}  {note}", loc="left", fontsize=9, color=INK)
         tidy(ax)
-    axes[0, 0].set_title(f"local parameters at {x0_text(ds)} with (max-min)/max|value| > "
-                         f"{spread:g} (spread under each name)", loc="left", fontsize=10,
-                         color=INK)
-    if crosses:
-        axes[0, -1].set_title("sign-changing, absolute", loc="left", fontsize=10, color=INK)
+    for ax in axes.flat[len(names):]:
+        ax.axis("off")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("corners")
+    fig.suptitle(f"local parameters at {x0_text(ds)}: (max-min)/max|value| > {spread:g}"
+                 + (f", plus {', '.join(pinned)}" if pinned else "")
+                 + "; histogram over the corners, each case a tick below",
+                 x=0.01, ha="left", fontsize=10, color=INK)
     fig.legend(title=legend_title(ds), loc="center right", frameon=False, fontsize=8,
                title_fontsize=9)
-    fig.tight_layout(rect=(0, 0, 0.82, 1))
+    fig.tight_layout(rect=(0, 0, 0.84, 0.97))
     save(fig, out, "corners_local_params.png", written)
 
     tcols = names + ["gamma_max", "ky_at_max"]
